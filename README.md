@@ -2,6 +2,8 @@
 
 一个基于 **NeoForge 1.21.1** 的 Minecraft 技能树模组：通过星能转换机把 FE 能量转化为技能点，在技能树界面中解锁 32 种技能（基础 / 增幅 / 终极 / 杀戮光环）。
 
+> 💡 本模组由技术区 YouTube 博主 **子枫** 创作，代码由 **AI 辅助开发**，并完全开源（MIT）。
+
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green) ![NeoForge](https://img.shields.io/badge/NeoForge-21.1.248-orange) ![License](https://img.shields.io/badge/License-MIT-blue)
 
 ## ✨ 功能特性
@@ -38,6 +40,19 @@ gradlew.bat build
 
 本项目使用 [MIT License](LICENSE)。你可以自由使用、修改、分发（包括商用），只需保留版权声明。
 
+> 🖤 任何人都可以随意使用、修改、二次分发这个模组，不用跟我说，只要记得是子枫做的就行。
+
+## 🙏 致谢与灵感来源
+
+本模组的设计灵感参考了以下优秀模组：
+
+- **ProjectE（等价交换）** — 范围伤害的实现思路
+- **Draconic Evolution（龙之研究）** — 范围伤害与磁力吸取（物品传送器）机制
+- **Applied Energistics 2（应用能源2）** — 破盾与无视无敌帧的处理方式
+- **Astral Sorcery（星辉魔法）** — 技能树界面的布局概念
+
+本模组代码由 AI 辅助创作完成，未复制上述任何模组的代码。
+
 ## 👤 作者
 
-zifeng
+zifeng（子枫）— 技术区 YouTube 博主
