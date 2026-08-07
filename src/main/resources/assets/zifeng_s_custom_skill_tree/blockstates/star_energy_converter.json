@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter" },
+    "facing=east": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 90 },
+    "facing=south": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 180 },
+    "facing=west": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 270 }
+  }
+}

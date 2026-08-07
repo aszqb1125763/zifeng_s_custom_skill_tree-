@@ -1,0 +1,28 @@
+# --- Gradle 构建产物 ---
+.gradle/
+build/
+bin/
+out/
+
+# --- 运行数据（含个人存档/日志，绝不提交） ---
+run/
+
+# --- IDE ---
+.idea/
+.vscode/
+.eclipse/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+
+# --- 系统文件 ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# --- 日志 ---
+*.log
+logs/

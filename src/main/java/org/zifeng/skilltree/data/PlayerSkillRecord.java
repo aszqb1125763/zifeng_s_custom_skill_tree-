@@ -1,0 +1,264 @@
+package org.zifeng.skilltree.data;
+
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
+import org.zifeng.skilltree.skill.Skills;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * 单个玩家的技能数据记录：
+ * <ul>
+ *   <li>剩余技能点 skillPoints（无上限）</li>
+ *   <li>已学技能 learnedSkills：技能ID -> 已投入点数</li>
+ *   <li>技能开关 toggles：技能ID -> 是否启用（默认 true，关闭后该技能加成不生效）</li>
+ *   <li>加点规则：无等级锁；基础类每项上限 {@link Skills#BASE_MAX_POINTS}；增幅类上限 {@link Skills#AMPLIFY_MAX_POINTS}；终极单次解锁；杀戮光环特殊消耗</li>
+ *   <li>生效等级 activeLevels：每个技能独立设置启用几级（默认=已学，可低于已学）</li>
+ *   <li>杀戮光环总开关 auraEnabled：快捷键切换是否开始杀戮光环</li>
+ * </ul>
+ */
+public class PlayerSkillRecord {
+    private final UUID owner;
+    /** 剩余技能点（支持小数：基础每级 0.2，增幅每级 0.5，终极/光环 1 或更多） */
+    private double skillPoints;
+    private final Map<String, Integer> learnedSkills = new HashMap<>();
+    private final Map<String, Boolean> toggles = new HashMap<>();
+    /** 生效等级：技能ID -> 启用的等级数（<=已学等级） */
+    private final Map<String, Integer> activeLevels = new HashMap<>();
+    /** 杀戮光环目标模式：0=敌对 1=友好 2=所有 */
+    private int auraTargetMode;
+    /** 杀戮光环总开关（默认开启） */
+    private boolean auraEnabled = true;
+
+    public PlayerSkillRecord(UUID owner) {
+        this.owner = owner;
+    }
+
+    public UUID getOwner() {
+        return owner;
+    }
+
+    public double getSkillPoints() {
+        return skillPoints;
+    }
+
+    public void setSkillPoints(double skillPoints) {
+        this.skillPoints = Math.max(0, skillPoints);
+    }
+
+    public void addSkillPoints(double amount) {
+        this.skillPoints = Math.max(0, this.skillPoints + amount);
+    }
+
+    public Map<String, Integer> getLearnedSkills() {
+        return Collections.unmodifiableMap(learnedSkills);
+    }
+
+    public int getLearnedPoints(String skillId) {
+        return learnedSkills.getOrDefault(skillId, 0);
+    }
+
+    // ============ 生效等级（独立设置开启的等级） ============
+
+    /**
+     * 当前生效等级：<= 已学等级。未设置时默认=已学等级。
+     */
+    public int getActiveLevel(String skillId) {
+        return Math.max(0, Math.min(getLearnedPoints(skillId), activeLevels.getOrDefault(skillId, Integer.MAX_VALUE)));
+    }
+
+    /** 设置生效等级（0 = 完全不生效，可低于已学等级） */
+    public void setActiveLevel(String skillId, int level) {
+        activeLevels.put(skillId, Math.max(0, Math.min(getLearnedPoints(skillId), level)));
+    }
+
+    public Map<String, Integer> getActiveLevels() {
+        return Collections.unmodifiableMap(activeLevels);
+    }
+
+    // ============ 技能开关 ============
+
+    /** 技能是否启用（默认启用） */
+    public boolean isEnabled(String skillId) {
+        return toggles.getOrDefault(skillId, Boolean.TRUE);
+    }
+
+    /** 设置技能开关 */
+    public void setEnabled(String skillId, boolean enabled) {
+        toggles.put(skillId, enabled);
+    }
+
+    public Map<String, Boolean> getToggles() {
+        return Collections.unmodifiableMap(toggles);
+    }
+
+    /** 直接设置已学点数（客户端显示用；服务端加点请用 learnSkill 保证消耗/上限校验） */
+    public void setLearnedPoints(String skillId, int points) {
+        learnedSkills.put(skillId, Math.max(0, points));
+    }
+
+    // ============ 杀戮光环目标模式与总开关 ============
+
+    public int getAuraTargetMode() {
+        return auraTargetMode;
+    }
+
+    public void setAuraTargetMode(int auraTargetMode) {
+        this.auraTargetMode = Math.max(0, Math.min(2, auraTargetMode));
+    }
+
+    /** 杀戮光环总开关 */
+    public boolean isAuraEnabled() {
+        return auraEnabled;
+    }
+
+    public void setAuraEnabled(boolean auraEnabled) {
+        this.auraEnabled = auraEnabled;
+    }
+
+    /**
+     * 判断某技能当前是否还能继续加点。
+     * 基础类：上限 {@link Skills#BASE_MAX_POINTS}；终极/宇宙的青睐：单次解锁；杀戮光环：各自上限。
+     */
+    public boolean canLearn(String skillId) {
+        if (skillId == null || skillId.isBlank()) {
+            return false;
+        }
+        int current = getLearnedPoints(skillId);
+        Skills.SkillType type = Skills.getType(skillId);
+        if (type == Skills.SkillType.BASE) {
+            return current < Skills.BASE_MAX_POINTS;
+        }
+        if (type == Skills.SkillType.AMPLIFY) {
+            return current < Skills.AMPLIFY_MAX_POINTS;
+        }
+        if (type == Skills.SkillType.ULTIMATE) {
+            return current < 1;
+        }
+        if (type == Skills.SkillType.AURA) {
+            return current < Skills.getAuraMaxPoints(skillId);
+        }
+        return true;
+    }
+
+    /** 下一级需要的技能点数：基础 0.2 / 增幅 0.5 / 终极 1 / 光环按消耗公式 / 宇宙的青睐 1000 / 夜视·饱食 100 */
+    public double getNextCost(String skillId) {
+        if (Skills.ULT_FAVOR.equals(skillId)) {
+            return Skills.ULT_FAVOR_COST;
+        }
+        if (Skills.NIGHT_VISION.equals(skillId) || Skills.SATURATION.equals(skillId)) {
+            return 100;
+        }
+        Skills.SkillType type = Skills.getType(skillId);
+        if (type == Skills.SkillType.AURA) {
+            return Skills.getAuraCost(skillId, getLearnedPoints(skillId));
+        }
+        if (type == Skills.SkillType.BASE) {
+            return Skills.BASE_POINT_COST;   // 0.2
+        }
+        if (type == Skills.SkillType.AMPLIFY) {
+            return Skills.AMPLIFY_POINT_COST; // 0.5
+        }
+        return 1; // 终极
+    }
+
+    /**
+     * 学习/加点：扣除对应技能点（小数）并记录。返回是否成功。
+     */
+    public boolean learnSkill(String skillId) {
+        if (skillId == null || skillId.isBlank()) {
+            return false;
+        }
+        if (!canLearn(skillId)) {
+            return false;
+        }
+        double cost = getNextCost(skillId);
+        if (skillPoints < cost - 1e-9) {
+            return false;
+        }
+        skillPoints -= cost;
+        learnedSkills.merge(skillId, 1, Integer::sum);
+        return true;
+    }
+
+    public CompoundTag save() {
+        CompoundTag tag = new CompoundTag();
+        tag.putUUID("Owner", owner);
+        tag.putDouble("SkillPoints", skillPoints);
+        ListTag learned = new ListTag();
+        for (Map.Entry<String, Integer> entry : learnedSkills.entrySet()) {
+            CompoundTag skillTag = new CompoundTag();
+            skillTag.putString("Id", entry.getKey());
+            skillTag.putInt("Points", entry.getValue());
+            learned.add(skillTag);
+        }
+        tag.put("LearnedSkills", learned);
+        ListTag togglesList = new ListTag();
+        for (Map.Entry<String, Boolean> entry : toggles.entrySet()) {
+            CompoundTag toggleTag = new CompoundTag();
+            toggleTag.putString("Id", entry.getKey());
+            toggleTag.putBoolean("Enabled", entry.getValue());
+            togglesList.add(toggleTag);
+        }
+        tag.put("Toggles", togglesList);
+        tag.putInt("AuraTargetMode", auraTargetMode);
+        tag.putBoolean("AuraEnabled", auraEnabled);
+        ListTag activeList = new ListTag();
+        for (Map.Entry<String, Integer> entry : activeLevels.entrySet()) {
+            CompoundTag activeTag = new CompoundTag();
+            activeTag.putString("Id", entry.getKey());
+            activeTag.putInt("Level", entry.getValue());
+            activeList.add(activeTag);
+        }
+        tag.put("ActiveLevels", activeList);
+        return tag;
+    }
+
+    public static PlayerSkillRecord load(CompoundTag tag) {
+        // 防御：Owner 缺失/损坏（其他模组污染存档）时返回 null，调用方跳过该记录，避免脏数据崩溃
+        if (tag == null || !tag.hasUUID("Owner")) {
+            return null;
+        }
+        UUID owner = tag.getUUID("Owner");
+        PlayerSkillRecord record = new PlayerSkillRecord(owner);
+        record.skillPoints = tag.contains("SkillPoints", Tag.TAG_DOUBLE) ? tag.getDouble("SkillPoints") : tag.getInt("SkillPoints");
+        if (tag.contains("LearnedSkills", Tag.TAG_LIST)) {
+            ListTag learned = tag.getList("LearnedSkills", Tag.TAG_COMPOUND);
+            for (int i = 0; i < learned.size(); i++) {
+                CompoundTag skillTag = learned.getCompound(i);
+                String id = skillTag.getString("Id");
+                if (!id.isBlank()) {
+                    record.learnedSkills.put(id, skillTag.getInt("Points"));
+                }
+            }
+        }
+        if (tag.contains("Toggles", Tag.TAG_LIST)) {
+            ListTag togglesList = tag.getList("Toggles", Tag.TAG_COMPOUND);
+            for (int i = 0; i < togglesList.size(); i++) {
+                CompoundTag toggleTag = togglesList.getCompound(i);
+                String id = toggleTag.getString("Id");
+                if (!id.isBlank()) {
+                    record.toggles.put(id, toggleTag.getBoolean("Enabled"));
+                }
+            }
+        }
+        record.auraTargetMode = tag.getInt("AuraTargetMode");
+        record.auraEnabled = !tag.contains("AuraEnabled") || tag.getBoolean("AuraEnabled");
+        if (tag.contains("ActiveLevels", Tag.TAG_LIST)) {
+            ListTag activeList = tag.getList("ActiveLevels", Tag.TAG_COMPOUND);
+            for (int i = 0; i < activeList.size(); i++) {
+                CompoundTag activeTag = activeList.getCompound(i);
+                String id = activeTag.getString("Id");
+                if (!id.isBlank()) {
+                    record.activeLevels.put(id, activeTag.getInt("Level"));
+                }
+            }
+        }
+        return record;
+    }
+}
