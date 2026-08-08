@@ -29,9 +29,9 @@ public final class Skills {
     /** 特殊增幅类每项上限 */
     public static final int AMPLIFY_MAX_POINTS = 500;
     /** 基础技能每级技能点消耗（默认值，可被 Config 覆盖） */
-    public static final double BASE_POINT_COST = 0.2;
+    public static final double BASE_POINT_COST = 1.0;
     /** 特殊增幅每级技能点消耗（默认值，可被 Config 覆盖） */
-    public static final double AMPLIFY_POINT_COST = 0.5;
+    public static final double AMPLIFY_POINT_COST = 2.0;
     /** 终极节点前置：两个指定技能各需投入点数（默认值，可被 Config 覆盖） */
     public static final int ULTIMATE_REQUIRE_POINTS = 500;
     /** 宇宙的青睐：一次性消耗技能点数（默认值，可被 Config 覆盖） */

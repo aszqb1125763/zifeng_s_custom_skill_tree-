@@ -89,7 +89,7 @@ public class SkillTreeScreen extends Screen {
 
     private int tickCounter = 0;
 
-    /** 四纵列布局：每列按自身技能数居中 */
+    /** 四纵列布局：四列顶部对齐（上方对齐），不再按技能数垂直居中 */
     private void rebuildButtons() {
         buttons.clear();
         // 4 列中心 x：列宽 150，间隔 30
@@ -100,23 +100,21 @@ public class SkillTreeScreen extends Screen {
         placeColumn(Skills.AURA_SKILLS, colCenters[3]);
     }
 
-    /** 单列垂直居中摆放（列高 = 数量×(按钮高+间距)，上下留 40px 给列标题） */
+    /** 四列统一顶部 y（上方对齐）：按钮区上方留空间给列标题 */
+    private static final int COLUMN_TOP = -160;
+
+    /** 单列从上往下摆放（顶部对齐，列高不再影响起始位置） */
     private void placeColumn(List<String> skills, int centerX) {
-        int count = skills.size();
-        int colHeight = count * BUTTON_HEIGHT + Math.max(0, count - 1) * VERTICAL_SPACING;
-        int top = -colHeight / 2 + 20; // 顶部留列标题空间
-        int y = top;
+        int y = COLUMN_TOP;
         for (String skill : skills) {
             buttons.add(new SkillButton(skill, centerX - BUTTON_WIDTH / 2, y));
             y += BUTTON_HEIGHT + VERTICAL_SPACING;
         }
     }
 
-    /** 列顶部 y（列标题用） */
+    /** 列顶部 y（列标题用，四列统一） */
     private int colTop(List<String> skills) {
-        int count = skills.size();
-        int colHeight = count * BUTTON_HEIGHT + Math.max(0, count - 1) * VERTICAL_SPACING;
-        return -colHeight / 2 + 20;
+        return COLUMN_TOP;
     }
 
     @Override
@@ -207,9 +205,9 @@ public class SkillTreeScreen extends Screen {
                     lines.add(Component.literal(line));
                 }
                 if (type == Skills.SkillType.BASE) {
-                    lines.add(Component.literal("[每级消耗 " + String.format("%.1f", Skills.basePointCost()) + " 点]"));
+                    lines.add(Component.literal("[每级消耗 " + fmtCost(Skills.basePointCost()) + " 点]"));
                 } else if (type == Skills.SkillType.AMPLIFY) {
-                    lines.add(Component.literal("[每级消耗 " + String.format("%.1f", Skills.amplifyPointCost()) + " 点]"));
+                    lines.add(Component.literal("[每级消耗 " + fmtCost(Skills.amplifyPointCost()) + " 点]"));
                 } else if (type == Skills.SkillType.AURA) {
                     lines.add(Component.literal("[下次消耗 " + (long) recordNextCost(button.skillId()) + " 点]"));
                 } else if (type == Skills.SkillType.ULTIMATE) {
@@ -296,9 +294,9 @@ public class SkillTreeScreen extends Screen {
             }
         } else if (type == Skills.SkillType.BASE || type == Skills.SkillType.AMPLIFY) {
             double unitCost = type == Skills.SkillType.BASE ? Skills.basePointCost() : Skills.amplifyPointCost();
-            // 生效等级（滚轮可调，实时显示）+ 下一级真实消耗（与 learnSkill 实际扣除一致：基础 0.2 / 增幅 0.5）
+            // 生效等级（滚轮可调，实时显示）+ 下一级真实消耗（与 learnSkill 实际扣除一致：基础 1 点 / 增幅 2 点）
             int active = activeLevels.getOrDefault(button.skillId(), points);
-            costText = "生效:" + active + "/" + points + " 下1级:" + String.format("%.1f", unitCost) + "点";
+            costText = "生效:" + active + "/" + points + " 下1级:" + fmtCost(unitCost) + "点";
         } else if (type == Skills.SkillType.ULTIMATE) {
             // 终极节点：单次解锁消耗（浴血/连斩/金身/挖/精通=1点，宇宙的青睐=1000，夜视/饱食=100）
             if (Skills.ULT_FAVOR.equals(button.skillId())) {
@@ -324,6 +322,11 @@ public class SkillTreeScreen extends Screen {
     /** 估算下一级消耗（客户端显示用） */
     private double recordNextCost(String skillId) {
         return nextCostLocal(skillId);
+    }
+
+    /** 消耗数值显示：整数不带小数（1 点），非整数保留 1 位小数（1.5 点） */
+    private static String fmtCost(double cost) {
+        return cost == Math.floor(cost) ? String.valueOf((long) cost) : String.format("%.1f", cost);
     }
 
     /** 客户端可学判定 */

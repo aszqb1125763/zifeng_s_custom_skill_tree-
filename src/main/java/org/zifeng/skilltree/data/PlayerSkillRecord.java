@@ -24,7 +24,7 @@ import java.util.UUID;
  */
 public class PlayerSkillRecord {
     private final UUID owner;
-    /** 剩余技能点（支持小数：基础每级 0.2，增幅每级 0.5，终极/光环 1 或更多） */
+    /** 剩余技能点（支持小数：基础每级 1，增幅每级 2，终极/光环 1 或更多） */
     private double skillPoints;
     private final Map<String, Integer> learnedSkills = new HashMap<>();
     private final Map<String, Boolean> toggles = new HashMap<>();
@@ -160,7 +160,7 @@ public class PlayerSkillRecord {
         return true;
     }
 
-    /** 下一级需要的技能点数：基础 0.2 / 增幅 0.5 / 终极 1 / 光环按消耗公式 / 宇宙的青睐 1000 / 夜视·饱食 100（数值走 Config） */
+    /** 下一级需要的技能点数：基础 1 / 增幅 2 / 终极 1 / 光环按消耗公式 / 宇宙的青睐 1000 / 夜视·饱食 100（数值走 Config） */
     public double getNextCost(String skillId) {
         if (Skills.ULT_FAVOR.equals(skillId)) {
             return Skills.ultFavorCost();

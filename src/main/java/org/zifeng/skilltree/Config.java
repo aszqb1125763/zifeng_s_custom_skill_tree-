@@ -197,10 +197,10 @@ public class Config {
         builder.comment("技能树经济数值：加点/终极解锁/杀戮光环的消耗。改动后需重新打开界面或按 N 刷新显示")
                 .push("economy");
         BASE_POINT_COST = builder
-                .comment("基础技能每级消耗技能点（默认 0.2）")
+                .comment("基础技能每级消耗技能点（默认 1.0）")
                 .defineInRange("basePointCost", Skills.BASE_POINT_COST, 0.01, 100.0);
         AMPLIFY_POINT_COST = builder
-                .comment("特殊增幅每级消耗技能点（默认 0.5）")
+                .comment("特殊增幅每级消耗技能点（默认 2.0）")
                 .defineInRange("amplifyPointCost", Skills.AMPLIFY_POINT_COST, 0.01, 100.0);
         ULTIMATE_REQUIRE_POINTS = builder
                 .comment("终极节点前置：基础/增幅技能各需投入的点数（默认 500）")
