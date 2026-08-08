@@ -72,6 +72,19 @@ public final class Skills {
         return Config.AURA_COST_MULTIPLIER.get();
     }
 
+    /**
+     * 终极节点一次性消耗技能点（用户指定，可被 Config 覆盖）：
+     * 浴血奋战/不坏金身/凤凰涅槃 = 500，死神凝视 = 1000，全能精通 = 5000，其余普通终极 = 1
+     */
+    public static int ultimateCost(String skillId) {
+        return switch (skillId) {
+            case ULT_BLOOD, ULT_GOLDEN, ULT_REVIVE -> Config.ULT_BASE_COST.get();
+            case ULT_REAPER -> Config.ULT_REAPER_COST.get();
+            case ULT_MASTER -> Config.ULT_MASTER_COST.get();
+            default -> 1; // 普通终极 1 点
+        };
+    }
+
     public enum SkillType {
         /** 基础属性（固定数值） */
         BASE,
@@ -122,9 +135,7 @@ public final class Skills {
 
     // ============ 终极节点 ============
     public static final String ULT_BLOOD = "ult_blood";     // 浴血奋战
-    public static final String ULT_COMBO = "ult_combo";     // 疾风连斩
     public static final String ULT_GOLDEN = "ult_golden";   // 不坏金身
-    public static final String ULT_DIG = "ult_dig";         // 万物皆可挖
     public static final String ULT_MASTER = "ult_master";   // 全能精通（毕业）
     public static final String ULT_FAVOR = "ult_favor";     // 宇宙的青睐（真创造飞行）
     public static final String NIGHT_VISION = "night_vision"; // 夜视（100点，1级）
@@ -139,7 +150,7 @@ public final class Skills {
     public static final String AURA_MAGNET = "aura_magnet";   // 磁力光环（吸取经验/掉落物）
     public static final String AURA_TIME = "aura_time";       // 时之环·永恒正午（锁定世界时间）
     public static final String AURA_WEATHER = "aura_weather"; // 晴空环·永恒晴天（锁定天气）
-    public static final String AURA_GUARD = "aura_guard";     // 守卫光环（全伤害防护）
+    public static final String AURA_LOCK = "aura_lock";       // 光环锁定（免疫TP/击退）
 
     /** 所有基础技能（纵列1） */
     public static final List<String> BASE_SKILLS = List.of(BODY_HP, BODY, TOUGH, BLADE, ATTACK_SPEED, MINING, MOVE, REGEN, LUCK, JUMP, FLY, SWIM, CRIT, LIFESTEAL, THORNS, ARMOR_PEN);
@@ -149,9 +160,9 @@ public final class Skills {
             AMP_REGEN, AMP_LUCK, AMP_JUMP, AMP_FLY, AMP_SWIM,
             AMP_CRIT, AMP_LIFESTEAL, AMP_THORNS, AMP_ARMOR_PEN, AMP_DROP);
     /** 所有终极节点（纵列3） */
-    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_COMBO, ULT_GOLDEN, ULT_DIG, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER);
+    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER);
     /** 所有杀戮光环（纵列4） */
-    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_GUARD);
+    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_LOCK);
 
     public static final List<String> ALL_SKILLS = new ArrayList<>() {{
         addAll(BASE_SKILLS);
@@ -172,11 +183,12 @@ public final class Skills {
     public static int getAuraMaxPoints(String skillId) {
         return switch (skillId) {
             case AURA_DAMAGE -> 1000;
-            case AURA_SPEED -> 100;
-            case AURA_HEAL -> 100;
+            case AURA_SPEED -> 20;
+            case AURA_HEAL -> 50;
             case AURA_MAGNET -> 1;
-            case AURA_TIME, AURA_WEATHER -> 1; // 一次性解锁（100 技能点）
-            case AURA_GUARD -> 100;
+            case AURA_TIME -> 1; // 一次性解锁（100 技能点）
+            case AURA_WEATHER -> 1; // 一次性解锁（100 技能点）
+            case AURA_LOCK -> 1; // 一次性解锁（1000 技能点）
             default -> 0;
         };
     }
@@ -232,9 +244,7 @@ public final class Skills {
             case AMP_THORNS -> "荆棘增幅";
             case AMP_ARMOR_PEN -> "破甲增幅";
             case ULT_BLOOD -> "浴血奋战";
-            case ULT_COMBO -> "疾风连斩";
             case ULT_GOLDEN -> "不坏金身";
-            case ULT_DIG -> "万物皆可挖";
             case ULT_MASTER -> "全能精通";
             case ULT_FAVOR -> "宇宙的青睐";
             case NIGHT_VISION -> "星瞳·夜视";
@@ -247,7 +257,7 @@ public final class Skills {
             case AURA_MAGNET -> "磁力光环";
             case AURA_TIME -> "时之环·永恒正午";
             case AURA_WEATHER -> "晴空环·永恒晴天";
-            case AURA_GUARD -> "守卫光环";
+            case AURA_LOCK -> "光环锁定";
             default -> "未知技能";
         };
     }
@@ -287,23 +297,21 @@ public final class Skills {
             case AMP_LIFESTEAL -> "吸血增幅：每点 +0.4% 吸血量倍率";
             case AMP_THORNS -> "荆棘增幅：每点 +0.4% 反伤倍率";
             case AMP_ARMOR_PEN -> "破甲增幅：每点 +0.4% 破甲增伤倍率";
-            case ULT_BLOOD -> "浴血奋战：生命<30% 近战伤害+50%，\n但受到伤害+20%\n前置：体魄500 + 锋刃500";
-            case ULT_COMBO -> "疾风连斩：连续攻击第3次起\n攻速额外+30%，中断重计\n前置：疾攻术500 + 疾攻增幅500";
-            case ULT_GOLDEN -> "不坏金身：致命伤害保1血+3秒无敌，\n冷却180秒\n前置：坚韧之躯500 + 防御强化500";
-            case ULT_DIG -> "万物皆可挖：挖掘20%概率瞬间完成\n不耗耐久（限基础挖速≤1.5秒方块）\n前置：采掘熟稔500 + 采掘增幅500";
-            case ULT_MASTER -> "全能精通：所有基础属性效果+25%，\n技能点获取速度-20%\n前置：解锁全部4个终极节点";
+            case ULT_BLOOD -> "浴血奋战：消耗 500 技能点，\n常驻攻击力 +50%、最大生命 +50%\n（燃血强化）\n前置：体魄500 + 锋刃500";
+            case ULT_GOLDEN -> "不坏金身：消耗 500 技能点，\n常驻抗性提升10级、伤害吸收100级、\n抗火5级\n前置：坚韧之躯500 + 防御强化500";
+            case ULT_MASTER -> "全能精通：消耗 5000 技能点，\n全方位防御（全伤害减免/护盾/免死/\n负面免疫），保证玩家不死\n前置：需解锁浴血奋战/不坏金身/凤凰涅槃/死神凝视";
             case ULT_FAVOR -> "宇宙的青睐：消耗 1000 技能点\n一次性点亮，解锁真正的创造飞行";
             case NIGHT_VISION -> "星瞳·夜视：消耗 100 技能点\n一次性点亮，永久夜视（不闪烁）";
             case SATURATION -> "星食·饱腹：消耗 100 技能点\n一次性点亮，饱食度永远满值";
-            case ULT_REVIVE -> "凤凰涅槃：死亡原地复活一次，\n回复50%生命并清除负面效果，冷却10分钟\n前置：生命汲取500 + 暴击精通500";
-            case ULT_REAPER -> "死神凝视：攻击生命<15%的非玩家生物时\n30%概率直接处决\n前置：破甲精通500 + 锋刃精通500";
-            case AURA_DAMAGE -> "杀戮光环·伤害：每级+5%伤害倍率，\n360°范围伤害全部目标\n上限1000级，消耗×1.05/级";
-            case AURA_SPEED -> "杀戮光环·速度：每级+0.19攻速\n（光环攻击频率），上限100级\n点满每秒攻击20次";
-            case AURA_HEAL -> "治愈光环：每级每秒恢复周围10格内\n友好生物0.5生命，上限100级\n（需总开关开启）";
+            case ULT_REVIVE -> "凤凰涅槃：消耗 500 技能点，\n死亡原地复活一次，回复50%生命\n并清除负面效果，冷却1分钟\n前置：生命汲取500 + 暴击精通500";
+            case ULT_REAPER -> "死神凝视：消耗 1000 技能点，\n攻击生命<15%的非玩家生物时\n30%概率直接处决\n前置：破甲精通500 + 锋刃精通500";
+            case AURA_DAMAGE -> "杀戮光环·伤害：每级+10%伤害倍率，\n360°范围伤害，附带混沌伤害\n（无视护甲真实伤害）\n上限1000级，默认10秒攻击一次";
+            case AURA_SPEED -> "杀戮光环·速度：提高光环攻击频率\n（每级减少攻击间隔，20级=每秒2次）\n未点亮默认10秒攻击一次\n上限20级";
+            case AURA_HEAL -> "治愈光环：每级给周围10格内\n友方单位对应等级的生命回复效果\n（50级 = 生命回复50级）\n上限50级，消耗随等级递增";
             case AURA_MAGNET -> "磁力光环：一次性解锁（消耗 " + String.format("%.0f", org.zifeng.skilltree.Config.MAGNET_COST.get()) + " 技能点）\n按 H 键开关，自动吸取经验与掉落物\n（潜行时暂停）";
             case AURA_TIME -> "时之环·永恒正午：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定世界时间\n为正午，不被睡觉/时间命令影响\n关闭后立即恢复正常时间流动";
             case AURA_WEATHER -> "晴空环·永恒晴天：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定晴天\n不被下雨/天气命令影响\n关闭后立即恢复正常天气";
-            case AURA_GUARD -> "守卫光环：每级 +1% 全伤害防护\n（包括真伤/混沌/指令伤害）\n100级=100%免疫，连 /kill 也无法击杀\n上限100级，消耗随等级递增";
+            case AURA_LOCK -> "光环锁定：消耗 1000 技能点\n一次性点亮，开启后免疫 TP 与击退\n（传送/瞬移/击退均无效）\n只有自己移动/飞行才能真正移动";
             default -> "";
         };
     }
@@ -312,10 +320,8 @@ public final class Skills {
     public static List<String> getUltimateRequirements(String skillId) {
         return switch (skillId) {
             case ULT_BLOOD -> List.of(BODY, BLADE);
-            case ULT_COMBO -> List.of(ATTACK_SPEED, AMP_ATTACK_SPEED);
             case ULT_GOLDEN -> List.of(TOUGH, AMP_ARMOR);
-            case ULT_DIG -> List.of(MINING, AMP_MINING);
-            case ULT_MASTER -> List.of(ULT_BLOOD, ULT_COMBO, ULT_GOLDEN, ULT_DIG);
+            case ULT_MASTER -> List.of(ULT_BLOOD, ULT_GOLDEN, ULT_REVIVE, ULT_REAPER);
             case ULT_REVIVE -> List.of(LIFESTEAL, CRIT);
             case ULT_REAPER -> List.of(ARMOR_PEN, BLADE);
             default -> List.of(); // 宇宙的青睐/夜视/饱食无前置
@@ -369,9 +375,7 @@ public final class Skills {
             case AMP_DROP -> Items.GOLD_BLOCK;                 // 掉落增幅：金块（宝物）
             // ===== 终极节点（纵列3） =====
             case ULT_BLOOD -> Items.BLAZE_ROD;                 // 浴血奋战：烈焰棒
-            case ULT_COMBO -> Items.GOLDEN_SWORD;              // 疾风连斩：金剑
             case ULT_GOLDEN -> Items.ENCHANTED_GOLDEN_APPLE;   // 不坏金身：附魔金苹果
-            case ULT_DIG -> Items.NETHERITE_PICKAXE;           // 万物皆可挖：下界合金镐
             case ULT_MASTER -> Items.NETHER_STAR;              // 全能精通：下界之星
             case ULT_FAVOR -> Items.DRAGON_EGG;                // 宇宙的青睐：龙蛋
             case NIGHT_VISION -> Items.GOLDEN_CARROT;          // 星瞳·夜视：金胡萝卜
@@ -385,7 +389,7 @@ public final class Skills {
             case AURA_MAGNET -> Items.LODESTONE;               // 磁力光环：磁石（吸铁）
             case AURA_TIME -> Items.CLOCK;                     // 时之环：时钟（锁定时间）
             case AURA_WEATHER -> Items.SUNFLOWER;              // 晴空环：向日葵（面向太阳）
-            case AURA_GUARD -> Items.NETHERITE_CHESTPLATE;     // 守卫光环：下界合金胸甲（顶级防护）
+            case AURA_LOCK -> Items.ANVIL;                     // 光环锁定：铁砧（稳固不动）
             default -> Items.BARRIER;
         };
     }

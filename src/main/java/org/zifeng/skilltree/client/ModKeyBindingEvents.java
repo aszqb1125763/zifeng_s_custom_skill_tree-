@@ -55,6 +55,9 @@ public class ModKeyBindingEvents {
         while (ModKeyBindings.TOGGLE_MAGNET.consumeClick()) {
             PacketDistributor.sendToServer(new ToggleMagnetC2SPacket());
         }
+        while (ModKeyBindings.TOGGLE_AURA_LOCK.consumeClick()) {
+            PacketDistributor.sendToServer(new org.zifeng.skilltree.network.ToggleLockC2SPacket());
+        }
         // 光环技能独立开关快捷键（默认空键，未绑定不触发）
         for (Map.Entry<String, net.minecraft.client.KeyMapping> entry : ModKeyBindings.auraKeyMappings().entrySet()) {
             while (entry.getValue().consumeClick()) {

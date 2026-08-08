@@ -171,6 +171,9 @@ public class PlayerSkillRecord {
         if (Skills.AURA_MAGNET.equals(skillId)) {
             return org.zifeng.skilltree.Config.MAGNET_COST.get(); // 磁力光环：一次性解锁
         }
+        if (Skills.AURA_LOCK.equals(skillId)) {
+            return org.zifeng.skilltree.Config.LOCK_COST.get(); // 光环锁定：一次性解锁
+        }
         if (Skills.AURA_TIME.equals(skillId) || Skills.AURA_WEATHER.equals(skillId)) {
             return Skills.minorUltCost(); // 时之环/晴空环：一次性解锁（默认 100 点）
         }
@@ -184,7 +187,7 @@ public class PlayerSkillRecord {
         if (type == Skills.SkillType.AMPLIFY) {
             return Skills.amplifyPointCost();
         }
-        return 1; // 终极
+        return Skills.ultimateCost(skillId); // 终极节点（浴血/金身/涅槃500，死神1000，全能精通5000）
     }
 
     /**
@@ -242,13 +245,16 @@ public class PlayerSkillRecord {
         if (Skills.AURA_MAGNET.equals(skillId)) {
             return org.zifeng.skilltree.Config.MAGNET_COST.get();
         }
+        if (Skills.AURA_LOCK.equals(skillId)) {
+            return org.zifeng.skilltree.Config.LOCK_COST.get();
+        }
         if (Skills.AURA_TIME.equals(skillId) || Skills.AURA_WEATHER.equals(skillId)) {
             return Skills.minorUltCost();
         }
         return switch (Skills.getType(skillId)) {
             case BASE -> points * Skills.basePointCost();
             case AMPLIFY -> points * Skills.amplifyPointCost();
-            case ULTIMATE -> points; // 普通终极 1 点/个
+            case ULTIMATE -> Skills.ultimateCost(skillId); // 一次性解锁（浴血/金身/涅槃500，死神1000，全能精通5000）
             case AURA -> {
                 long total = 0;
                 for (int i = 0; i < points; i++) {

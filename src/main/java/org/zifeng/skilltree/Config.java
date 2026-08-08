@@ -67,21 +67,37 @@ public class Config {
     /** 磁铁吸取经验半径（格，默认 4，最大 32） */
     public static final ModConfigSpec.DoubleValue MAGNET_XP_RADIUS;
 
+    /** 光环锁定：一次性消耗技能点（默认 1000） */
+    public static final ModConfigSpec.DoubleValue LOCK_COST;
+
     // ============ 杀戮光环（可热重载） ============
 
     /** 自动攻击半径（格） */
     public static final ModConfigSpec.DoubleValue AURA_ATTACK_RADIUS;
 
-    /** 攻击频率基准偏移：实际频率 = 玩家攻速属性 - 该值（基础 4.0 攻速 → 1 次/秒） */
-    public static final ModConfigSpec.DoubleValue AURA_FREQUENCY_BASE_OFFSET;
+    /** 光环基础攻击间隔（tick，200 = 10 秒一次，未学速度光环时） */
+    public static final ModConfigSpec.IntValue AURA_BASE_INTERVAL_TICKS;
 
-    /** 杀戮光环·伤害：每级伤害倍率（小数，0.05 = 每级 +5%，ADD_MULTIPLIED_TOTAL 乘算） */
+    /** 光环速度：每级减少的攻击间隔（tick，20 级 → 间隔 10 tick = 每秒 2 次） */
+    public static final ModConfigSpec.DoubleValue AURA_SPEED_INTERVAL_REDUCTION;
+
+    /** 杀戮光环·伤害：每级伤害倍率（小数，0.10 = 每级 +10%，ADD_MULTIPLIED_TOTAL 乘算） */
     public static final ModConfigSpec.DoubleValue AURA_DAMAGE_MULTIPLIER_PER_LEVEL;
 
-    /** 守卫光环：每级全伤害防护（小数，0.01 = 每级 1%，100 级 = 100% 免疫） */
-    public static final ModConfigSpec.DoubleValue AURA_GUARD_REDUCTION_PER_LEVEL;
+    /** 混沌伤害：光环攻击命中后附加的无视护甲真实伤害比例（小数，0.2 = 主伤害的 20%） */
+    public static final ModConfigSpec.DoubleValue AURA_CHAOS_DAMAGE_RATIO;
+
 
     // ============ 终极节点（可热重载） ============
+
+    /** 浴血奋战/不坏金身/凤凰涅槃：一次性消耗（默认 500） */
+    public static final ModConfigSpec.IntValue ULT_BASE_COST;
+
+    /** 死神凝视：一次性消耗（默认 1000） */
+    public static final ModConfigSpec.IntValue ULT_REAPER_COST;
+
+    /** 全能精通：一次性消耗（默认 5000） */
+    public static final ModConfigSpec.IntValue ULT_MASTER_COST;
 
     /** 全能精通：所有基础属性额外增幅（小数） */
     public static final ModConfigSpec.DoubleValue MASTER_BONUS;
@@ -89,35 +105,32 @@ public class Config {
     /** 全能精通：技能点获取速度倍率（0.8 = -20%） */
     public static final ModConfigSpec.DoubleValue MASTER_SKILL_POINT_RATE;
 
-    /** 浴血奋战：生命低于该比例触发增伤 */
-    public static final ModConfigSpec.DoubleValue BLOOD_THRESHOLD;
+    /** 全能精通：全伤害减免比例（小数，1.0 = 100%，对所有伤害类型生效含真伤/混沌/指令） */
+    public static final ModConfigSpec.DoubleValue MASTER_DAMAGE_REDUCTION;
 
-    /** 浴血奋战：触发时近战伤害增幅（小数） */
-    public static final ModConfigSpec.DoubleValue BLOOD_DAMAGE_BONUS;
+    /** 全能精通：免死保底冷却（tick，1200 = 1 分钟） */
+    public static final ModConfigSpec.IntValue MASTER_UNDYING_COOLDOWN;
 
-    /** 浴血奋战：受到伤害倍率（常驻） */
-    public static final ModConfigSpec.DoubleValue BLOOD_INCOMING_MULTIPLIER;
+    /** 全能精通：免死保底无敌时长（tick，60 = 3 秒） */
+    public static final ModConfigSpec.IntValue MASTER_UNDYING_INVULN;
 
-    /** 疾风连斩：连击≥3 时的攻速增幅（小数） */
-    public static final ModConfigSpec.DoubleValue COMBO_SPEED_BONUS;
+    /** 全能精通：免死保底回复生命比例（小数，0.5 = 50%） */
+    public static final ModConfigSpec.DoubleValue MASTER_UNDYING_HEALTH;
 
-    /** 疾风连斩：连击重置间隔（tick，20=1秒） */
-    public static final ModConfigSpec.IntValue COMBO_RESET_TICKS;
+    /** 浴血奋战：常驻攻击力增幅（小数，0.5 = +50%） */
+    public static final ModConfigSpec.DoubleValue BLOOD_ATTACK_BONUS;
 
-    /** 不坏金身：致命伤害后的无敌时长（tick） */
-    public static final ModConfigSpec.IntValue GOLDEN_INVULNERABILITY_TICKS;
+    /** 浴血奋战：常驻最大生命增幅（小数，0.5 = +50%） */
+    public static final ModConfigSpec.DoubleValue BLOOD_HEALTH_BONUS;
 
-    /** 不坏金身：冷却时长（tick，3600=180秒） */
-    public static final ModConfigSpec.IntValue GOLDEN_COOLDOWN_TICKS;
+    /** 不坏金身：常驻抗性提升等级（0 = 不生效） */
+    public static final ModConfigSpec.IntValue GOLDEN_RESISTANCE_LEVEL;
 
-    /** 不坏金身：触发后禁回血时长（tick） */
-    public static final ModConfigSpec.IntValue GOLDEN_NO_REGEN_TICKS;
+    /** 不坏金身：常驻伤害吸收等级（0 = 不生效） */
+    public static final ModConfigSpec.IntValue GOLDEN_ABSORPTION_LEVEL;
 
-    /** 万物皆可挖：瞬间完成概率（小数） */
-    public static final ModConfigSpec.DoubleValue DIG_INSTANT_CHANCE;
-
-    /** 万物皆可挖：仅对基础挖速 ≥ 该值的方块生效 */
-    public static final ModConfigSpec.DoubleValue DIG_MIN_BASE_SPEED;
+    /** 不坏金身：常驻抗火等级（0 = 不生效） */
+    public static final ModConfigSpec.IntValue GOLDEN_FIRE_RESISTANCE_LEVEL;
 
     // ============ 新增技能数值（可热重载） ============
 
@@ -136,7 +149,7 @@ public class Config {
     /** 吸血增幅：每点吸血量倍率（小数） */
     public static final ModConfigSpec.DoubleValue LIFESTEAL_AMP_PER_POINT;
 
-    /** 凤凰涅槃：冷却时长（tick，12000 = 10 分钟） */
+    /** 凤凰涅槃：冷却时长（tick，1200 = 1 分钟） */
     public static final ModConfigSpec.IntValue REVIVE_COOLDOWN_TICKS;
 
     /** 凤凰涅槃：复活时生命比例（小数，0.5 = 50%） */
@@ -153,9 +166,6 @@ public class Config {
 
     /** 治愈光环：作用半径（格） */
     public static final ModConfigSpec.DoubleValue AURA_HEAL_RADIUS;
-
-    /** 治愈光环：每级每秒治疗量 */
-    public static final ModConfigSpec.DoubleValue AURA_HEAL_PER_LEVEL;
 
     /** 技能重洗：返还技能点比例（小数，1.0 = 全额返还） */
     public static final ModConfigSpec.DoubleValue RESET_REFUND_RATE;
@@ -224,15 +234,18 @@ public class Config {
         AURA_ATTACK_RADIUS = builder
                 .comment("自动攻击半径（格，默认 20）")
                 .defineInRange("attackRadius", 20.0, 1.0, 128.0);
-        AURA_FREQUENCY_BASE_OFFSET = builder
-                .comment("攻击频率基准偏移：实际频率 = 玩家攻速属性 - 该值（基础攻速 4.0 → 1 次/秒；100 级光环速度 ≈ 20 次/秒）")
-                .defineInRange("frequencyBaseOffset", 3.0, 0.0, 10.0);
+        AURA_BASE_INTERVAL_TICKS = builder
+                .comment("光环基础攻击间隔（tick，200 = 10 秒一次；未学/关闭光环速度时）")
+                .defineInRange("auraBaseIntervalTicks", 200, 10, 12000);
+        AURA_SPEED_INTERVAL_REDUCTION = builder
+                .comment("光环速度：每级减少的攻击间隔（tick，默认 9.5；20 级 → 间隔 10 tick = 每秒 2 次）")
+                .defineInRange("auraSpeedIntervalReduction", 9.5, 0.0, 20.0);
         AURA_DAMAGE_MULTIPLIER_PER_LEVEL = builder
-                .comment("杀戮光环·伤害：每级伤害倍率（小数，0.05 = 每级 +5%，乘算叠加到攻击伤害属性）")
-                .defineInRange("damageMultiplierPerLevel", 0.05, 0.001, 1.0);
-        AURA_GUARD_REDUCTION_PER_LEVEL = builder
-                .comment("守卫光环：每级全伤害防护（小数，0.01 = 每级 1%；对所有伤害类型生效，含真伤/混沌/指令；100 级 = 100% 免疫）")
-                .defineInRange("guardReductionPerLevel", 0.01, 0.001, 0.1);
+                .comment("杀戮光环·伤害：每级伤害倍率（小数，0.10 = 每级 +10%，乘算叠加到攻击伤害属性）")
+                .defineInRange("damageMultiplierPerLevel", 0.10, 0.001, 1.0);
+        AURA_CHAOS_DAMAGE_RATIO = builder
+                .comment("混沌伤害：光环攻击命中后附加的无视护甲真实伤害比例（小数，0.2 = 主伤害的 20%；参考龙之研究混沌武器）")
+                .defineInRange("auraChaosDamageRatio", 0.2, 0.0, 1.0);
         builder.pop();
 
         builder.comment("磁铁效果：吸取经验与掉落物（快捷键 H 切换）。改动即时生效")
@@ -241,11 +254,14 @@ public class Config {
                 .comment("开启磁铁消耗的技能点（默认 10）")
                 .defineInRange("magnetCost", 10.0, 0.0, 100000.0);
         MAGNET_ITEM_RADIUS = builder
-                .comment("吸取掉落物半径（格，默认 21，最大 32）")
-                .defineInRange("magnetItemRadius", 21.0, 1.0, 32.0);
+                .comment("吸取掉落物半径（格，默认 20，xyz 全方向，最大 32）")
+                .defineInRange("magnetItemRadius", 20.0, 1.0, 32.0);
         MAGNET_XP_RADIUS = builder
-                .comment("吸取经验半径（格，默认 4，最大 32）")
-                .defineInRange("magnetXpRadius", 4.0, 1.0, 32.0);
+                .comment("吸取经验半径（格，默认 20，xyz 全方向，最大 32）")
+                .defineInRange("magnetXpRadius", 20.0, 1.0, 32.0);
+        LOCK_COST = builder
+                .comment("光环锁定：一次性消耗技能点（默认 1000）")
+                .defineInRange("lockCost", 1000.0, 1.0, 1000000.0);
         builder.pop();
 
         builder.comment("终极节点被动数值。改动即时生效")
@@ -256,36 +272,42 @@ public class Config {
         MASTER_SKILL_POINT_RATE = builder
                 .comment("全能精通：技能点获取速度倍率（0.8 = -20%）")
                 .defineInRange("masterSkillPointRate", 0.8, 0.01, 5.0);
-        BLOOD_THRESHOLD = builder
-                .comment("浴血奋战：生命低于该比例时近战伤害增幅生效（默认 0.3）")
-                .defineInRange("bloodThreshold", 0.3, 0.01, 0.99);
-        BLOOD_DAMAGE_BONUS = builder
-                .comment("浴血奋战：触发时近战伤害增幅（小数，0.5 = +50%）")
-                .defineInRange("bloodDamageBonus", 0.5, 0.0, 10.0);
-        BLOOD_INCOMING_MULTIPLIER = builder
-                .comment("浴血奋战：受到伤害倍率（常驻，1.2 = +20%）")
-                .defineInRange("bloodIncomingMultiplier", 1.2, 1.0, 5.0);
-        COMBO_SPEED_BONUS = builder
-                .comment("疾风连斩：连击≥3 次时的攻速增幅（小数，0.3 = +30%）")
-                .defineInRange("comboSpeedBonus", 0.3, 0.0, 5.0);
-        COMBO_RESET_TICKS = builder
-                .comment("疾风连斩：连击重置间隔（tick，20 = 1 秒）")
-                .defineInRange("comboResetTicks", 20, 1, 200);
-        GOLDEN_INVULNERABILITY_TICKS = builder
-                .comment("不坏金身：致命伤害后的无敌时长（tick，60 = 3 秒）")
-                .defineInRange("goldenInvulnerabilityTicks", 60, 1, 1200);
-        GOLDEN_COOLDOWN_TICKS = builder
-                .comment("不坏金身：冷却时长（tick，3600 = 180 秒）")
-                .defineInRange("goldenCooldownTicks", 3600, 20, 72000);
-        GOLDEN_NO_REGEN_TICKS = builder
-                .comment("不坏金身：触发后生命恢复禁用时长（tick，200 = 10 秒）")
-                .defineInRange("goldenNoRegenTicks", 200, 0, 7200);
-        DIG_INSTANT_CHANCE = builder
-                .comment("万物皆可挖：瞬间完成采掘的概率（小数，0.2 = 20%）")
-                .defineInRange("digInstantChance", 0.2, 0.01, 1.0);
-        DIG_MIN_BASE_SPEED = builder
-                .comment("万物皆可挖：仅对基础挖速 ≥ 该值的方块生效（8 ≈ 挖掘 ≤1.5 秒的方块）")
-                .defineInRange("digMinBaseSpeed", 8.0, 0.0, 100.0);
+        MASTER_DAMAGE_REDUCTION = builder
+                .comment("全能精通：全伤害减免比例（小数，1.0 = 100% 免疫所有伤害；对所有伤害类型生效，含真伤/混沌/指令）")
+                .defineInRange("masterDamageReduction", 1.0, 0.0, 1.0);
+        MASTER_UNDYING_COOLDOWN = builder
+                .comment("全能精通：免死保底冷却（tick，1200 = 1 分钟）")
+                .defineInRange("masterUndyingCooldown", 1200, 100, 240000);
+        MASTER_UNDYING_INVULN = builder
+                .comment("全能精通：免死保底无敌时长（tick，60 = 3 秒）")
+                .defineInRange("masterUndyingInvuln", 60, 10, 1200);
+        MASTER_UNDYING_HEALTH = builder
+                .comment("全能精通：免死保底回复生命比例（小数，0.5 = 50%）")
+                .defineInRange("masterUndyingHealth", 0.5, 0.05, 1.0);
+        ULT_BASE_COST = builder
+                .comment("浴血奋战/不坏金身/凤凰涅槃：一次性消耗技能点（默认 500）")
+                .defineInRange("ultBaseCost", 500, 1, 1000000);
+        ULT_REAPER_COST = builder
+                .comment("死神凝视：一次性消耗技能点（默认 1000）")
+                .defineInRange("ultReaperCost", 1000, 1, 1000000);
+        ULT_MASTER_COST = builder
+                .comment("全能精通：一次性消耗技能点（默认 5000）")
+                .defineInRange("ultMasterCost", 5000, 1, 10000000);
+        BLOOD_ATTACK_BONUS = builder
+                .comment("浴血奋战：常驻攻击力增幅（小数，0.5 = +50%）")
+                .defineInRange("bloodAttackBonus", 0.5, 0.0, 10.0);
+        BLOOD_HEALTH_BONUS = builder
+                .comment("浴血奋战：常驻最大生命增幅（小数，0.5 = +50%）")
+                .defineInRange("bloodHealthBonus", 0.5, 0.0, 10.0);
+        GOLDEN_RESISTANCE_LEVEL = builder
+                .comment("不坏金身：常驻抗性提升等级（10 = 10级，0 = 不生效）")
+                .defineInRange("goldenResistanceLevel", 10, 0, 255);
+        GOLDEN_ABSORPTION_LEVEL = builder
+                .comment("不坏金身：常驻伤害吸收等级（100 = 100级，0 = 不生效）")
+                .defineInRange("goldenAbsorptionLevel", 100, 0, 255);
+        GOLDEN_FIRE_RESISTANCE_LEVEL = builder
+                .comment("不坏金身：常驻抗火等级（5 = 5级，0 = 不生效）")
+                .defineInRange("goldenFireResistanceLevel", 5, 0, 255);
         builder.pop();
 
         builder.comment("新增技能数值（暴击/吸血/凤凰涅槃/治愈光环）与技能重洗。改动即时生效")
@@ -306,8 +328,8 @@ public class Config {
                 .comment("吸血增幅：每点吸血量倍率（小数，0.004 = +0.4%/点）")
                 .defineInRange("lifestealAmpPerPoint", 0.004, 0.0, 0.05);
         REVIVE_COOLDOWN_TICKS = builder
-                .comment("凤凰涅槃：冷却时长（tick，12000 = 10 分钟）")
-                .defineInRange("reviveCooldownTicks", 12000, 100, 240000);
+                .comment("凤凰涅槃：冷却时长（tick，1200 = 1 分钟）")
+                .defineInRange("reviveCooldownTicks", 1200, 100, 240000);
         REVIVE_HEALTH_RATIO = builder
                 .comment("凤凰涅槃：复活时生命比例（小数，0.5 = 50%）")
                 .defineInRange("reviveHealthRatio", 0.5, 0.01, 1.0);
@@ -323,9 +345,6 @@ public class Config {
         AURA_HEAL_RADIUS = builder
                 .comment("治愈光环：作用半径（格，默认 10）")
                 .defineInRange("auraHealRadius", 10.0, 1.0, 64.0);
-        AURA_HEAL_PER_LEVEL = builder
-                .comment("治愈光环：每级每秒治疗量（默认 0.5，100 级 = 50 点/秒）")
-                .defineInRange("auraHealPerLevel", 0.5, 0.1, 100.0);
         RESET_REFUND_RATE = builder
                 .comment("技能重洗（界面按 R 键）：返还技能点比例（小数，1.0 = 全额返还，0.8 = 返还 80%）")
                 .defineInRange("resetRefundRate", 1.0, 0.0, 1.0);

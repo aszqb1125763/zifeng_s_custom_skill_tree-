@@ -5,14 +5,9 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.ai.attributes.AttributeInstance;
-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
-import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Abilities;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
@@ -26,11 +21,8 @@ import net.minecraft.world.level.storage.loot.predicates.LootItemRandomChanceWit
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
-import net.neoforged.neoforge.event.entity.living.LivingDestroyBlockEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingExperienceDropEvent;
-import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import org.zifeng.skilltree.SkillTreeMod;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
@@ -50,28 +42,25 @@ import java.util.UUID;
  * 终极节点被动效果 + 非属性类技能效果（GAME 总线，由 SkillTreeMod 手动注册）：
  * <ul>
  *   <li>再生体魄/生命涌泉：每秒生命恢复</li>
- *   <li>浴血奋战：生命<30% 近战伤害+50%，受到伤害+20%</li>
- *   <li>疾风连斩：连续攻击第3次起攻速+30%</li>
- *   <li>不坏金身：致命伤害保1血+3秒无敌（冷却180秒）</li>
- *   <li>万物皆可挖：20% 概率瞬间完成采掘</li>
+ *   <li>浴血奋战：常驻攻击力 +50%、最大生命 +50%</li>
+ *   <li>不坏金身：常驻抗性提升/伤害吸收/抗火 buff</li>
+ *   <li>凤凰涅槃：死亡复活</li>
  *   <li>掉落增幅：怪物掉落+经验倍率</li>
  * </ul>
  */
 public class UltimateEvents {
 
-    // ============ 不坏金身状态 ============
-    private static final Map<UUID, Long> goldenCooldownUntil = new HashMap<>(); // 世界时间 tick
-    private static final Map<UUID, Long> goldenNoRegenUntil = new HashMap<>();
-
     // ============ 凤凰涅槃状态 ============
     private static final Map<UUID, Long> reviveCooldownUntil = new HashMap<>(); // 世界时间 tick
 
-    // ============ 疾风连斩连击状态 ============
-    private static final Map<UUID, Integer> comboCount = new HashMap<>();
-    private static final Map<UUID, Long> lastAttackTick = new HashMap<>();
+    // ============ 全能精通免死状态 ============
+    private static final Map<UUID, Long> masterUndyingUntil = new HashMap<>(); // 免死保底冷却
+    private static final Map<UUID, Long> masterInvulnUntil = new HashMap<>(); // 免死触发后的无敌期
 
-    /** 疾风连斩：连击≥3 时挂的攻速临时修饰符 id */
-    private static final ResourceLocation COMBO_MOD = ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "ult_combo_speed");
+    /** 全能精通是否已学且启用 */
+    private static boolean isMasterEnabled(PlayerSkillRecord record) {
+        return record.getLearnedPoints(Skills.ULT_MASTER) > 0 && record.isEnabled(Skills.ULT_MASTER);
+    }
 
     /** 技能授予的飞行权限记录（用于"关闭技能→回收"与"登出→回收"，防止误关创造模式/其他模组的飞行） */
     private static final Set<UUID> SKILL_FLIGHT_GRANTED = new HashSet<>();
@@ -79,14 +68,10 @@ public class UltimateEvents {
     /** 玩家登出/切换存档时清理该玩家的临时状态（防跨会话残留） */
     public static void clearPlayer(ServerPlayer player) {
         UUID uuid = player.getUUID();
-        comboCount.remove(uuid);
-        lastAttackTick.remove(uuid);
-        goldenCooldownUntil.remove(uuid);
-        goldenNoRegenUntil.remove(uuid);
         reviveCooldownUntil.remove(uuid);
+        masterUndyingUntil.remove(uuid);
+        masterInvulnUntil.remove(uuid);
         SKILL_FLIGHT_GRANTED.remove(uuid);
-        // 移除连击攻速修饰符（防跨会话残留）
-        applyComboModifier(player, false);
     }
 
     /**
@@ -122,31 +107,48 @@ public class UltimateEvents {
         player.onUpdateAbilities();
     }
 
-    // ============ 再生体魄：每秒回血 + 宇宙的青睐：真创造飞行 ============
+    // ============ 再生体魄：每秒回血 + 宇宙的青睐：真创造飞行 + 不坏金身 buff ============
     @SubscribeEvent
     public static void onPlayerTick(net.neoforged.neoforge.event.tick.PlayerTickEvent.Pre event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             PlayerSkillRecord record = getRecord(player);
-            long gameTime = player.level().getGameTime();
-            // 疾风连斩：连击超时（Config 可调，默认 1 秒）→ 重置并移除攻速加成
-            UUID uuid = player.getUUID();
-            Long lastAttack = lastAttackTick.get(uuid);
-            if (lastAttack != null && gameTime - lastAttack > org.zifeng.skilltree.Config.COMBO_RESET_TICKS.get()) {
-                lastAttackTick.remove(uuid);
-                comboCount.remove(uuid);
-                applyComboModifier(player, false);
-            }
             double regen = SkillEffects.getRegenPerSecond(record);
-            // 不坏金身触发后 10 秒生命恢复归零
-            if (goldenNoRegenUntil.getOrDefault(player.getUUID(), 0L) > player.level().getGameTime()) {
-                regen = 0;
-            }
             if (regen > 0 && player.getHealth() < player.getMaxHealth()) {
                 if (player.tickCount % 20 == 0) { // 每秒结算
                     player.heal((float) regen);
                 }
             }
+            // 不坏金身：常驻 buff（抗性提升/伤害吸收/抗火），点亮且启用时每 20 tick 刷新保持
+            if (record.getLearnedPoints(Skills.ULT_GOLDEN) > 0 && record.isEnabled(Skills.ULT_GOLDEN)) {
+                if (player.tickCount % 20 == 0) {
+                    int resist = org.zifeng.skilltree.Config.GOLDEN_RESISTANCE_LEVEL.get();
+                    int absorb = org.zifeng.skilltree.Config.GOLDEN_ABSORPTION_LEVEL.get();
+                    int fire = org.zifeng.skilltree.Config.GOLDEN_FIRE_RESISTANCE_LEVEL.get();
+                    if (resist > 0) {
+                        var cur = player.getEffect(net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE);
+                        if (cur == null || cur.getAmplifier() < resist - 1 || cur.getDuration() < 300) {
+                            player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                                    net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE, 400, resist - 1, false, false, false));
+                        }
+                    }
+                    if (absorb > 0) {
+                        var cur = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
+                        if (cur == null || cur.getAmplifier() < absorb - 1 || cur.getDuration() < 300) {
+                            player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                                    net.minecraft.world.effect.MobEffects.ABSORPTION, 400, absorb - 1, false, false, false));
+                        }
+                    }
+                    if (fire > 0) {
+                        var cur = player.getEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE);
+                        if (cur == null || cur.getAmplifier() < fire - 1 || cur.getDuration() < 300) {
+                            player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                                    net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE, 400, fire - 1, false, false, false));
+                        }
+                    }
+                }
+            }
             // 宇宙的青睐：技能飞行权限管理（点亮→授予，关闭→回收，绝不触碰创造模式/其他模组的飞行）
+            // 纯创造式飞行：点亮即授予 mayfly，玩家双击空格/Shift 落地由原版逻辑处理，不做任何强制。
             boolean favor = record.getLearnedPoints(Skills.ULT_FAVOR) > 0 && record.isEnabled(Skills.ULT_FAVOR);
             Abilities abilities = player.getAbilities();
             if (favor) {
@@ -203,34 +205,58 @@ public class UltimateEvents {
                 player.getFoodData().setFoodLevel(20);
                 player.getFoodData().setSaturation(20.0f);
             }
+            // 全能精通：全方位防御（参考 Re:Avaritia 无尽套 + DE 混沌护胸）
+            if (isMasterEnabled(record)) {
+                // ① 负面效果免疫：每 tick 清除非有益效果（保留不坏金身的抗性/吸收等有益 buff）
+                if (player.tickCount % 10 == 0) {
+                    var effects = new java.util.ArrayList<>(player.getActiveEffects());
+                    for (var effect : effects) {
+                        if (!effect.getEffect().value().isBeneficial()) {
+                            player.removeEffect(effect.getEffect());
+                        }
+                    }
+                }
+                // ② 火焰免疫：持续灭火
+                if (player.isOnFire() && player.tickCount % 5 == 0) {
+                    player.clearFire();
+                }
+                // ③ 溺水不扣血：无限氧气（空气值恒满）
+                if (player.tickCount % 20 == 0) {
+                    player.setAirSupply(player.getMaxAirSupply());
+                }
+                // ④ 无敌期持续（免死保底触发后的 3 秒，防止再次受伤死亡）
+                long now = player.level().getGameTime();
+                if (masterInvulnUntil.getOrDefault(player.getUUID(), 0L) > now) {
+                    player.setInvulnerable(true);
+                } else {
+                    player.setInvulnerable(false);
+                }
+            } else {
+                // 未点亮/关闭 → 确保无敌状态复位
+                masterInvulnUntil.remove(player.getUUID());
+                if (player.isInvulnerable()) {
+                    player.setInvulnerable(false);
+                }
+            }
+            // 凤凰涅槃：每秒同步冷却状态到客户端（HUD 图标提示冷却倒计时/就绪）
+            if (player.tickCount % 20 == 0) {
+                boolean reviveLearned = record.getLearnedPoints(Skills.ULT_REVIVE) > 0 && record.isEnabled(Skills.ULT_REVIVE);
+                int remaining = 0;
+                if (reviveLearned) {
+                    long cdUntil = reviveCooldownUntil.getOrDefault(player.getUUID(), 0L);
+                    remaining = (int) Math.max(0, cdUntil - player.level().getGameTime());
+                }
+                net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                        new org.zifeng.skilltree.network.ReviveCooldownS2CPacket(reviveLearned, remaining));
+            }
         }
     }
 
-    // ============ 浴血奋战：生命<30% 近战增伤 50% / 受伤 +20% ============
+    // ============ 浴血奋战（常驻属性：攻击力/生命 +50%，由 SkillEffects 属性修饰符实现）+ 暴击/破甲/死神凝视 ============
     @SubscribeEvent
     public static void onLivingDamage(LivingDamageEvent.Pre event) {
-        if (event.getEntity() instanceof ServerPlayer player) {
-            PlayerSkillRecord record = getRecord(player);
-            boolean blood = record.getLearnedPoints(Skills.ULT_BLOOD) > 0;
-            if (blood) {
-                double healthRatio = player.getHealth() / Math.max(1, player.getMaxHealth());
-                // 受伤倍率（Config 可调，默认 1.2 = +20%，常驻代价）
-                event.setNewDamage(event.getNewDamage() * org.zifeng.skilltree.Config.BLOOD_INCOMING_MULTIPLIER.get().floatValue());
-            }
-        }
         if (event.getSource().getDirectEntity() instanceof ServerPlayer attacker) {
-        PlayerSkillRecord record = getRecord(attacker);
-        boolean blood = record.getLearnedPoints(Skills.ULT_BLOOD) > 0;
-        if (blood) {
-            double healthRatio = attacker.getHealth() / Math.max(1, attacker.getMaxHealth());
-            boolean melee = event.getSource().getDirectEntity() != null
-                    && !(event.getSource().getDirectEntity() instanceof AbstractArrow)
-                    && !event.getSource().is(DamageTypes.MAGIC);
-            // 生命低于阈值（Config 可调，默认 30%）→ 近战伤害增幅（默认 +50%）
-            if (healthRatio < org.zifeng.skilltree.Config.BLOOD_THRESHOLD.get() && melee) {
-                event.setNewDamage(event.getNewDamage() * (float) (1 + org.zifeng.skilltree.Config.BLOOD_DAMAGE_BONUS.get()));
-            }
-        }
+            PlayerSkillRecord record = getRecord(attacker);
             // 暴击：暴击精通（几率）+ 暴击增幅（伤害），任意来源攻击（含光环）都可触发
             if (attacker.getRandom().nextFloat() < (float) SkillEffects.getCritChance(record)) {
                 event.setNewDamage(event.getNewDamage() * (float) SkillEffects.getCritMultiplier(record));
@@ -265,29 +291,51 @@ public class UltimateEvents {
         }
     }
 
-    // ============ 凤凰涅槃：死亡时原地复活 ============
+    // ============ 凤凰涅槃：死亡时原地复活 + 全能精通免死保底 ============
     @SubscribeEvent
     public static void onLivingDeath(LivingDeathEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             PlayerSkillRecord record = getRecord(player);
-            // 守卫光环 100 级（100% 防护）：拦截一切死亡，包括 /kill 指令（直接 die() 不走伤害事件）
-            // 以及虚空/命令/创造测试等任何致死方式
-            int guard = record.isEnabled(Skills.AURA_GUARD) ? record.getActiveLevel(Skills.AURA_GUARD) : 0;
-            if (guard >= 100) {
+            long now = player.level().getGameTime();
+            UUID uuid = player.getUUID();
+
+            // 全能精通免死保底（参考 DE Undying 不死模块）：冷却内保 1 血，冷却好则回血+清负面+无敌
+            if (isMasterEnabled(record)) {
+                long masterCdUntil = masterUndyingUntil.getOrDefault(uuid, 0L);
+                long invulnUntil = masterInvulnUntil.getOrDefault(uuid, 0L);
+                if (now < invulnUntil) {
+                    // 无敌期内：直接取消死亡
+                    event.setCanceled(true);
+                    player.setHealth(Math.max(1.0F, player.getHealth()));
+                    return;
+                }
+                if (now >= masterCdUntil) {
+                    // 免死触发：回血 50% + 清负面 + 无敌 3 秒 + 图腾动画，进入冷却
+                    event.setCanceled(true);
+                    player.setHealth(Math.max(1.0F, player.getMaxHealth()
+                            * org.zifeng.skilltree.Config.MASTER_UNDYING_HEALTH.get().floatValue()));
+                    player.removeAllEffects();
+                    player.level().broadcastEntityEvent(player, (byte) 35);
+                    long cd = org.zifeng.skilltree.Config.MASTER_UNDYING_COOLDOWN.get();
+                    long invuln = org.zifeng.skilltree.Config.MASTER_UNDYING_INVULN.get();
+                    masterUndyingUntil.put(uuid, now + cd);
+                    masterInvulnUntil.put(uuid, now + invuln);
+                    player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                            "🛡 全能精通防御生效，免死一次！（冷却 " + (cd / 20 / 60) + " 分钟）"));
+                    return;
+                }
+                // 冷却中：保 1 血不死（真正的"保证玩家不死"，除非冷却已过）
                 event.setCanceled(true);
-                player.setHealth(player.getMaxHealth());
-                player.removeAllEffects(); // 清负面状态，防死亡后残留
-                // 原版不死图腾同款复活粒子动画
-                player.level().broadcastEntityEvent(player, (byte) 35);
-                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                        "🛡 守卫光环 100% 防护生效，死亡被完全免疫！"));
+                player.setHealth(Math.max(1.0F, player.getHealth() - 1));
+                player.hurtTime = 0;
+                player.invulnerableTime = 10;
                 return;
             }
+
+            // 凤凰涅槃：死亡原地复活（冷却 1 分钟，HUD 提示冷却状态）
             if (record.getLearnedPoints(Skills.ULT_REVIVE) <= 0 || !record.isEnabled(Skills.ULT_REVIVE)) {
                 return;
             }
-            long now = player.level().getGameTime();
-            UUID uuid = player.getUUID();
             long cdUntil = reviveCooldownUntil.getOrDefault(uuid, 0L);
             if (now < cdUntil) {
                 return; // 冷却中
@@ -304,58 +352,22 @@ public class UltimateEvents {
             player.level().broadcastEntityEvent(player, (byte) 35);
             long cooldown = org.zifeng.skilltree.Config.REVIVE_COOLDOWN_TICKS.get();
             reviveCooldownUntil.put(uuid, now + cooldown);
-            int minutes = (int) (cooldown / 20 / 60);
+            int seconds = (int) (cooldown / 20);
             player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                    "🔥 凤凰涅槃！你已原地复活（冷却 " + minutes + " 分钟）"));
+                    "🔥 凤凰涅槃！你已原地复活（冷却 " + seconds + " 秒）"));
         }
     }
 
-    // ============ 疾风连斩：连续攻击第3次起攻速 +30% ============
-    @SubscribeEvent
-    public static void onPlayerAttack(AttackEntityEvent event) {
-        Player player = event.getEntity();
-        if (!(player instanceof ServerPlayer sp)) return;
-        PlayerSkillRecord record = getRecord(sp);
-        if (record.getLearnedPoints(Skills.ULT_COMBO) <= 0) return;
-
-        long now = sp.level().getGameTime();
-        UUID uuid = sp.getUUID();
-        Integer combo = comboCount.getOrDefault(uuid, 0);
-        Long last = lastAttackTick.getOrDefault(uuid, 0L);
-        int resetTicks = org.zifeng.skilltree.Config.COMBO_RESET_TICKS.get();
-        combo = (now - last <= resetTicks) ? combo + 1 : 1;
-        comboCount.put(uuid, combo);
-        lastAttackTick.put(uuid, now);
-
-        // 第 3 次起额外攻速（Config 可调，默认 +30%；连击中断/登出时移除）
-        applyComboModifier(sp, combo >= 3);
-    }
-
-    /**
-     * 疾风连斩攻速修饰符：active=true 时给攻速属性 +攻速增幅（ADD_MULTIPLIED_TOTAL，Config 可调），否则移除。
-     * 幂等：重复调用先移除再添加，不会叠加。
-     */
-    private static void applyComboModifier(ServerPlayer player, boolean active) {
-        AttributeInstance attr = player.getAttribute(Attributes.ATTACK_SPEED);
-        if (attr == null) return;
-        attr.removeModifier(COMBO_MOD);
-        if (active) {
-            attr.addTransientModifier(new AttributeModifier(
-                    COMBO_MOD, org.zifeng.skilltree.Config.COMBO_SPEED_BONUS.get(), AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL));
-        }
-    }
-
-    // ============ 物理减伤（自定义属性）+ 不坏金身：致命伤害保 1 血 + 3 秒无敌 ============
+    // ============ 物理减伤（自定义属性） + 全能精通全伤害减免 + 荆棘反伤 ============
     @SubscribeEvent
     public static void onLivingIncomingDamage(net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             PlayerSkillRecord record = getRecord(player);
-            // 0. 守卫光环：每级 +1% 全伤害防护（对所有伤害源生效，包括真伤/混沌/命令等任何标签的伤害）
-            //    100 级 = 100% 减伤 = 免疫一切走伤害事件的伤害（/kill 走死亡事件，由 onLivingDeath 拦截）
-            int guard = record.isEnabled(Skills.AURA_GUARD) ? record.getActiveLevel(Skills.AURA_GUARD) : 0;
-            if (guard > 0) {
-                float guardReduction = (float) Math.min(1.0, guard * org.zifeng.skilltree.Config.AURA_GUARD_REDUCTION_PER_LEVEL.get());
-                event.setAmount(event.getAmount() * (1 - guardReduction));
+            // 0. 全能精通：全伤害减免 100%（对所有伤害类型生效，包括真伤/混沌/指令；参考 DE 混沌护胸的全伤害防护）
+            //    /kill 指令伤害也免疫（它走 LivingDeathEvent，由免死保底拦截；此处对走伤害事件的伤害全额减免）
+            if (isMasterEnabled(record)) {
+                float masterReduction = org.zifeng.skilltree.Config.MASTER_DAMAGE_REDUCTION.get().floatValue();
+                event.setAmount(event.getAmount() * (1 - masterReduction));
             }
             // 1. 物理减伤（自定义属性，独立于原版护甲的计算层，替代原 CombatRulesMixin 的全局修改）
             //    仅对会被护甲阻挡的伤害生效（BYPASSES_ARMOR 的伤害不减免），与原版行为一致
@@ -374,39 +386,26 @@ public class UltimateEvents {
                     attacker.hurt(player.damageSources().thorns(player), (float) thorns);
                 }
             }
-            // 2. 不坏金身：减伤后的伤害仍致命才触发保 1 血 + 无敌
-            if (record.getLearnedPoints(Skills.ULT_GOLDEN) <= 0) return;
-            long now = player.level().getGameTime();
-            UUID uuid = player.getUUID();
-            long cdUntil = goldenCooldownUntil.getOrDefault(uuid, 0L);
-            if (now < cdUntil) return; // 冷却中
+        }
+    }
 
-            float amount = event.getAmount();
-            if (amount >= player.getHealth()) { // 致命伤害
-                event.setAmount(Math.max(0, player.getHealth() - 1));
-                int invuln = org.zifeng.skilltree.Config.GOLDEN_INVULNERABILITY_TICKS.get();
-                int cooldown = org.zifeng.skilltree.Config.GOLDEN_COOLDOWN_TICKS.get();
-                int noRegen = org.zifeng.skilltree.Config.GOLDEN_NO_REGEN_TICKS.get();
-                event.setInvulnerabilityTicks(invuln); // 无敌时长（默认 3 秒）
-                goldenCooldownUntil.put(uuid, now + cooldown); // 冷却（默认 180 秒）
-                goldenNoRegenUntil.put(uuid, now + noRegen);   // 禁回血（默认 10 秒）
+    // ============ 全能精通：摔落免疫 + 击退免疫（参考 Re:Avaritia 无尽鞘翅/无尽盾） ============
+    @SubscribeEvent
+    public static void onLivingFall(net.neoforged.neoforge.event.entity.living.LivingFallEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            PlayerSkillRecord record = getRecord(player);
+            if (isMasterEnabled(record)) {
+                event.setCanceled(true); // 摔落无伤
             }
         }
     }
 
-    // ============ 万物皆可挖：20% 概率瞬间完成采掘 ============
     @SubscribeEvent
-    public static void onBreakSpeed(PlayerEvent.BreakSpeed event) {
-        Player player = event.getEntity();
-        if (!(player instanceof ServerPlayer sp)) return;
-        PlayerSkillRecord record = getRecord(sp);
-        if (record.getLearnedPoints(Skills.ULT_DIG) <= 0) return;
-
-        float baseSpeed = event.getOriginalSpeed();
-        // 仅对基础挖掘时间 ≤ 1.5 秒的方块生效（速度阈值 Config 可调，默认 8）
-        if (baseSpeed >= org.zifeng.skilltree.Config.DIG_MIN_BASE_SPEED.get().floatValue()) {
-            if (sp.getRandom().nextFloat() < org.zifeng.skilltree.Config.DIG_INSTANT_CHANCE.get().floatValue()) {
-                event.setNewSpeed(1000f); // 瞬间完成
+    public static void onKnockBack(net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            PlayerSkillRecord record = getRecord(player);
+            if (isMasterEnabled(record)) {
+                event.setCanceled(true); // 免疫击退
             }
         }
     }

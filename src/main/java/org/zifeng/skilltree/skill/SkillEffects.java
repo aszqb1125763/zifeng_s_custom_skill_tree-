@@ -35,6 +35,12 @@ public final class SkillEffects {
     /** 杀戮光环·伤害：每级 +5% 攻击伤害倍率（ADD_MULTIPLIED_TOTAL，独立于基础/增幅技能） */
     public static final ResourceLocation AURA_DAMAGE_MOD = ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "aura_damage_mult");
 
+    /** 浴血奋战：常驻攻击力增幅（ADD_MULTIPLIED_TOTAL） */
+    public static final ResourceLocation BLOOD_ATTACK_MOD = ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "blood_attack_bonus");
+
+    /** 浴血奋战：常驻最大生命增幅（ADD_MULTIPLIED_TOTAL） */
+    public static final ResourceLocation BLOOD_HEALTH_MOD = ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "blood_health_bonus");
+
     // ============ 基础技能：技能ID → [属性, 单点固定值] ============
     private static final List<BaseSkill> BASE_SKILLS = List.of(
             // 生命强化：每点 +2 生命（从原体魄拆出，纯生命成长）
@@ -54,8 +60,7 @@ public final class SkillEffects {
             new BaseSkill(Skills.JUMP, Attributes.JUMP_STRENGTH, 0.01),
             new BaseSkill(Skills.FLY, Attributes.FLYING_SPEED, 0.005),
             new BaseSkill(Skills.SWIM, net.neoforged.neoforge.common.NeoForgeMod.SWIM_SPEED, 0.005), // 游泳用 NeoForge SWIM_SPEED
-            // 杀戮光环·速度：每级 +0.19 攻击速度（并入攻速属性 → 可被攻速增幅/全能精通加成）
-            new BaseSkill(Skills.AURA_SPEED, Attributes.ATTACK_SPEED, 0.19),
+            // 杀戮光环·速度：不再加成攻速属性（改由 AuraEvents 直接控制光环攻击间隔，性能优化）
             // 防御强化：护甲倍率在护甲原版上限（30）内无意义 → 改为直接加物理减伤（每点 +0.05%），独立乘算层不依赖护甲
             new BaseSkill(Skills.AMP_ARMOR, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION, 0.0005)
     );
@@ -111,6 +116,16 @@ public final class SkillEffects {
             int auraDmg = record.isEnabled(Skills.AURA_DAMAGE) ? record.getActiveLevel(Skills.AURA_DAMAGE) : 0;
             mult += auraDmg * org.zifeng.skilltree.Config.AURA_DAMAGE_MULTIPLIER_PER_LEVEL.get();
         }
+        // 浴血奋战：常驻攻击/生命 +50%（点亮且启用才加）
+        boolean blood = record.getLearnedPoints(Skills.ULT_BLOOD) > 0 && record.isEnabled(Skills.ULT_BLOOD);
+        if (blood) {
+            if (Attributes.ATTACK_DAMAGE.equals(attribute)) {
+                mult += org.zifeng.skilltree.Config.BLOOD_ATTACK_BONUS.get();
+            }
+            if (Attributes.MAX_HEALTH.equals(attribute)) {
+                mult += org.zifeng.skilltree.Config.BLOOD_HEALTH_BONUS.get();
+            }
+        }
         return (base + add) * (1 + mult);
     }
 
@@ -139,6 +154,12 @@ public final class SkillEffects {
         int auraDmg = record.isEnabled(Skills.AURA_DAMAGE) ? record.getActiveLevel(Skills.AURA_DAMAGE) : 0;
         applyMultiplier(player, Attributes.ATTACK_DAMAGE, AURA_DAMAGE_MOD,
                 auraDmg * org.zifeng.skilltree.Config.AURA_DAMAGE_MULTIPLIER_PER_LEVEL.get());
+        // 3.6 浴血奋战：常驻攻击 +50%、生命 +50%（点亮且启用才加；关闭/未学 → amount=0 自动移除）
+        boolean blood = record.getLearnedPoints(Skills.ULT_BLOOD) > 0 && record.isEnabled(Skills.ULT_BLOOD);
+        applyMultiplier(player, Attributes.ATTACK_DAMAGE, BLOOD_ATTACK_MOD,
+                blood ? org.zifeng.skilltree.Config.BLOOD_ATTACK_BONUS.get() : 0);
+        applyMultiplier(player, Attributes.MAX_HEALTH, BLOOD_HEALTH_MOD,
+                blood ? org.zifeng.skilltree.Config.BLOOD_HEALTH_BONUS.get() : 0);
         // 4. 生命值同步（避免加血上限后血量不涨）
         AttributeInstance maxHealth = player.getAttribute(Attributes.MAX_HEALTH);
         if (maxHealth != null && player.getHealth() > player.getMaxHealth()) {
@@ -268,12 +289,7 @@ public final class SkillEffects {
         return base * (1 + amp);
     }
 
-    /** 治愈光环：每级每秒治疗量（Config 可调，×星尘倍率） */
-    public static double getAuraHealPerLevel() {
-        return org.zifeng.skilltree.Config.AURA_HEAL_PER_LEVEL.get();
-    }
-
-    /** 治愈光环：作用半径（格，Config 可调） */
+    /** 治愈光环：作用半径（格，Config 可调，默认 10 = xyz 三轴全 10） */
     public static double getAuraHealRadius() {
         return org.zifeng.skilltree.Config.AURA_HEAL_RADIUS.get();
     }
@@ -323,6 +339,9 @@ public final class SkillEffects {
             case Skills.AMP_LIFESTEAL -> fmt("+%.1f%%吸血", points * 0.4);
             case Skills.AMP_THORNS -> fmt("+%.1f%%反伤", points * 0.4);
             case Skills.AMP_ARMOR_PEN -> fmt("+%.1f%%破甲", points * 0.4);
+            // 终极节点
+            case Skills.ULT_BLOOD -> "攻伤+50% 生命+50%";
+            case Skills.ULT_GOLDEN -> "抗性10/吸收100/抗火5";
             default -> "";
         };
     }

@@ -5,6 +5,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
@@ -201,16 +202,12 @@ public class AuraEvents {
         if (!record.isEnabled(Skills.AURA_DAMAGE)) {
             return;
         }
-        // 攻击频率 = 玩家实际攻速属性 - 基准偏移（Config 可调；ATTACK_SPEED 基础 4.0 → 基础频率 1 次/秒；
-        // 光环速度 +0.19/级、疾攻术 +0.02/级、攻速增幅/全能精通百分比都会加成，100 级光环 = 20 次/秒）
-        double frequency = player.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_SPEED)
-                - org.zifeng.skilltree.Config.AURA_FREQUENCY_BASE_OFFSET.get();
-        if (!record.isEnabled(Skills.AURA_SPEED)) {
-            frequency = 1.0; // 关闭速度光环则基础频率
-        }
-        frequency = Math.max(0.1, frequency);
-        // 攻击间隔（tick），clamp 至少 1 tick；用世界时间判断保证稳定触发
-        int interval = Math.max(1, (int) Math.round(20.0 / frequency));
+        // 攻击间隔（tick）：基础 10 秒（200 tick），每级光环速度 -9.5 tick，20 级 = 10 tick = 每秒 2 次。
+        // ⚠️ 性能优化：不再与攻速属性挂钩（原先每 tick 攻击太耗性能），改为低频间隔触发。
+        int baseInterval = org.zifeng.skilltree.Config.AURA_BASE_INTERVAL_TICKS.get();
+        int speedLevel = record.isEnabled(Skills.AURA_SPEED) ? record.getActiveLevel(Skills.AURA_SPEED) : 0;
+        double reduction = org.zifeng.skilltree.Config.AURA_SPEED_INTERVAL_REDUCTION.get();
+        int interval = Math.max(10, (int) Math.round(baseInterval - speedLevel * reduction));
         if (player.level().getGameTime() % interval != 0) {
             return;
         }
@@ -220,11 +217,13 @@ public class AuraEvents {
         // 光环速度升级额外获得【无视每帧伤害】：学了速度光环且开启 → 每次攻击无视目标受击无敌帧（原版生物受伤后 1 秒内免疫，限制高频攻击）
         boolean ignoreIFrames = record.getLearnedPoints(Skills.AURA_SPEED) > 0 && record.isEnabled(Skills.AURA_SPEED);
 
-        // 范围伤害：360° 水平范围（玩家为中心），固定半径 Config 可调；Y 只扩 4 格（攻击是水平面伤害，缩小包围盒省性能）
+        // 范围伤害：360° 球形（玩家为中心），固定半径 Config 可调；xyz 三轴全半径（不再压缩 Y）
         // 参考 ProjectE attackAOE（玩家自身为中心全向范围 + 谓词过滤敌友）
+        // ⚠️ 扫描 Entity.class 而非 LivingEntity.class：DE 的守卫水晶（GuardianCrystalEntity）直接继承 Entity，
+        //    不是 LivingEntity！只扫 LivingEntity 会导致光环永远打不到水晶。
         double radius = org.zifeng.skilltree.Config.AURA_ATTACK_RADIUS.get();
-        List<LivingEntity> targets = player.level().getEntitiesOfClass(LivingEntity.class,
-                player.getBoundingBox().inflate(radius, 4.0, radius),
+        List<Entity> targets = player.level().getEntitiesOfClass(Entity.class,
+                player.getBoundingBox().inflate(radius, radius, radius),
                 target -> isTargetValid(player, target, mode));
         if (targets.isEmpty()) {
             return;
@@ -236,10 +235,35 @@ public class AuraEvents {
         // 手持武器（主手）：光环伤害附带该武器全部附魔（锋利/亡灵杀手/节肢杀手/火焰附加/冰霜之刃等，伤害与效果全部生效）
         ItemStack weapon = player.getMainHandItem();
         // 对范围内全部有效目标逐个造成伤害（Draconic/ProjectE 全打思路），每个目标独立命中判定
-        for (LivingEntity target : targets) {
+        for (Entity targetEntity : targets) {
             // 破盾：目标举盾格挡 → 解除格挡 + 盾牌冷却（原版 Player.disableShield，参考 Draconic 穿透箭破盾逻辑）
-            if (target instanceof Player p && p.isBlocking() && p.getUseItem().getItem() instanceof ShieldItem) {
+            if (targetEntity instanceof Player p && p.isBlocking() && p.getUseItem().getItem() instanceof ShieldItem) {
                 p.disableShield();
+            }
+            // DE 守卫水晶特判：GuardianCrystalEntity 是 Entity 不是 LivingEntity，
+            // 普通伤害完全免疫（getCrystalDamageModifier 返回 0），必须用混沌伤害源（chaotic 标签）攻击。
+            // ⚠️ 连击削盾：DE 守卫有单次伤害上限（500）+ hitCooldown 保护（伤害 < 上次×1.1 会被忽略），
+            //    用多次递增伤害（×1.15）绕过保护，一次光环攻击累计打出大量伤害。
+            if (isDraconicCrystal(targetEntity)) {
+                DamageSource chaosSource = buildChaosSource(serverLevel, player);
+                if (chaosSource != null) {
+                    float base = Math.max(5000.0F, damage * 400.0F);
+                    boolean hit = false;
+                    for (int i = 0; i < 30; i++) {
+                        if (targetEntity.hurt(chaosSource, base * (float) Math.pow(1.15, i))) {
+                            hit = true;
+                        }
+                    }
+                    if (hit) {
+                        serverLevel.sendParticles(ParticleTypes.DRAGON_BREATH,
+                                targetEntity.getX(), targetEntity.getY() + targetEntity.getBbHeight() * 0.5, targetEntity.getZ(),
+                                10, 0.3, 0.3, 0.3, 0.02);
+                    }
+                }
+                continue; // 水晶不参与 LivingEntity 逻辑
+            }
+            if (!(targetEntity instanceof LivingEntity target)) {
+                continue; // 其他非 LivingEntity 实体（如物品/箭）跳过
             }
             // 无视无敌帧：每次攻击前清空目标受击无敌帧，保证每 tick 攻击都真实造成伤害（光环速度升级效果）
             if (ignoreIFrames) {
@@ -250,10 +274,52 @@ public class AuraEvents {
             // 附魔加成：modifyDamage 把武器附魔的伤害增幅算入本次光环攻击（锋利/亡灵/节肢等）
             float finalDamage = weapon.isEmpty() ? damage
                     : EnchantmentHelper.modifyDamage(serverLevel, weapon, target, source, damage);
+            // Boss 特判：混沌伤害源可穿透 Boss 护盾/免疫机制（DE 混沌守卫、原版 Boss、其他模组 Boss 自动生效）
+            // 原理：DE 的 getDamageLevel() 识别带 draconicevolution:chaotic 标签的伤害为 CHAOTIC 级 → chaoticBypassCrystalShield 生效；
+            //      其他 Boss 则因混沌伤害 = 无视护甲的真实伤害 + 高倍率，能有效输出。
+            // ⚠️ 连击削盾：DE 守卫单次伤害上限 500 + hitCooldown（伤害 < 上次×1.1 忽略），
+            //    用多次递增伤害（×1.15）绕过保护，一次光环攻击累计打出大量伤害（约 60 万+）。
+            if (isBossEntity(target)) {
+                DamageSource chaosSource = buildChaosSource(serverLevel, player);
+                if (chaosSource != null) {
+                    float base = Math.max(5000.0F, finalDamage * 400.0F);
+                    boolean hit = false;
+                    // 混沌连击削盾（正常伤害通道）
+                    for (int i = 0; i < 30; i++) {
+                        if (target.hurt(chaosSource, base * (float) Math.pow(1.15, i))) {
+                            hit = true;
+                        }
+                    }
+                    // 无视水晶护盾直击：DE 混沌守卫在水晶存活时 hurt 会被 onGuardianAttacked 完全格挡，
+                    // 用反射调用 protected attackDragonFrom 绕过格挡直接扣血（不依赖 DE 编译，保留战斗节奏）
+                    if (isDraconicGuardian(target)) {
+                        attackDragonDirect(target, chaosSource, base * 2.0F);
+                        hit = true;
+                    }
+                    if (hit) {
+                        serverLevel.sendParticles(ParticleTypes.DRAGON_BREATH,
+                                target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
+                                10, 0.3, 0.3, 0.3, 0.02);
+                    }
+                    continue; // 混沌连击已生效，跳过普通伤害
+                }
+            }
             if (target.hurt(source, finalDamage)) {
                 // 触发武器附魔的命中效果（火焰附加点燃、冰霜之刃减速等）
                 if (!weapon.isEmpty()) {
                     EnchantmentHelper.doPostAttackEffectsWithItemSource(serverLevel, target, source, weapon);
+                }
+                // 混沌伤害：光环攻击附带无视护甲的真实伤害（参考龙之研究混沌武器——混沌能量无视护甲/无敌帧）
+                // 比例 Config 可调（默认主伤害的 20%），独立于护甲/减伤结算
+                double chaosRatio = org.zifeng.skilltree.Config.AURA_CHAOS_DAMAGE_RATIO.get();
+                if (chaosRatio > 0) {
+                    float chaosDamage = Math.max(1.0F, finalDamage * (float) chaosRatio);
+                    // 魔法伤害无视护甲（混沌武器的真实伤害特性）
+                    target.hurt(player.damageSources().indirectMagic(player, player), chaosDamage);
+                    // 混沌能量粒子（紫色龙息，混沌主题）
+                    serverLevel.sendParticles(ParticleTypes.DRAGON_BREATH,
+                            target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
+                            5, 0.2, 0.2, 0.2, 0.02);
                 }
                 // 伤害指示粒子数量随实际伤害缩放（Draconic dealAOEDamage 做法，打击感随伤害成长）
                 float damageDealt = healthBefore - target.getHealth();
@@ -265,12 +331,22 @@ public class AuraEvents {
         }
     }
 
-    private static boolean isTargetValid(ServerPlayer player, LivingEntity target, int mode) {
-        if (target == player || target.isDeadOrDying() || !target.isAlive() || target.isInvulnerable()) {
+    private static boolean isTargetValid(ServerPlayer player, Entity target, int mode) {
+        if (target == player || !target.isAlive() || target.isInvulnerable()) {
+            return false;
+        }
+        // DE 守卫水晶：非 LivingEntity（直接继承 Entity），但必须作为敌对目标（否则打不到水晶）
+        if (isDraconicCrystal(target)) {
+            return mode != MODE_FRIENDLY; // 敌对/所有模式可攻击，友好模式不打
+        }
+        if (!(target instanceof LivingEntity living)) {
+            return false; // 其他非 LivingEntity 实体（物品/箭等）不是攻击目标
+        }
+        if (living.isDeadOrDying()) {
             return false;
         }
         // Enemy 接口覆盖面比 instanceof Monster 更广（ProjectE 最佳实践：所有敌对生物标记接口）
-        boolean hostile = target instanceof Enemy;
+        boolean hostile = living instanceof Enemy;
         return switch (mode) {
             case MODE_HOSTILE -> hostile;
             case MODE_FRIENDLY -> !hostile;
@@ -278,30 +354,125 @@ public class AuraEvents {
         };
     }
 
-    // ============ 治愈光环：每级每秒治疗周围友好生物 ============
+    /** DE 守卫水晶特判（GuardianCrystalEntity 是 Entity 不是 LivingEntity，用类名匹配不依赖 DE 编译） */
+    private static boolean isDraconicCrystal(Entity target) {
+        String name = target.getClass().getName();
+        return name.startsWith("com.brandon3055.draconicevolution.entity.")
+                && (name.contains("GuardianCrystal") || name.contains("ChaosCrystal"));
+    }
+
+    /** DE 混沌守卫本体特判（类名匹配，不依赖 DE 编译） */
+    private static boolean isDraconicGuardian(LivingEntity target) {
+        String name = target.getClass().getName();
+        return name.startsWith("com.brandon3055.draconicevolution.entity.")
+                && (name.contains("DraconicGuardian") || name.contains("ChaosGuardian"));
+    }
+
+    /** 反射缓存：DE 守卫的 protected attackDragonFrom(DamageSource, float) 方法 */
+    private static java.lang.reflect.Method attackDragonFromMethod;
+
+    /**
+     * 无视水晶护盾直击 DE 混沌守卫：反射调用 protected attackDragonFrom（真正扣血通道）。
+     * 守卫本体 hurt() → attackEntityPartFrom() 在水晶存活时被 onGuardianAttacked 格挡（返回 false）；
+     * attackDragonFrom 绕过该格挡直接调用 super.hurt() 扣血。反射避免编译依赖 DE，失败静默降级。
+     */
+    private static void attackDragonDirect(LivingEntity target, DamageSource source, float amount) {
+        try {
+            Class<?> clazz = target.getClass();
+            if (attackDragonFromMethod == null) {
+                attackDragonFromMethod = clazz.getDeclaredMethod("attackDragonFrom", DamageSource.class, float.class);
+                attackDragonFromMethod.setAccessible(true);
+            }
+            attackDragonFromMethod.invoke(target, source, amount);
+        } catch (Exception ignored) {
+            // 反射失败（类名变了/方法不存在）→ 静默降级，不影响其他逻辑
+        }
+    }
+
+    /**
+     * 构造混沌伤害源（可穿透 DE 混沌守卫/水晶护盾）：
+     * <ol>
+     *   <li>优先：DE 的 draconicevolution:chaos_implosion 伤害类型——数据驱动定义且自带 chaotic 标签，
+     *       DE 的 getDamageLevel() 直接判定为 CHAOTIC（100% 可靠，不依赖玩家手持混沌武器）</li>
+     *   <li>回退：我们自己的 zifeng_s_custom_skill_tree:chaos_damage（data JSON 定义 + 尝试打标签）</li>
+     *   <li>都没有：返回 null（调用方回退普通伤害）</li>
+     * </ol>
+     * 攻击者是玩家（attacker=player）→ DE 守卫本体也认（attackEntityPartFrom 要求攻击者是 Player）。
+     */
+    private static DamageSource buildChaosSource(ServerLevel level, Player player) {
+        var registry = level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE);
+        // 1. DE chaos_implosion（自带 chaotic 标签）
+        var deKey = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DAMAGE_TYPE,
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("draconicevolution", "chaos_implosion"));
+        var deHolder = registry.getHolder(deKey).orElse(null);
+        if (deHolder != null) {
+            return new DamageSource(deHolder, player);
+        }
+        // 2. 我们自己的 chaos_damage（data JSON 定义）
+        var ourKey = org.zifeng.skilltree.init.ModDamageTypes.chaosDamageKey();
+        var ourHolder = registry.getHolder(ourKey).orElse(null);
+        if (ourHolder != null) {
+            return new DamageSource(ourHolder, player);
+        }
+        return null;
+    }
+
+    /**
+     * Boss 实体判定（混沌伤害特判目标，覆盖整合包无白名单的所有 Boss）：
+     * <ul>
+     *   <li>原版 Boss：net.minecraft.world.entity.boss 包（末影龙/凋灵）</li>
+     *   <li>DE 混沌守卫/水晶：com.brandon3055.draconicevolution.entity 包的 Guardian/Crystal</li>
+     *   <li>超高血量（≥500）：大多数 Boss 特征（防御性兜底，覆盖其他模组 Boss）</li>
+     * </ul>
+     */
+    private static boolean isBossEntity(LivingEntity target) {
+        // 1. 原版 Boss（末影龙/凋灵）
+        if (target instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon
+                || target instanceof net.minecraft.world.entity.boss.wither.WitherBoss) {
+            return true;
+        }
+        // 2. DE 守卫/水晶（类名匹配，不依赖 DE 编译）
+        String name = target.getClass().getName();
+        if (name.startsWith("com.brandon3055.draconicevolution.entity.")
+                && (name.contains("DraconicGuardian") || name.contains("GuardianCrystal")
+                    || name.contains("ChaosGuardian") || name.contains("ChaosCrystal"))) {
+            return true;
+        }
+        // 3. 其他 Boss 兜底：有 Boss 血条的模组 Boss 通常有超高血量（≥500）
+        //    （末影龙 200 / 凋灵 300，但混沌守卫 1000+、龙之研究/其他科技模组 Boss 常 >500）
+        return target.getMaxHealth() >= 500.0f;
+    }
+
+    // ============ 治愈光环：给周围友方单位施加生命回复效果（等级 = 技能等级） ============
 
     private static void auraHeal(ServerPlayer player, PlayerSkillRecord record) {
         int level = record.isEnabled(Skills.AURA_HEAL) ? record.getActiveLevel(Skills.AURA_HEAL) : 0;
         if (level <= 0) {
             return;
         }
-        // 每秒结算一次（世界时间对齐，多玩家错开避免同 tick 全部结算）
+        // 每 20 tick（1 秒）刷新一次生命回复效果（等级 = 技能等级，时长 6 秒防闪烁）
         if ((player.level().getGameTime() + player.getId()) % 20 != 0) {
             return;
         }
         double radius = SkillEffects.getAuraHealRadius();
-        float heal = (float) (level * SkillEffects.getAuraHealPerLevel());
-        // Y 只扩 4 格：治疗也是水平范围，缩小包围盒省性能
+        // xyz 三轴全 10 格（立方体范围，不压缩 Y）
         List<LivingEntity> allies = player.level().getEntitiesOfClass(LivingEntity.class,
-                player.getBoundingBox().inflate(radius, 4.0, radius),
+                player.getBoundingBox().inflate(radius, radius, radius),
                 target -> {
                     // 治疗对象：非敌对（Enemy 接口，覆盖面比 Monster 更广）且非玩家自身
                     return target.isAlive() && target != player
                             && !(target instanceof Enemy)
                             && target.getHealth() < target.getMaxHealth();
                 });
+        // 生命回复效果：amplifier = level - 1（1 级 = 生命回复I，50 级 = 生命回复50）
+        var regen = new net.minecraft.world.effect.MobEffectInstance(
+                net.minecraft.world.effect.MobEffects.REGENERATION, 120, level - 1, false, false, true);
         for (LivingEntity ally : allies) {
-            ally.heal(heal);
+            // 只在效果缺失或等级不够时补（避免每 tick 覆盖刷新造成粒子闪烁）
+            var cur = ally.getEffect(net.minecraft.world.effect.MobEffects.REGENERATION);
+            if (cur == null || cur.getAmplifier() < level - 1) {
+                ally.addEffect(regen);
+            }
         }
     }
 

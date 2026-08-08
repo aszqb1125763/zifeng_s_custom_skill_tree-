@@ -173,7 +173,7 @@ public class SkillTreeScreen extends Screen {
                 + "  ·  左键加点 / Shift+左键×10 / 右键开关 / 滚轮调级 / Ctrl+R 重洗";
         // 光环快捷键未绑定提示（默认空键，引导玩家自行设置）
         boolean showWarn = org.zifeng.skilltree.client.ModKeyBindingEvents.hasUnboundAuraKeys();
-        String warnLine = showWarn ? "⚠ 光环技能快捷键未绑定（伤害/速度/治愈/时环/晴空/守卫），请在 设置→控制 中设置" : null;
+        String warnLine = showWarn ? "⚠ 光环技能快捷键未绑定（治愈/时环/晴空），请在 设置→控制 中设置" : null;
         // 以文字包围盒为中心外扩 10px 的圆角背景 + 边框（不超出文字范围）
         int maxWidth = Math.max(font.width(title), font.width(statusLine));
         if (warnLine != null) {
@@ -283,6 +283,8 @@ public class SkillTreeScreen extends Screen {
         if (type == Skills.SkillType.AURA) {
             if (Skills.AURA_MAGNET.equals(button.skillId())) {
                 costText = points > 0 ? "已解锁" : "需" + (long) (double) org.zifeng.skilltree.Config.MAGNET_COST.get() + "点";
+            } else if (Skills.AURA_LOCK.equals(button.skillId())) {
+                costText = points > 0 ? "已解锁" : "需" + (long) (double) org.zifeng.skilltree.Config.LOCK_COST.get() + "点";
             } else if (Skills.AURA_TIME.equals(button.skillId()) || Skills.AURA_WEATHER.equals(button.skillId())) {
                 costText = points > 0 ? "已解锁" : "需" + Skills.minorUltCost() + "点";
             } else {
@@ -298,13 +300,13 @@ public class SkillTreeScreen extends Screen {
             int active = activeLevels.getOrDefault(button.skillId(), points);
             costText = "生效:" + active + "/" + points + " 下1级:" + fmtCost(unitCost) + "点";
         } else if (type == Skills.SkillType.ULTIMATE) {
-            // 终极节点：单次解锁消耗（浴血/连斩/金身/挖/精通=1点，宇宙的青睐=1000，夜视/饱食=100）
+            // 终极节点：单次解锁消耗（浴血/金身/涅槃=500，死神=1000，全能精通=5000，宇宙的青睐=1000，夜视/饱食=100）
             if (Skills.ULT_FAVOR.equals(button.skillId())) {
                 costText = points > 0 ? "已解锁" : "需" + Skills.ultFavorCost() + "点";
             } else if (Skills.NIGHT_VISION.equals(button.skillId()) || Skills.SATURATION.equals(button.skillId())) {
                 costText = points > 0 ? "已解锁" : "需" + Skills.minorUltCost() + "点";
             } else {
-                costText = points > 0 ? "已解锁" : "需1点";
+                costText = points > 0 ? "已解锁" : "需" + Skills.ultimateCost(button.skillId()) + "点";
             }
         } else {
             costText = points + "级";
@@ -394,7 +396,7 @@ public class SkillTreeScreen extends Screen {
                 + "  ·  左键加点 / Shift+左键×10 / 右键开关 / 滚轮调级 / Ctrl+R 重洗";
         int maxWidth = Math.max(font.width(title), font.width(statusLine));
         if (org.zifeng.skilltree.client.ModKeyBindingEvents.hasUnboundAuraKeys()) {
-            maxWidth = Math.max(maxWidth, font.width("⚠ 光环技能快捷键未绑定（伤害/速度/治愈/时环/晴空/守卫），请在 设置→控制 中设置"));
+            maxWidth = Math.max(maxWidth, font.width("⚠ 光环技能快捷键未绑定（治愈/时环/晴空），请在 设置→控制 中设置"));
         }
         // 渲染时：translate(width/2, 10) + scale(0.8) → 屏幕坐标换算
         double halfW = (maxWidth / 2.0 + 10) * 0.8;
@@ -417,6 +419,11 @@ public class SkillTreeScreen extends Screen {
         addRow(rows, "击退抗性", SkillEffects.getComputedValue(player, Attributes.KNOCKBACK_RESISTANCE, rec), "%.1f");
         // 物理减伤（自定义属性）：护甲减伤 80% 封顶后继续叠的独立减伤层
         addRow(rows, "物理减伤", SkillEffects.getComputedValue(player, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION, rec) * 100, "%.0f%%");
+        // 全能精通：全伤害减免（对所有伤害类型生效，含真伤/混沌/指令）
+        boolean masterOn = rec.getLearnedPoints(Skills.ULT_MASTER) > 0 && rec.isEnabled(Skills.ULT_MASTER);
+        if (masterOn) {
+            addRow(rows, "全伤减免", org.zifeng.skilltree.Config.MASTER_DAMAGE_REDUCTION.get() * 100, "%.0f%%");
+        }
         addRow(rows, "攻伤", SkillEffects.getComputedValue(player, Attributes.ATTACK_DAMAGE, rec), "%.1f");
         addRow(rows, "攻速", SkillEffects.getComputedValue(player, Attributes.ATTACK_SPEED, rec), "%.2f");
         addRow(rows, "击退", SkillEffects.getComputedValue(player, Attributes.ATTACK_KNOCKBACK, rec), "%.1f");
@@ -450,13 +457,14 @@ public class SkillTreeScreen extends Screen {
             addRow(rows, "耐久减免", durReduction * 100, "%.0f%%");
         }
         addRow(rows, "光环伤害", SkillEffects.getComputedValue(player, Attributes.ATTACK_DAMAGE, rec), "%.1f");
-        // 光环攻击频率 = 实际攻速属性 - 3（ATTACK_SPEED 基础 4.0 → 1 次/秒，100 级光环速度 = 20 次/秒）
-        addRow(rows, "光环频率/秒", Math.max(0, SkillEffects.getComputedValue(player, Attributes.ATTACK_SPEED, rec) - 3), "%.1f");
+        // 光环攻击频率 = 基础间隔(10秒) - 光环速度每级减 9.5 tick，20级 = 间隔10tick = 每秒2次
+        int baseInterval = org.zifeng.skilltree.Config.AURA_BASE_INTERVAL_TICKS.get();
+        int speedLevel = rec.isEnabled(Skills.AURA_SPEED) ? rec.getActiveLevel(Skills.AURA_SPEED) : 0;
+        double reduction = org.zifeng.skilltree.Config.AURA_SPEED_INTERVAL_REDUCTION.get();
+        int interval = Math.max(10, (int) Math.round(baseInterval - speedLevel * reduction));
+        addRow(rows, "光环频率/秒", Math.round(20.0 / interval * 10.0) / 10.0, "%.1f");
         // 光环范围半径（Config 可调，360° 球形覆盖）
         addRow(rows, "光环半径", org.zifeng.skilltree.Config.AURA_ATTACK_RADIUS.get(), "%.0f格");
-        // 守卫光环：全伤害防护（含真伤/混沌/指令）
-        int guardLevel = rec.isEnabled(Skills.AURA_GUARD) ? rec.getActiveLevel(Skills.AURA_GUARD) : 0;
-        addRow(rows, "守卫减伤", Math.min(1.0, guardLevel * org.zifeng.skilltree.Config.AURA_GUARD_REDUCTION_PER_LEVEL.get()) * 100, "%.0f%%");
         rows.add(new String[]{"技能点", String.format("%.1f", skillPoints), "#FFFFD700"});
         return rows;
     }
@@ -755,6 +763,7 @@ public class SkillTreeScreen extends Screen {
         if (Skills.ULT_FAVOR.equals(skillId)) return Skills.ultFavorCost();
         if (Skills.NIGHT_VISION.equals(skillId) || Skills.SATURATION.equals(skillId)) return Skills.minorUltCost();
         if (Skills.AURA_MAGNET.equals(skillId)) return org.zifeng.skilltree.Config.MAGNET_COST.get();
+        if (Skills.AURA_LOCK.equals(skillId)) return org.zifeng.skilltree.Config.LOCK_COST.get();
         if (Skills.AURA_TIME.equals(skillId) || Skills.AURA_WEATHER.equals(skillId)) return Skills.minorUltCost();
         Skills.SkillType type = Skills.getType(skillId);
         if (type == Skills.SkillType.AURA) {
@@ -762,7 +771,7 @@ public class SkillTreeScreen extends Screen {
         }
         if (type == Skills.SkillType.BASE) return Skills.basePointCost();
         if (type == Skills.SkillType.AMPLIFY) return Skills.amplifyPointCost();
-        return 1;
+        return Skills.ultimateCost(skillId); // 终极节点（浴血/金身/涅槃500，死神1000，全能精通5000）
     }
 
     private boolean isShiftHeld() {

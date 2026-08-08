@@ -34,6 +34,7 @@ public class SkillTreeMod {
         ModMenus.MENUS.register(modEventBus);
         ModCreativeTabs.TABS.register(modEventBus);
         ModAttributes.ATTRIBUTES.register(modEventBus);
+        org.zifeng.skilltree.init.ModDamageTypes.DAMAGE_TYPES.register(modEventBus);
 
         modEventBus.addListener(ModNetwork::register);
         modEventBus.addListener(ModCapabilities::registerCapabilities);
@@ -45,6 +46,7 @@ public class SkillTreeMod {
         NeoForge.EVENT_BUS.register(UltimateEvents.class);
         NeoForge.EVENT_BUS.register(AuraEvents.class);
         NeoForge.EVENT_BUS.register(MagnetEvents.class);
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.LockEvents.class);
 
         if (FMLLoader.getDist().isClient()) {
             ClientRegistrar.register(modEventBus);

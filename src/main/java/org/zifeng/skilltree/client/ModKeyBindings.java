@@ -40,21 +40,7 @@ public class ModKeyBindings {
             GLFW.GLFW_KEY_H,
             CATEGORY);
 
-    // ============ 光环技能独立开关快捷键（U/I/O 默认键，各自独立切换对应技能） ============
-
-    /** 杀戮光环·伤害 开关 */
-    public static final KeyMapping TOGGLE_AURA_DAMAGE = new KeyMapping(
-            "key." + SkillTreeMod.MOD_ID + ".toggle_aura_damage",
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_U,
-            CATEGORY);
-
-    /** 杀戮光环·速度 开关 */
-    public static final KeyMapping TOGGLE_AURA_SPEED = new KeyMapping(
-            "key." + SkillTreeMod.MOD_ID + ".toggle_aura_speed",
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_I,
-            CATEGORY);
+    // ============ 光环技能独立开关快捷键（仅治愈/时环/晴空保留独立键，伤害/速度用总开关 K 控制） ============
 
     /** 治愈光环 开关 */
     public static final KeyMapping TOGGLE_AURA_HEAL = new KeyMapping(
@@ -77,22 +63,19 @@ public class ModKeyBindings {
             GLFW.GLFW_KEY_UNKNOWN,
             CATEGORY);
 
-    /** 守卫光环 开关（默认空键，需玩家自行绑定） */
-    public static final KeyMapping TOGGLE_AURA_GUARD = new KeyMapping(
-            "key." + SkillTreeMod.MOD_ID + ".toggle_aura_guard",
+    /** 光环锁定 开关（默认空键，需玩家自行绑定） */
+    public static final KeyMapping TOGGLE_AURA_LOCK = new KeyMapping(
+            "key." + SkillTreeMod.MOD_ID + ".toggle_aura_lock",
             InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_UNKNOWN,
             CATEGORY);
 
-    /** 光环技能快捷键：技能ID → 对应 KeyMapping（供事件/提示统一遍历） */
+    /** 光环技能快捷键：技能ID → 对应 KeyMapping（供事件/提示统一遍历；伤害/速度/锁定用独立键，锁定制处理） */
     public static java.util.Map<String, KeyMapping> auraKeyMappings() {
         return java.util.Map.of(
-                org.zifeng.skilltree.skill.Skills.AURA_DAMAGE, TOGGLE_AURA_DAMAGE,
-                org.zifeng.skilltree.skill.Skills.AURA_SPEED, TOGGLE_AURA_SPEED,
                 org.zifeng.skilltree.skill.Skills.AURA_HEAL, TOGGLE_AURA_HEAL,
                 org.zifeng.skilltree.skill.Skills.AURA_TIME, TOGGLE_AURA_TIME,
-                org.zifeng.skilltree.skill.Skills.AURA_WEATHER, TOGGLE_AURA_WEATHER,
-                org.zifeng.skilltree.skill.Skills.AURA_GUARD, TOGGLE_AURA_GUARD);
+                org.zifeng.skilltree.skill.Skills.AURA_WEATHER, TOGGLE_AURA_WEATHER);
     }
 
     public static void registerKeyBindings(RegisterKeyMappingsEvent event) {
@@ -100,11 +83,9 @@ public class ModKeyBindings {
         event.register(TOGGLE_AURA);
         event.register(CYCLE_AURA_TARGET);
         event.register(TOGGLE_MAGNET);
-        event.register(TOGGLE_AURA_DAMAGE);
-        event.register(TOGGLE_AURA_SPEED);
         event.register(TOGGLE_AURA_HEAL);
         event.register(TOGGLE_AURA_TIME);
         event.register(TOGGLE_AURA_WEATHER);
-        event.register(TOGGLE_AURA_GUARD);
+        event.register(TOGGLE_AURA_LOCK);
     }
 }

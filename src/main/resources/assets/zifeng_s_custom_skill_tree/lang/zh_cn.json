@@ -7,10 +7,8 @@
   "key.zifeng_s_custom_skill_tree.toggle_aura": "切换杀戮光环开关",
   "key.zifeng_s_custom_skill_tree.toggle_magnet": "磁力光环开关（默认H，学习消耗技能点）",
   "key.zifeng_s_custom_skill_tree.cycle_aura_target": "循环杀戮光环目标类型",
-  "key.zifeng_s_custom_skill_tree.toggle_aura_damage": "杀戮光环·伤害 开关（默认U）",
-  "key.zifeng_s_custom_skill_tree.toggle_aura_speed": "杀戮光环·速度 开关（默认I）",
   "key.zifeng_s_custom_skill_tree.toggle_aura_heal": "治愈光环 开关（默认O）",
   "key.zifeng_s_custom_skill_tree.toggle_aura_time": "时之环·永恒正午 开关（默认空键）",
-  "key.zifeng_s_custom_skill_tree.toggle_aura_weather": "晴空环·永恒晴天 开关（默认空键）",
-  "key.zifeng_s_custom_skill_tree.toggle_aura_guard": "守卫光环 开关（默认空键）"
+  "key.zifeng_s_custom_skill_tree.toggle_aura_weather": "晴空环 开关（默认空键）",
+  "key.zifeng_s_custom_skill_tree.toggle_aura_lock": "光环锁定 开关（默认空键）"
 }

@@ -49,7 +49,7 @@ public record SetSkillToggleC2SPacket(String skillId, boolean enabled) implement
                         case Skills.AURA_MAGNET -> "🧲";
                         case Skills.AURA_TIME -> "⏰";
                         case Skills.AURA_WEATHER -> "☀";
-                        case Skills.AURA_GUARD -> "🛡";
+                        case Skills.AURA_LOCK -> "🛡";
                         default -> "⚔";
                     };
                     player.sendSystemMessage(Component.literal(packet.enabled()

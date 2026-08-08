@@ -1,9 +1,7 @@
 package org.zifeng.skilltree.client;
 
 import net.neoforged.bus.api.IEventBus;
-import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import org.zifeng.skilltree.client.renderer.AuraRingRenderer;
 import org.zifeng.skilltree.client.screen.StarEnergyConverterScreen;
 
 /**
@@ -16,7 +14,7 @@ public class ClientRegistrar {
         modEventBus.addListener(StarEnergyConverterScreen::registerScreens);
         // GAME 总线客户端事件手动注册（确保触发）
         NeoForge.EVENT_BUS.register(ModKeyBindingEvents.class);
-        // 杀戮光环淡红圆环渲染（RenderLevelStageEvent，零实体）
-        NeoForge.EVENT_BUS.register(AuraRingRenderer.class);
+        // 凤凰涅槃冷却 HUD 提示（RenderGuiEvent.Post）
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ReviveHudRenderer.class);
     }
 }
