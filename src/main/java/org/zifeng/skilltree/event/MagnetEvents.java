@@ -6,6 +6,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -17,18 +18,19 @@ import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
 import org.zifeng.skilltree.skill.Skills;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * 磁力光环（参考龙之研究 Item Dislocator，由 SkillTreeMod 手动注册）：
+ * 磁力光环（自写实现，由 SkillTreeMod 手动注册）：
  * <ul>
  *   <li>光环技能（AURA_MAGNET，一次性解锁），开启后自动吸取范围内的经验球和掉落物</li>
- *   <li>掉落物：直接瞬移到玩家脚下并清零速度（立刻被拾取）</li>
- *   <li>经验球：直接模拟拾取（take + giveExperiencePoints + discard），尊重其他模组取消</li>
+ *   <li>掉落物：优先【直接放入玩家背包】（成功即消失）；背包放不下时【传送到玩家脚下】自然掉落</li>
+ *   <li>经验球：直接模拟拾取（尊重其他模组取消）</li>
  *   <li>潜行时自动暂停（防止偷取时误吸）</li>
  *   <li>性能优化：每 10 tick 全半径扫描，其余 tick 只扫 5 格</li>
- *   <li>半径：物品与经验独立配置（Config），各自最大 32 格</li>
+ *   <li>吸取顺序：按距离从近到远（最近的优先吸）</li>
  * </ul>
  */
 public class MagnetEvents {
@@ -38,7 +40,7 @@ public class MagnetEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return;
         }
-        // 潜行时自动暂停（防偷取误吸，参考 Draconic）
+        // 潜行时自动暂停（防止偷取时误吸）
         if (player.isShiftKeyDown()) {
             return;
         }
@@ -47,59 +49,52 @@ public class MagnetEvents {
         if (record.getLearnedPoints(Skills.AURA_MAGNET) <= 0 || !record.isEnabled(Skills.AURA_MAGNET)) {
             return;
         }
-        // 虚空之矛：已学即提供磁铁范围增幅（55 格，Config 可调，经验和掉落物都生效）。
-        // 只受磁铁快捷键（H 键 = AURA_MAGNET 开关）控制，与杀戮光环 K 键完全无关。
+        // 虚空之矛：已学即提供磁铁范围增幅（55 格，Config 可调，经验和掉落物都生效）
         boolean voidSpear = record.getLearnedPoints(Skills.AURA_VOID) > 0;
         double itemRadius = voidSpear ? Config.VOID_MAGNET_RADIUS.get() : Config.MAGNET_ITEM_RADIUS.get();
         double xpRadius = voidSpear ? Config.VOID_MAGNET_RADIUS.get() : Config.MAGNET_XP_RADIUS.get();
-        // 每 10 tick 全半径扫描，其余 tick 只扫 5 格（性能优化，参考 Draconic）
+        // 每 10 tick 全半径扫描，其余 tick 只扫 5 格（性能优化）
         boolean fullScan = player.tickCount % 10 == 0;
         attractItems(player, fullScan ? itemRadius : Math.min(5.0, itemRadius));
         attractXp(player, fullScan ? xpRadius : Math.min(5.0, xpRadius));
     }
 
-    /** 吸取掉落物：直接瞬移到玩家脚下（清零速度/延迟，立刻被拾取） */
+    /** 吸取掉落物：优先直接进背包，放不下则传送到玩家脚下自然掉落 */
     private static void attractItems(ServerPlayer player, double radius) {
         Level level = player.level();
         AABB box = player.getBoundingBox().inflate(radius);
         List<ItemEntity> items = level.getEntitiesOfClass(ItemEntity.class, box);
-        // 性能优化：一次查询玩家周围是否有其他玩家（单人零开销，多人精确判定不抢战利品）
-        boolean anyOtherPlayer = !level.getEntitiesOfClass(ServerPlayer.class,
-                player.getBoundingBox().inflate(radius + 4.0), p -> p != player && p.isAlive()).isEmpty();
+        if (items.isEmpty()) {
+            return;
+        }
+        // 按距离从近到远排序（最近优先吸取）
+        items.sort(Comparator.comparingDouble(item -> item.distanceToSqr(player)));
         boolean any = false;
         for (ItemEntity item : items) {
-            if (!item.isAlive()) {
+            if (!item.isAlive() || item.getItem().isEmpty()) {
                 continue;
             }
-            // 尊重其他模组的"防远程吸取"标记（Draconic 做法）
-            if (item.getPersistentData().contains("PreventRemoteMovement")) {
-                continue;
-            }
-            // 玩家刚丢出的物品（hasPickUpDelay>0）不吸回；1.21.1 getOwner() 返回 Entity
+            // 物品有归属（是其他玩家刚丢出的）且不属于自己 → 不吸（不抢别人的东西）
             net.minecraft.world.entity.Entity owner = item.getOwner();
-            if (owner != null && owner.getUUID().equals(player.getUUID()) && item.hasPickUpDelay()) {
+            if (owner != null && !owner.getUUID().equals(player.getUUID()) && item.hasPickUpDelay()) {
                 continue;
             }
-            // 附近 4 格内有其他玩家 → 不抢别人的战利品（仅当附近确有他人才精确判断）
-            if (anyOtherPlayer) {
-                Player closest = level.getNearestPlayer(item, 4);
-                if (closest != null && closest != player) {
-                    continue;
-                }
-            }
-            if (player.distanceToSqr(item) > 4.0) {
+            // 尝试直接放入背包（player.addItem：成功返回 true 且 stack 清空；失败剩余留在 stack）
+            ItemStack stack = item.getItem();
+            boolean allAdded = player.addItem(stack);
+            if (allAdded) {
+                // 全部进入背包 → 移除掉落物实体
+                item.discard();
                 any = true;
-            }
-            if (item.hasPickUpDelay()) {
-                item.setNoPickUpDelay();
-            }
-            // 性能优化：只在物品距玩家超过 1.5 格时才瞬移（近处物品自然被拾取，减少 setPos 触发区块操作）
-            if (player.distanceToSqr(item) > 2.25) {
+            } else {
+                // 放不下：更新剩余数量（可能部分已进背包），传送到玩家脚下自然掉落
+                if (stack.getCount() != item.getItem().getCount()) {
+                    item.setItem(stack); // 同步剩余部分
+                    any = true;
+                }
+                item.teleportTo(player.getX(), player.getY() + 0.5, player.getZ());
+                item.setPickUpDelay(0);
                 item.setDeltaMovement(0, 0, 0);
-                item.fallDistance = 0;
-                item.setPos(player.getX() - 0.2 + level.random.nextDouble() * 0.4,
-                        player.getY() - 0.6,
-                        player.getZ() - 0.2 + level.random.nextDouble() * 0.4);
             }
         }
         if (any) {
@@ -113,6 +108,11 @@ public class MagnetEvents {
         Level level = player.level();
         AABB box = player.getBoundingBox().inflate(radius);
         List<ExperienceOrb> orbs = level.getEntitiesOfClass(ExperienceOrb.class, box);
+        if (orbs.isEmpty()) {
+            return;
+        }
+        // 按距离从近到远排序
+        orbs.sort(Comparator.comparingDouble(orb -> orb.distanceToSqr(player)));
         for (ExperienceOrb orb : orbs) {
             if (!orb.isAlive()) {
                 continue;

@@ -357,6 +357,23 @@ public class UltimateEvents {
         }
     }
 
+    // ============ 游戏模式切换：创造→生存时恢复技能飞行权限 ============
+    // 原版切换游戏模式会重置 abilities（mayfly=false），tick 授予可能被时序干扰，
+    // 监听切换事件立即重新授予，避免"切回生存后技能飞行失效需重新开关"的问题。
+    @SubscribeEvent
+    public static void onGameModeChange(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerChangeGameModeEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player && player.isAlive()) {
+            PlayerSkillRecord record = getRecord(player);
+            boolean favor = record.getLearnedPoints(Skills.ULT_FAVOR) > 0 && record.isEnabled(Skills.ULT_FAVOR);
+            Abilities abilities = player.getAbilities();
+            if (favor && !abilities.instabuild && !abilities.mayfly) {
+                abilities.mayfly = true; // 恢复技能飞行（创造本身能飞无需授予；非创造授予）
+                player.onUpdateAbilities();
+                SKILL_FLIGHT_GRANTED.add(player.getUUID());
+            }
+        }
+    }
+
     // ============ 凤凰涅槃：死亡时原地复活 + 全能精通免死保底 ============
     @SubscribeEvent
     public static void onLivingDeath(LivingDeathEvent event) {
