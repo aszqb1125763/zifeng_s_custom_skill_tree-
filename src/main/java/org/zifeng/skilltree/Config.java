@@ -67,13 +67,28 @@ public class Config {
     /** 磁铁吸取经验半径（格，默认 4，最大 32） */
     public static final ModConfigSpec.DoubleValue MAGNET_XP_RADIUS;
 
+    /** 虚空之矛：磁铁吸取范围放大（格，默认 55，经验和掉落物都生效） */
+    public static final ModConfigSpec.DoubleValue VOID_MAGNET_RADIUS;
+
     /** 光环锁定：一次性消耗技能点（默认 1000） */
     public static final ModConfigSpec.DoubleValue LOCK_COST;
+
+    /** 杀戮光环·虚空之矛：一次性消耗技能点（默认 5000） */
+    public static final ModConfigSpec.DoubleValue VOID_AURA_COST;
+
+    /** 虚空之躯：一次性消耗技能点（默认 5000） */
+    public static final ModConfigSpec.DoubleValue VOID_BODY_COST;
+
+    /** 发光（节点类终极）：给周围生物施加发光的半径（格，默认 35） */
+    public static final ModConfigSpec.DoubleValue GLOW_RADIUS;
 
     // ============ 杀戮光环（可热重载） ============
 
     /** 自动攻击半径（格） */
     public static final ModConfigSpec.DoubleValue AURA_ATTACK_RADIUS;
+
+    /** 虚空之矛：杀戮光环攻击半径放大（格，参考虚空之矛模组 50 格范围秒杀） */
+    public static final ModConfigSpec.DoubleValue VOID_AURA_RADIUS;
 
     /** 光环基础攻击间隔（tick，200 = 10 秒一次，未学速度光环时） */
     public static final ModConfigSpec.IntValue AURA_BASE_INTERVAL_TICKS;
@@ -98,6 +113,12 @@ public class Config {
 
     /** 全能精通：一次性消耗（默认 5000） */
     public static final ModConfigSpec.IntValue ULT_MASTER_COST;
+
+    /** 终极节点（节点类多级）：每级消耗阶梯递增比率（0.1 = +10%） */
+    public static final ModConfigSpec.DoubleValue ULTIMATE_STEP_RATE;
+
+    /** 战利品爆炸：掉落倍率封顶（1级=1倍，线性 1+等级；默认封顶 101） */
+    public static final ModConfigSpec.IntValue LOOT_BOMB_MAX_MULTIPLIER;
 
     /** 全能精通：所有基础属性额外增幅（小数） */
     public static final ModConfigSpec.DoubleValue MASTER_BONUS;
@@ -234,6 +255,9 @@ public class Config {
         AURA_ATTACK_RADIUS = builder
                 .comment("自动攻击半径（格，默认 20）")
                 .defineInRange("attackRadius", 20.0, 1.0, 128.0);
+        VOID_AURA_RADIUS = builder
+                .comment("虚空之矛：杀戮光环攻击半径放大（格，默认 50，参考虚空之矛模组范围秒杀）")
+                .defineInRange("voidAuraRadius", 50.0, 1.0, 128.0);
         AURA_BASE_INTERVAL_TICKS = builder
                 .comment("光环基础攻击间隔（tick，200 = 10 秒一次；未学/关闭光环速度时）")
                 .defineInRange("auraBaseIntervalTicks", 200, 10, 12000);
@@ -259,9 +283,21 @@ public class Config {
         MAGNET_XP_RADIUS = builder
                 .comment("吸取经验半径（格，默认 20，xyz 全方向，最大 32）")
                 .defineInRange("magnetXpRadius", 20.0, 1.0, 32.0);
+        VOID_MAGNET_RADIUS = builder
+                .comment("虚空之矛：磁铁吸取范围放大（格，默认 55，经验和掉落物都生效；需点亮并开启虚空之矛技能）")
+                .defineInRange("voidMagnetRadius", 55.0, 1.0, 128.0);
         LOCK_COST = builder
                 .comment("光环锁定：一次性消耗技能点（默认 1000）")
                 .defineInRange("lockCost", 1000.0, 1.0, 1000000.0);
+        VOID_AURA_COST = builder
+                .comment("杀戮光环·虚空之矛：一次性消耗技能点（默认 5000）")
+                .defineInRange("voidAuraCost", 5000.0, 1.0, 10000000.0);
+        VOID_BODY_COST = builder
+                .comment("虚空之躯：一次性消耗技能点（默认 5000）")
+                .defineInRange("voidBodyCost", 5000.0, 1.0, 10000000.0);
+        GLOW_RADIUS = builder
+                .comment("发光（节点类终极）：给周围生物施加发光的半径（格，默认 35）")
+                .defineInRange("glowRadius", 35.0, 1.0, 128.0);
         builder.pop();
 
         builder.comment("终极节点被动数值。改动即时生效")
@@ -293,6 +329,12 @@ public class Config {
         ULT_MASTER_COST = builder
                 .comment("全能精通：一次性消耗技能点（默认 5000）")
                 .defineInRange("ultMasterCost", 5000, 1, 10000000);
+        ULTIMATE_STEP_RATE = builder
+                .comment("终极节点（节点类多级）：每级消耗在上一级基础上增加的比率（小数，0.1 = +10%）")
+                .defineInRange("ultimateStepRate", 0.1, 0.0, 1.0);
+        LOOT_BOMB_MAX_MULTIPLIER = builder
+                .comment("战利品爆炸：掉落倍率封顶（1级=1倍，线性 1+等级，100级=101倍；默认 101）")
+                .defineInRange("lootBombMaxMultiplier", 101, 2, 1000000);
         BLOOD_ATTACK_BONUS = builder
                 .comment("浴血奋战：常驻攻击力增幅（小数，0.5 = +50%）")
                 .defineInRange("bloodAttackBonus", 0.5, 0.0, 10.0);

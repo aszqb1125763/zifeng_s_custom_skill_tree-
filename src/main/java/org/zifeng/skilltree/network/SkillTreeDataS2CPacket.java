@@ -35,8 +35,13 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
 
     /** 从玩家技能记录构建数据包（统一便捷入口） */
     public static SkillTreeDataS2CPacket from(org.zifeng.skilltree.data.PlayerSkillRecord record) {
+        // 杀戮光环实际状态 = 伤害/速度【已学】且开启（K 键控制；isEnabled 默认 true，必须配合已学判断）
+        boolean auraOn = (record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.AURA_DAMAGE) > 0
+                && record.isEnabled(org.zifeng.skilltree.skill.Skills.AURA_DAMAGE))
+                || (record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.AURA_SPEED) > 0
+                && record.isEnabled(org.zifeng.skilltree.skill.Skills.AURA_SPEED));
         return new SkillTreeDataS2CPacket(record.getSkillPoints(), record.getLearnedSkills(), record.getToggles(),
-                record.getActiveLevels(), record.isAuraEnabled(), record.getAuraTargetMode());
+                record.getActiveLevels(), auraOn, record.getAuraTargetMode());
     }
 
     public static void handle(SkillTreeDataS2CPacket packet, IPayloadContext ctx) {
@@ -52,6 +57,8 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
                 org.zifeng.skilltree.client.ModKeyBindingEvents.setAuraEnabledClient(packet.auraEnabled());
                 // 校准光环技能开关缓存（独立快捷键取反发送用）
                 org.zifeng.skilltree.client.ModKeyBindingEvents.updateAuraToggles(packet.toggles());
+                // 校准杀戮光环已学状态（圆环渲染防重置残留）
+                org.zifeng.skilltree.client.ModKeyBindingEvents.updateAuraLearned(packet.learnedSkills());
                 // 校准磁力光环已学状态（蓝色圆环显示用）
                 org.zifeng.skilltree.client.ModKeyBindingEvents.setMagnetLearnedClient(
                         packet.learnedSkills().getOrDefault(org.zifeng.skilltree.skill.Skills.AURA_MAGNET, 0) > 0);

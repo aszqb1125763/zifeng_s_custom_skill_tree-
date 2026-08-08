@@ -38,6 +38,12 @@ public record SetSkillToggleC2SPacket(String skillId, boolean enabled) implement
                 }
                 PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
                 PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
+                // ⚠️ 未学习该技能时忽略（防止快捷键把未学技能 toggle 置 false，导致 UI 永远显示"关闭"）
+                if (record.getLearnedPoints(packet.skillId()) <= 0) {
+                    // 回发当前真实状态校准客户端缓存（未学的技能恢复默认开启显示）
+                    PacketDistributor.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
+                    return;
+                }
                 record.setEnabled(packet.skillId(), packet.enabled());
                 data.setDirty();
                 // 重挂属性使开关生效

@@ -43,14 +43,17 @@ public class MagnetEvents {
             return;
         }
         PlayerSkillRecord record = getRecord(player);
-        // 磁力光环技能：需已学习且开关开启
+        // 磁力光环技能：需已学习且开关开启（H 键切换，独立于杀戮光环 K 键）
         if (record.getLearnedPoints(Skills.AURA_MAGNET) <= 0 || !record.isEnabled(Skills.AURA_MAGNET)) {
             return;
         }
+        // 虚空之矛：已学即提供磁铁范围增幅（55 格，Config 可调，经验和掉落物都生效）。
+        // 只受磁铁快捷键（H 键 = AURA_MAGNET 开关）控制，与杀戮光环 K 键完全无关。
+        boolean voidSpear = record.getLearnedPoints(Skills.AURA_VOID) > 0;
+        double itemRadius = voidSpear ? Config.VOID_MAGNET_RADIUS.get() : Config.MAGNET_ITEM_RADIUS.get();
+        double xpRadius = voidSpear ? Config.VOID_MAGNET_RADIUS.get() : Config.MAGNET_XP_RADIUS.get();
         // 每 10 tick 全半径扫描，其余 tick 只扫 5 格（性能优化，参考 Draconic）
         boolean fullScan = player.tickCount % 10 == 0;
-        double itemRadius = Config.MAGNET_ITEM_RADIUS.get();
-        double xpRadius = Config.MAGNET_XP_RADIUS.get();
         attractItems(player, fullScan ? itemRadius : Math.min(5.0, itemRadius));
         attractXp(player, fullScan ? xpRadius : Math.min(5.0, xpRadius));
     }

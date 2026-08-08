@@ -11,10 +11,12 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.zifeng.skilltree.SkillTreeMod;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
-import org.zifeng.skilltree.event.AuraEvents;
+import org.zifeng.skilltree.skill.Skills;
 
 /**
- * 切换杀戮光环总开关（客户端 → 服务端，快捷键触发），并发送聊天提示。
+ * 切换杀戮光环（伤害+速度）开关（客户端 → 服务端，快捷键 K 触发）：
+ * 不再有"光环总开关"——K 键只控制杀戮光环（伤害/速度）的开启与关闭，
+ * 其他光环（治愈/磁力/时环/晴空/锁定）各自独立（技能树右键或独立快捷键）。
  */
 public record ToggleAuraC2SPacket() implements CustomPacketPayload {
     public static final Type<ToggleAuraC2SPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "toggle_aura"));
@@ -30,8 +32,21 @@ public record ToggleAuraC2SPacket() implements CustomPacketPayload {
             if (ctx.flow().isServerbound() && ctx.player() instanceof ServerPlayer player) {
                 PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
                 PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
-                boolean now = !record.isAuraEnabled();
-                record.setAuraEnabled(now);
+                // 未学任何杀戮光环 → 忽略（防止未学状态误切换导致 UI 永远显示关闭）
+                boolean anyLearned = record.getLearnedPoints(Skills.AURA_DAMAGE) > 0
+                        || record.getLearnedPoints(Skills.AURA_SPEED) > 0;
+                if (!anyLearned) {
+                    return;
+                }
+                // 判断杀戮光环当前状态（伤害/速度任一开启即视为开）
+                boolean now = !(record.isEnabled(Skills.AURA_DAMAGE) || record.isEnabled(Skills.AURA_SPEED));
+                // 只切换已学技能（未学的不动）
+                if (record.getLearnedPoints(Skills.AURA_DAMAGE) > 0) {
+                    record.setEnabled(Skills.AURA_DAMAGE, now);
+                }
+                if (record.getLearnedPoints(Skills.AURA_SPEED) > 0) {
+                    record.setEnabled(Skills.AURA_SPEED, now);
+                }
                 data.setDirty();
                 // 聊天提示
                 player.sendSystemMessage(Component.literal(now

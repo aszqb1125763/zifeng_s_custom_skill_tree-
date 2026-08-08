@@ -80,22 +80,20 @@ public class AuraEvents {
     public static void onPlayerTick(PlayerTickEvent.Post event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             PlayerSkillRecord record = getRecord(player);
-            boolean auraTotalOn = record.isAuraEnabled();
-            // 时之环：学习+开启+总开关开启才锁定（总开关关闭时按 off 处理，计数同步减）
-            boolean timeOn = auraTotalOn && record.getLearnedPoints(Skills.AURA_TIME) > 0 && record.isEnabled(Skills.AURA_TIME);
+            // 时之环/晴空环：不依赖光环总开关（独立的时间/天气锁定，与攻击光环无关），
+            // 只要学了 + 技能开关开启就生效（修复整合包中不开总开关时不生效的问题）
+            boolean timeOn = record.getLearnedPoints(Skills.AURA_TIME) > 0 && record.isEnabled(Skills.AURA_TIME);
             updateTimeLock(player, timeOn);
             if (timeOn) {
                 enforceTimeLock(player);
             }
             // 晴空环：同理
-            boolean weatherOn = auraTotalOn && record.getLearnedPoints(Skills.AURA_WEATHER) > 0 && record.isEnabled(Skills.AURA_WEATHER);
+            boolean weatherOn = record.getLearnedPoints(Skills.AURA_WEATHER) > 0 && record.isEnabled(Skills.AURA_WEATHER);
             updateWeatherLock(player, weatherOn);
             if (weatherOn) {
                 enforceWeatherLock(player);
             }
-            if (!auraTotalOn) {
-                return; // 光环总开关关闭：不攻击不治疗
-            }
+            // 攻击/治疗光环：直接按各技能开关执行（不再有总开关；K 键只控制伤害/速度）
             auraAttack(player, record);
             auraHeal(player, record);
         }
@@ -196,10 +194,15 @@ public class AuraEvents {
 
     private static void auraAttack(ServerPlayer player, PlayerSkillRecord record) {
         int damageLevel = record.getLearnedPoints(Skills.AURA_DAMAGE);
-        if (damageLevel <= 0) {
+        // 虚空之矛：杀戮光环升级（已学即提供升级效果）。伤害生效只跟随杀戮光环开关（K 键）：
+        // 伤害或速度光环任一【已学且开启】（K 键开启状态）→ 虚空之矛秒杀生效；否则虚空之矛伤害停
+        boolean voidSpear = record.getLearnedPoints(Skills.AURA_VOID) > 0
+                && ((record.getLearnedPoints(Skills.AURA_DAMAGE) > 0 && record.isEnabled(Skills.AURA_DAMAGE))
+                || (record.getLearnedPoints(Skills.AURA_SPEED) > 0 && record.isEnabled(Skills.AURA_SPEED)));
+        if (damageLevel <= 0 && !voidSpear) {
             return;
         }
-        if (!record.isEnabled(Skills.AURA_DAMAGE)) {
+        if (!record.isEnabled(Skills.AURA_DAMAGE) && !voidSpear) {
             return;
         }
         // 攻击间隔（tick）：基础 10 秒（200 tick），每级光环速度 -9.5 tick，20 级 = 10 tick = 每秒 2 次。
@@ -219,9 +222,12 @@ public class AuraEvents {
 
         // 范围伤害：360° 球形（玩家为中心），固定半径 Config 可调；xyz 三轴全半径（不再压缩 Y）
         // 参考 ProjectE attackAOE（玩家自身为中心全向范围 + 谓词过滤敌友）
+        // ⚠️ 虚空之矛：学了虚空之矛 → 光环攻击半径放大到 50 格（Config 可调，参考虚空之矛模组范围秒杀）
         // ⚠️ 扫描 Entity.class 而非 LivingEntity.class：DE 的守卫水晶（GuardianCrystalEntity）直接继承 Entity，
         //    不是 LivingEntity！只扫 LivingEntity 会导致光环永远打不到水晶。
-        double radius = org.zifeng.skilltree.Config.AURA_ATTACK_RADIUS.get();
+        double radius = voidSpear
+                ? org.zifeng.skilltree.Config.VOID_AURA_RADIUS.get()
+                : org.zifeng.skilltree.Config.AURA_ATTACK_RADIUS.get();
         List<Entity> targets = player.level().getEntitiesOfClass(Entity.class,
                 player.getBoundingBox().inflate(radius, radius, radius),
                 target -> isTargetValid(player, target, mode));
@@ -264,6 +270,12 @@ public class AuraEvents {
             }
             if (!(targetEntity instanceof LivingEntity target)) {
                 continue; // 其他非 LivingEntity 实体（如物品/箭）跳过
+            }
+            // 虚空之矛秒杀（参考虚空之矛 damageLoop + forceFinish）：对普通生物直接绝对秒杀（1 亿×循环+兜底强杀）
+            // ⚠️ Boss/DE 守卫仍走下方混沌连击逻辑：混沌守卫有护盾格挡，虚空秒杀会被格挡，混沌连击已验证有效
+            if (voidSpear && !isBossEntity(target)) {
+                voidSpearKill(serverLevel, player, target);
+                continue;
             }
             // 无视无敌帧：每次攻击前清空目标受击无敌帧，保证每 tick 攻击都真实造成伤害（光环速度升级效果）
             if (ignoreIFrames) {
@@ -441,6 +453,48 @@ public class AuraEvents {
         // 3. 其他 Boss 兜底：有 Boss 血条的模组 Boss 通常有超高血量（≥500）
         //    （末影龙 200 / 凋灵 300，但混沌守卫 1000+、龙之研究/其他科技模组 Boss 常 >500）
         return target.getMaxHealth() >= 500.0f;
+    }
+
+    // ============ 杀戮光环·虚空之矛：虚空秒杀（参考虚空之矛 damageLoop + forceFinish，数值不削弱） ============
+
+    /**
+     * 虚空秒杀：对单个目标执行绝对击杀（参考虚空之矛）：
+     * <ul>
+     *   <li>① 秒杀循环：1 亿伤害 × 64 次，每次清零受击无敌帧（invulnerableTime/hurtTime），
+     *       换魔法伤害源（无视护甲），突破不同伤害源的免疫</li>
+     *   <li>② forceFinish 兜底：清吸收 + Float.MAX 强杀 + 血量归零 + die()，对伤害免疫实体也能强杀</li>
+     * </ul>
+     * 伤害源归属玩家（indirectMagic(player, player)）→ 击杀归功/掉落增幅/生命汲取全部生效。
+     */
+    private static void voidSpearKill(ServerLevel level, ServerPlayer player, LivingEntity target) {
+        if (target == null || !target.isAlive()) {
+            return;
+        }
+        // ① 秒杀循环：1 亿伤害 × 64 次，每次清零无敌帧（虚空之矛 damageLoop 思路）
+        //    indirectMagic：魔法伤害无视护甲/部分免疫，attacker=player → 击杀归功玩家
+        net.minecraft.world.damagesource.DamageSource voidSource = player.damageSources().indirectMagic(player, player);
+        final float VOID_DAMAGE = 100_000_000.0F; // 1 亿
+        for (int i = 0; i < 64; i++) {
+            if (!target.isAlive()) {
+                break;
+            }
+            target.invulnerableTime = 0;
+            target.hurtTime = 0;
+            target.hurt(voidSource, VOID_DAMAGE);
+        }
+        // ② forceFinish 兜底（参考虚空之矛）：清吸收 + 强杀 + 血量归零 + die，对伤害免疫实体也能击杀
+        if (target.isAlive()) {
+            target.setAbsorptionAmount(0);
+            target.hurt(player.damageSources().magic(), Float.MAX_VALUE);
+            if (target.isAlive()) {
+                target.setHealth(0.0F);
+                target.die(voidSource);
+            }
+        }
+        // 虚空传送门粒子（虚空主题，参考虚空之矛范围秒杀的粒子表现）
+        level.sendParticles(ParticleTypes.PORTAL,
+                target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
+                12, 0.3, 0.3, 0.3, 0.02);
     }
 
     // ============ 治愈光环：给周围友方单位施加生命回复效果（等级 = 技能等级） ============

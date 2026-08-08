@@ -65,6 +65,13 @@ public final class SkillEffects {
             new BaseSkill(Skills.AMP_ARMOR, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION, 0.0005)
     );
 
+    // ============ 多级终极（节点类）属性技能：技能ID → [属性, 单点固定值] ============
+    // 接触距离：每级 +1 格触摸距离（方块交互）+ 攻击距离（实体交互），走 ADD_VALUE 直接叠加上限 50
+    private static final List<BaseSkill> MULTI_ULTIMATE_ATTRS = List.of(
+            new BaseSkill(Skills.REACH, Attributes.ENTITY_INTERACTION_RANGE, 1.0),
+            new BaseSkill(Skills.REACH, Attributes.BLOCK_INTERACTION_RANGE, 1.0)
+    );
+
     // ============ 增幅技能：技能ID → [属性, 单点百分比(小数)]（与基础技能一一对应） ============
     private static final List<BaseSkill> AMPLIFY_SKILLS = List.of(
             new BaseSkill(Skills.AMP_HP, Attributes.MAX_HEALTH, 0.005),
@@ -107,6 +114,13 @@ public final class SkillEffects {
                 mult += points * a.perPoint();
             }
         }
+        // 接触距离（节点类多级终极）：每级 +1 格触摸/攻击距离（ADD_VALUE）
+        for (BaseSkill r : MULTI_ULTIMATE_ATTRS) {
+            if (r.attribute().equals(attribute)) {
+                int points = record.isEnabled(r.skillId()) ? record.getActiveLevel(r.skillId()) : 0;
+                add += points * r.perPoint();
+            }
+        }
         boolean master = record.getLearnedPoints(Skills.ULT_MASTER) > 0 && record.isEnabled(Skills.ULT_MASTER);
         if (master) {
             mult += org.zifeng.skilltree.Config.MASTER_BONUS.get();
@@ -143,6 +157,11 @@ public final class SkillEffects {
         for (BaseSkill amp : AMPLIFY_SKILLS) {
             int points = record.isEnabled(amp.skillId()) ? record.getActiveLevel(amp.skillId()) : 0;
             applyMultiplier(player, amp.attribute(), ampId(amp.skillId()), points * amp.perPoint());
+        }
+        // 2.5 接触距离（节点类多级终极）：每级 +1 格触摸/攻击距离（ADD_VALUE；关闭/未学 → amount=0 自动移除）
+        for (BaseSkill reach : MULTI_ULTIMATE_ATTRS) {
+            int points = record.isEnabled(reach.skillId()) ? record.getActiveLevel(reach.skillId()) : 0;
+            applyAddValue(player, reach.attribute(), baseId(reach.skillId()), points * reach.perPoint());
         }
         // 3. 全能精通：所有受影响的属性 +增幅（Config 可调，默认 25%；未解锁/关闭 → amount=0 移除）
         boolean master = record.getLearnedPoints(Skills.ULT_MASTER) > 0 && record.isEnabled(Skills.ULT_MASTER);

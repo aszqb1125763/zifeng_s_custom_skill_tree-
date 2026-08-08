@@ -32,13 +32,16 @@ public record AuraTargetC2SPacket(int mode) implements CustomPacketPayload {
                 PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
                 record.setAuraTargetMode(packet.mode());
                 data.setDirty();
-                // 聊天提示
+                // 聊天提示（图标区分模式，与目标类型强相关：敌对💀 / 友好🐑 / 所有🌍）
+                String[] icons = {"💀", "🐑", "🌍"};
                 String modeText = switch (packet.mode()) {
                     case 1 -> "友好生物";
                     case 2 -> "所有生物";
                     default -> "敌对生物";
                 };
-                player.sendSystemMessage(net.minecraft.network.chat.Component.literal("🎯 杀戮光环目标：" + modeText));
+                String icon = icons[Math.max(0, Math.min(2, packet.mode()))];
+                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                        icon + " 杀戮光环目标：" + modeText));
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
             }

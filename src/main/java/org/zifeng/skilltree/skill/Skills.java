@@ -81,6 +81,7 @@ public final class Skills {
             case ULT_BLOOD, ULT_GOLDEN, ULT_REVIVE -> Config.ULT_BASE_COST.get();
             case ULT_REAPER -> Config.ULT_REAPER_COST.get();
             case ULT_MASTER -> Config.ULT_MASTER_COST.get();
+            case ULT_VOID_BODY -> (int) Math.round(Config.VOID_BODY_COST.get());
             default -> 1; // 普通终极 1 点
         };
     }
@@ -113,7 +114,10 @@ public final class Skills {
     public static final String LIFESTEAL = "lifesteal";       // 生命汲取（吸血）
     public static final String THORNS = "thorns";             // 荆棘反伤（受击反弹）
     public static final String ARMOR_PEN = "armor_pen";       // 破甲精通（无视护甲增伤）
-
+    public static final String VILLAGE_HERO = "village_hero"; // 村庄英雄（每级1级效果，上限10级）
+    public static final String REACH = "reach";               // 接触距离（触摸/攻击距离，每级+1格，上限50级）
+    public static final String GLOW = "glow";                 // 发光（35格生物发光，上限1级）
+    public static final String LOOT_BOMB = "loot_bomb";       // 战利品爆炸（掉落翻倍，1级翻一倍，上限100级）
     // ============ 特殊增幅技能（与基础技能一一对应，顺序同纵列1） ============
     public static final String AMP_HP = "amp_hp";                     // 生命增幅（对应生命强化）
     public static final String AMP_ARMOR = "amp_armor";               // 防御强化（对应体魄强化）
@@ -142,6 +146,7 @@ public final class Skills {
     public static final String SATURATION = "saturation";     // 饱食（100点，1级）
     public static final String ULT_REVIVE = "ult_revive";   // 凤凰涅槃（死亡复活）
     public static final String ULT_REAPER = "ult_reaper";   // 死神凝视（处决低血目标）
+    public static final String ULT_VOID_BODY = "ult_void_body"; // 虚空之躯（三层无敌防御）
 
     // ============ 杀戮光环（AURA，独立系统） ============
     public static final String AURA_DAMAGE = "aura_damage";   // 杀戮光环·伤害
@@ -151,6 +156,7 @@ public final class Skills {
     public static final String AURA_TIME = "aura_time";       // 时之环·永恒正午（锁定世界时间）
     public static final String AURA_WEATHER = "aura_weather"; // 晴空环·永恒晴天（锁定天气）
     public static final String AURA_LOCK = "aura_lock";       // 光环锁定（免疫TP/击退）
+    public static final String AURA_VOID = "aura_void";       // 杀戮光环·虚空之矛（虚空伤害/秒杀）
 
     /** 所有基础技能（纵列1） */
     public static final List<String> BASE_SKILLS = List.of(BODY_HP, BODY, TOUGH, BLADE, ATTACK_SPEED, MINING, MOVE, REGEN, LUCK, JUMP, FLY, SWIM, CRIT, LIFESTEAL, THORNS, ARMOR_PEN);
@@ -160,9 +166,9 @@ public final class Skills {
             AMP_REGEN, AMP_LUCK, AMP_JUMP, AMP_FLY, AMP_SWIM,
             AMP_CRIT, AMP_LIFESTEAL, AMP_THORNS, AMP_ARMOR_PEN, AMP_DROP);
     /** 所有终极节点（纵列3） */
-    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER);
+    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY, VILLAGE_HERO, REACH, GLOW, LOOT_BOMB);
     /** 所有杀戮光环（纵列4） */
-    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_LOCK);
+    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_LOCK, AURA_VOID);
 
     public static final List<String> ALL_SKILLS = new ArrayList<>() {{
         addAll(BASE_SKILLS);
@@ -189,18 +195,58 @@ public final class Skills {
             case AURA_TIME -> 1; // 一次性解锁（100 技能点）
             case AURA_WEATHER -> 1; // 一次性解锁（100 技能点）
             case AURA_LOCK -> 1; // 一次性解锁（1000 技能点）
+            case AURA_VOID -> 1; // 一次性解锁（5000 技能点）
             default -> 0;
         };
     }
 
-    /** 各技能等级上限（按钮第2行显示用）：基础 1000 / 增幅 500 / 终极 1 / 光环各自上限 */
+    /** 各技能等级上限（按钮第2行显示用）：基础 1000 / 增幅 500 / 终极 1（多级终极各自上限） / 光环各自上限 */
     public static int getMaxPoints(String skillId) {
         return switch (getType(skillId)) {
             case BASE -> BASE_MAX_POINTS;
             case AMPLIFY -> AMPLIFY_MAX_POINTS;
-            case ULTIMATE -> 1;
+            case ULTIMATE -> getUltimateMaxPoints(skillId);
             case AURA -> getAuraMaxPoints(skillId);
         };
+    }
+
+    /**
+     * 终极节点等级上限：默认单次解锁（1）；多级终极节点（节点类，无前置）各自上限：
+     * 村庄英雄 10 / 接触距离 50 / 发光 1 / 战利品爆炸 100
+     */
+    public static int getUltimateMaxPoints(String skillId) {
+        return switch (skillId) {
+            case VILLAGE_HERO -> 10;
+            case REACH -> 50;
+            case GLOW -> 1;
+            case LOOT_BOMB -> 100;
+            default -> 1;
+        };
+    }
+
+    /**
+     * 终极节点每级消耗（节点类）：阶梯递增——每级消耗在上一级基础上增加 10%（Config 可调）。
+     * <pre>cost(第n级) = round(base × 1.1^n)</pre>
+     * 基础值：村庄英雄/战利品爆炸 10、接触距离 1、发光 1；普通单次终极走 ultimateCost。
+     * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
+     */
+    public static double getUltimateLevelCost(String skillId, int currentLevel) {
+        double base = switch (skillId) {
+            case VILLAGE_HERO, LOOT_BOMB -> 10.0;
+            case REACH, GLOW -> 1.0;
+            default -> ultimateCost(skillId); // 单次解锁终极：无阶梯
+        };
+        if (getUltimateMaxPoints(skillId) <= 1) {
+            return base; // 单次解锁终极无阶梯
+        }
+        // 每级消耗在上一级基础上 +10%（1.1^当前等级）
+        double mult = Math.pow(1 + org.zifeng.skilltree.Config.ULTIMATE_STEP_RATE.get(), currentLevel);
+        return base * mult;
+    }
+
+    /** 节点类终极（多级，可调生效等级）判断 */
+    public static boolean isMultiLevelUltimate(String skillId) {
+        return getUltimateMaxPoints(skillId) > 1;
     }
 
     /** 杀戮光环：下一级消耗 = 1000 × 1.05^当前等级（数值均走 Config） */
@@ -226,6 +272,10 @@ public final class Skills {
             case LIFESTEAL -> "生命汲取";
             case THORNS -> "荆棘反伤";
             case ARMOR_PEN -> "破甲精通";
+            case VILLAGE_HERO -> "村庄英雄";
+            case REACH -> "接触距离";
+            case GLOW -> "发光";
+            case LOOT_BOMB -> "战利品爆炸";
             case AMP_HP -> "生命增幅";
             case AMP_DAMAGE -> "锋刃增幅";
             case AMP_ATTACK_SPEED -> "疾攻增幅";
@@ -251,6 +301,7 @@ public final class Skills {
             case SATURATION -> "星食·饱腹";
             case ULT_REVIVE -> "凤凰涅槃";
             case ULT_REAPER -> "死神凝视";
+            case ULT_VOID_BODY -> "虚空之躯";
             case AURA_DAMAGE -> "杀戮光环·伤害";
             case AURA_SPEED -> "杀戮光环·速度";
             case AURA_HEAL -> "治愈光环";
@@ -258,6 +309,7 @@ public final class Skills {
             case AURA_TIME -> "时之环·永恒正午";
             case AURA_WEATHER -> "晴空环·永恒晴天";
             case AURA_LOCK -> "光环锁定";
+            case AURA_VOID -> "杀戮光环·虚空之矛";
             default -> "未知技能";
         };
     }
@@ -280,6 +332,10 @@ public final class Skills {
             case LIFESTEAL -> "生命汲取：每点 +0.1% 吸血\n（按造成的伤害回复生命）";
             case THORNS -> "荆棘之体：每点 +0.05 反伤\n（受击时反弹伤害给攻击者）";
             case ARMOR_PEN -> "破甲精通：每点 +0.15% 最终伤害\n（无视目标护甲）";
+            case VILLAGE_HERO -> "村庄英雄：每级 +4 级村庄英雄效果\n（10级满=村庄英雄40级，交易折扣极大）\n每级消耗 10 技能点";
+            case REACH -> "接触距离：每级 +1 格触摸距离\n和攻击距离（上限50级）\n每级消耗 1 技能点";
+            case GLOW -> "发光：给 35 格半径内所有生物\n施加发光效果（除玩家自身）\n一次性解锁，消耗 1 技能点";
+            case LOOT_BOMB -> "战利品爆炸：击杀所有生物含Boss\n100%触发战利品爆炸，掉落翻倍\n1级1倍，100级=100倍（线性增长）\n每级消耗阶梯递增（10%涨幅）";
             case AMP_HP -> "生命增幅：每点 +0.5% 最大生命倍率";
             case AMP_DAMAGE -> "锋刃增幅：每点 +0.5% 近战伤害倍率";
             case AMP_ATTACK_SPEED -> "疾攻增幅：每点 +0.4% 攻击速度倍率";
@@ -305,6 +361,7 @@ public final class Skills {
             case SATURATION -> "星食·饱腹：消耗 100 技能点\n一次性点亮，饱食度永远满值";
             case ULT_REVIVE -> "凤凰涅槃：消耗 500 技能点，\n死亡原地复活一次，回复50%生命\n并清除负面效果，冷却1分钟\n前置：生命汲取500 + 暴击精通500";
             case ULT_REAPER -> "死神凝视：消耗 1000 技能点，\n攻击生命<15%的非玩家生物时\n30%概率直接处决\n前置：破甲精通500 + 锋刃精通500";
+            case ULT_VOID_BODY -> "虚空之躯：消耗 5000 技能点，\n三层无敌：免伤/免死/血量只增不减\n抗击退/免摔落/免火焰/清负面\n前置：全能精通";
             case AURA_DAMAGE -> "杀戮光环·伤害：每级+10%伤害倍率，\n360°范围伤害，附带混沌伤害\n（无视护甲真实伤害）\n上限1000级，默认10秒攻击一次";
             case AURA_SPEED -> "杀戮光环·速度：提高光环攻击频率\n（每级减少攻击间隔，20级=每秒2次）\n未点亮默认10秒攻击一次\n上限20级";
             case AURA_HEAL -> "治愈光环：每级给周围10格内\n友方单位对应等级的生命回复效果\n（50级 = 生命回复50级）\n上限50级，消耗随等级递增";
@@ -312,6 +369,7 @@ public final class Skills {
             case AURA_TIME -> "时之环·永恒正午：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定世界时间\n为正午，不被睡觉/时间命令影响\n关闭后立即恢复正常时间流动";
             case AURA_WEATHER -> "晴空环·永恒晴天：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定晴天\n不被下雨/天气命令影响\n关闭后立即恢复正常天气";
             case AURA_LOCK -> "光环锁定：消耗 1000 技能点\n一次性点亮，开启后免疫 TP 与击退\n（传送/瞬移/击退均无效）\n只有自己移动/飞行才能真正移动";
+            case AURA_VOID -> "杀戮光环·虚空之矛：消耗 5000 技能点\n一次性点亮，杀戮光环获得虚空之矛力量\n（绝对秒杀+范围扩大至50格，K键控制）\n（磁铁范围扩至55格，H键控制）";
             default -> "";
         };
     }
@@ -324,7 +382,8 @@ public final class Skills {
             case ULT_MASTER -> List.of(ULT_BLOOD, ULT_GOLDEN, ULT_REVIVE, ULT_REAPER);
             case ULT_REVIVE -> List.of(LIFESTEAL, CRIT);
             case ULT_REAPER -> List.of(ARMOR_PEN, BLADE);
-            default -> List.of(); // 宇宙的青睐/夜视/饱食无前置
+            case ULT_VOID_BODY -> List.of(ULT_MASTER); // 前置：全能精通
+            default -> List.of(); // 宇宙的青睐/夜视/饱食/村庄英雄/接触距离/发光/战利品爆炸无前置
         };
     }
 
@@ -352,14 +411,18 @@ public final class Skills {
             case FLY -> Items.ELYTRA;                          // 御空：鞘翅
             case SWIM -> Items.COD;                            // 潜游：鳕鱼
             case CRIT -> Items.FLINT;                          // 暴击：燧石（尖锐）
-            case LIFESTEAL -> Items.NETHER_WART;               // 吸血：下界疣（暗红）
+            case LIFESTEAL -> Items.ROTTEN_FLESH;               // 吸血：腐肉（血腥，比下界疣直观）
             case THORNS -> Items.CACTUS;                       // 荆棘：仙人掌
             case ARMOR_PEN -> Items.TRIDENT;                   // 破甲：三叉戟（穿透）
+            case VILLAGE_HERO -> Items.WHITE_BANNER;            // 村庄英雄：旗帜（英雄荣誉）
+            case REACH -> Items.ENDER_PEARL;                   // 接触距离：末影珍珠（远距离）
+            case GLOW -> Items.GLOWSTONE_DUST;                 // 发光：萤石粉（发光）
+            case LOOT_BOMB -> Items.CREEPER_HEAD;              // 战利品爆炸：苦力怕头（爆炸）
             // ===== 特殊增幅（纵列2，与基础一一对应，用进阶材质） =====
             case AMP_HP -> Items.GOLDEN_APPLE;                 // 生命增幅：金苹果（苹果进阶）
-            case AMP_ARMOR -> Items.DIAMOND_CHESTPLATE;        // 防御强化：钻石胸甲（铁胸甲进阶）
+            case AMP_ARMOR -> Items.NETHERITE_CHESTPLATE;      // 防御强化：下界合金胸甲（铁甲进阶，避免与虚空之躯钻石甲重复）
             case AMP_TOUGH -> Items.DIAMOND;                   // 坚韧增幅：钻石（坚硬）
-            case AMP_DAMAGE -> Items.DIAMOND_SWORD;            // 锋刃增幅：钻石剑（铁剑进阶）
+            case AMP_DAMAGE -> Items.NETHERITE_SWORD;          // 锋刃增幅：下界合金剑（铁剑进阶，避免与虚空之矛钻石剑重复）
             case AMP_ATTACK_SPEED -> Items.GOLD_INGOT;         // 疾攻增幅：金锭
             case AMP_MINING -> Items.DIAMOND_PICKAXE;          // 采掘增幅：钻石镐（铁镐进阶）
             case AMP_MOVE -> Items.DIAMOND_BOOTS;              // 疾行增幅：钻石靴（皮靴进阶）
@@ -375,21 +438,23 @@ public final class Skills {
             case AMP_DROP -> Items.GOLD_BLOCK;                 // 掉落增幅：金块（宝物）
             // ===== 终极节点（纵列3） =====
             case ULT_BLOOD -> Items.BLAZE_ROD;                 // 浴血奋战：烈焰棒
-            case ULT_GOLDEN -> Items.ENCHANTED_GOLDEN_APPLE;   // 不坏金身：附魔金苹果
+            case ULT_GOLDEN -> Items.BEACON;                   // 不坏金身：信标（常驻buff光环）
             case ULT_MASTER -> Items.NETHER_STAR;              // 全能精通：下界之星
             case ULT_FAVOR -> Items.DRAGON_EGG;                // 宇宙的青睐：龙蛋
             case NIGHT_VISION -> Items.GOLDEN_CARROT;          // 星瞳·夜视：金胡萝卜
             case SATURATION -> Items.CAKE;                     // 星食·饱腹：蛋糕
             case ULT_REVIVE -> Items.TOTEM_OF_UNDYING;         // 凤凰涅槃：不死图腾
             case ULT_REAPER -> Items.WITHER_SKELETON_SKULL;    // 死神凝视：凋灵骷髅头
+            case ULT_VOID_BODY -> Items.DIAMOND_CHESTPLATE;    // 虚空之躯：原版钻石甲（金边=伤害吸收）
             // ===== 杀戮光环（纵列4） =====
-            case AURA_DAMAGE -> Items.STONE_SWORD;             // 光环·伤害：石剑
+            case AURA_DAMAGE -> Items.TNT;                     // 光环·伤害：TNT（范围爆炸伤害）
             case AURA_SPEED -> Items.REDSTONE;                 // 光环·速度：红石粉（高频）
             case AURA_HEAL -> Items.HONEY_BOTTLE;              // 治愈光环：蜂蜜瓶
             case AURA_MAGNET -> Items.LODESTONE;               // 磁力光环：磁石（吸铁）
             case AURA_TIME -> Items.CLOCK;                     // 时之环：时钟（锁定时间）
             case AURA_WEATHER -> Items.SUNFLOWER;              // 晴空环：向日葵（面向太阳）
             case AURA_LOCK -> Items.ANVIL;                     // 光环锁定：铁砧（稳固不动）
+            case AURA_VOID -> Items.DIAMOND_SWORD;            // 虚空之矛：原版钻石剑（虚空力量，金边=伤害吸收）
             default -> Items.BARRIER;
         };
     }

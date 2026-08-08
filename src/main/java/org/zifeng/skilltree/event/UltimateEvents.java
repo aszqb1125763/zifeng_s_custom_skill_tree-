@@ -6,11 +6,13 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Abilities;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.level.storage.loot.entries.LootPoolEntryContainer;
@@ -60,6 +62,11 @@ public class UltimateEvents {
     /** 全能精通是否已学且启用 */
     private static boolean isMasterEnabled(PlayerSkillRecord record) {
         return record.getLearnedPoints(Skills.ULT_MASTER) > 0 && record.isEnabled(Skills.ULT_MASTER);
+    }
+
+    /** 虚空之躯是否已学且启用（三层无敌，优先于全能精通） */
+    private static boolean isVoidBodyEnabled(PlayerSkillRecord record) {
+        return record.getLearnedPoints(Skills.ULT_VOID_BODY) > 0 && record.isEnabled(Skills.ULT_VOID_BODY);
     }
 
     /** 技能授予的飞行权限记录（用于"关闭技能→回收"与"登出→回收"，防止误关创造模式/其他模组的飞行） */
@@ -205,6 +212,34 @@ public class UltimateEvents {
                 player.getFoodData().setFoodLevel(20);
                 player.getFoodData().setSaturation(20.0f);
             }
+            // 村庄英雄（节点类多级终极，上限10级）：每级 +4 级原版村庄英雄效果
+            // 1级=村庄英雄4级(amp3)，2级=8级(amp7)，10级=40级(amp39)
+            // 实现参考夜视：每 20 tick 刷新保持（交易折扣永久生效）
+            int heroLevel = record.isEnabled(Skills.VILLAGE_HERO) ? record.getActiveLevel(Skills.VILLAGE_HERO) : 0;
+            if (heroLevel > 0 && player.tickCount % 20 == 0) {
+                int heroAmp = heroLevel * 4 - 1; // 每级 +4 级村庄英雄
+                var hero = player.getEffect(net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE);
+                if (hero == null || hero.getAmplifier() < heroAmp || hero.getDuration() < 300) {
+                    player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                            net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE, 400, heroAmp, false, false, false));
+                }
+            }
+            // 发光（节点类终极）：给 35 格半径内所有生物（除玩家自身）施加发光效果
+            // 实现参考夜视：定期刷新保持；每 40 tick（2秒）扫描一次，效果时长 100 tick（5秒）防闪烁
+            int glowOn = record.getLearnedPoints(Skills.GLOW) > 0 && record.isEnabled(Skills.GLOW) ? 1 : 0;
+            if (glowOn > 0 && player.tickCount % 40 == 0) {
+                double glowRadius = org.zifeng.skilltree.Config.GLOW_RADIUS.get();
+                List<LivingEntity> glowTargets = player.level().getEntitiesOfClass(LivingEntity.class,
+                        player.getBoundingBox().inflate(glowRadius, glowRadius, glowRadius),
+                        target -> target.isAlive() && target != player);
+                for (LivingEntity target : glowTargets) {
+                    var cur = target.getEffect(net.minecraft.world.effect.MobEffects.GLOWING);
+                    if (cur == null || cur.getDuration() < 60) {
+                        target.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                                net.minecraft.world.effect.MobEffects.GLOWING, 100, 0, false, false, false));
+                    }
+                }
+            }
             // 全能精通：全方位防御（参考 Re:Avaritia 无尽套 + DE 混沌护胸）
             if (isMasterEnabled(record)) {
                 // ① 负面效果免疫：每 tick 清除非有益效果（保留不坏金身的抗性/吸收等有益 buff）
@@ -236,6 +271,37 @@ public class UltimateEvents {
                 masterInvulnUntil.remove(player.getUUID());
                 if (player.isInvulnerable()) {
                     player.setInvulnerable(false);
+                }
+            }
+            // 虚空之躯：三层无敌之每 tick 修复层（参考虚空之矛）——回满血 + 吸收 20 + 氧气无限 + 灭火 + 清负面 + 虚空救援
+            // ⚠️ 放在全能精通之后：虚空之躯是全能精通的升级，防御更强（血量恒满而非免死保底）
+            if (isVoidBodyEnabled(record)) {
+                // ① 血量只增不减：持续回满（等效虚空之矛 setHealth 只增不减）
+                if (player.getHealth() < player.getMaxHealth()) {
+                    player.setHealth(player.getMaxHealth());
+                }
+                // ② 保持吸收 20 点（10 颗黄心，虚空之矛同款，防伤害穿透）
+                var voidAbs = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
+                if (voidAbs == null || voidAbs.getAmplifier() < 4 || voidAbs.getDuration() < 300) {
+                    player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                            net.minecraft.world.effect.MobEffects.ABSORPTION, 400, 4, false, false, false));
+                }
+                // ③ 氧气无限：永不溺水
+                if (player.getAirSupply() < player.getMaxAirSupply()) {
+                    player.setAirSupply(player.getMaxAirSupply());
+                }
+                // ④ 灭火
+                if (player.isOnFire()) {
+                    player.clearFire();
+                }
+                // ⑤ 清负面效果
+                if (player.tickCount % 10 == 0) {
+                    var effects = new java.util.ArrayList<>(player.getActiveEffects());
+                    for (var effect : effects) {
+                        if (!effect.getEffect().value().isBeneficial()) {
+                            player.removeEffect(effect.getEffect());
+                        }
+                    }
                 }
             }
             // 凤凰涅槃：每秒同步冷却状态到客户端（HUD 图标提示冷却倒计时/就绪）
@@ -298,6 +364,16 @@ public class UltimateEvents {
             PlayerSkillRecord record = getRecord(player);
             long now = player.level().getGameTime();
             UUID uuid = player.getUUID();
+
+            // 虚空之躯：绝对不死（三层无敌第二层，死亡事件直接取消并回满血，无冷却）
+            //    参考虚空之矛 onLivingDeath cancel + 回满血；优先于全能精通免死保底
+            if (isVoidBodyEnabled(record)) {
+                event.setCanceled(true);
+                player.setHealth(player.getMaxHealth());
+                player.hurtTime = 0;
+                player.invulnerableTime = 10;
+                return;
+            }
 
             // 全能精通免死保底（参考 DE Undying 不死模块）：冷却内保 1 血，冷却好则回血+清负面+无敌
             if (isMasterEnabled(record)) {
@@ -363,7 +439,13 @@ public class UltimateEvents {
     public static void onLivingIncomingDamage(net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             PlayerSkillRecord record = getRecord(player);
-            // 0. 全能精通：全伤害减免 100%（对所有伤害类型生效，包括真伤/混沌/指令；参考 DE 混沌护胸的全伤害防护）
+            // 0. 虚空之躯：全伤害完全免疫（三层无敌第一层，优先于全能精通的百分比减免）
+            //    对所有伤害类型生效，包括真伤/混沌/指令伤害，数值直接归零
+            if (isVoidBodyEnabled(record)) {
+                event.setAmount(0);
+                return; // 虚空之躯完全免疫，无需再走后续减伤层
+            }
+            // 0.5 全能精通：全伤害减免 100%（对所有伤害类型生效，包括真伤/混沌/指令；参考 DE 混沌护胸的全伤害防护）
             //    /kill 指令伤害也免疫（它走 LivingDeathEvent，由免死保底拦截；此处对走伤害事件的伤害全额减免）
             if (isMasterEnabled(record)) {
                 float masterReduction = org.zifeng.skilltree.Config.MASTER_DAMAGE_REDUCTION.get().floatValue();
@@ -394,7 +476,7 @@ public class UltimateEvents {
     public static void onLivingFall(net.neoforged.neoforge.event.entity.living.LivingFallEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             PlayerSkillRecord record = getRecord(player);
-            if (isMasterEnabled(record)) {
+            if (isVoidBodyEnabled(record) || isMasterEnabled(record)) {
                 event.setCanceled(true); // 摔落无伤
             }
         }
@@ -404,7 +486,7 @@ public class UltimateEvents {
     public static void onKnockBack(net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             PlayerSkillRecord record = getRecord(player);
-            if (isMasterEnabled(record)) {
+            if (isVoidBodyEnabled(record) || isMasterEnabled(record)) {
                 event.setCanceled(true); // 免疫击退
             }
         }
@@ -462,6 +544,34 @@ public class UltimateEvents {
             return;
         }
         PlayerSkillRecord record = getRecord(sp);
+        // ============ 战利品爆炸（终极节点，参考神化 FestiveAffix）============
+        // 对所有生物（含 Boss、含其他模组怪物）击杀时 100% 触发：掉落物翻倍爆炸散射
+        // 1 级 = 掉落 1 倍（即 2 份），100 级 = 100 倍（线性：倍率 = 1 + 等级）
+        int bombLevel = record.isEnabled(Skills.LOOT_BOMB) ? record.getActiveLevel(Skills.LOOT_BOMB) : 0;
+        if (bombLevel > 0 && !event.getDrops().isEmpty()) {
+            // 倍率 = 1 + 等级（1级=2倍，100级=101倍，线性增长）
+            int maxMult = org.zifeng.skilltree.Config.LOOT_BOMB_MAX_MULTIPLIER.get();
+            int bombMult = Math.min(maxMult, 1 + bombLevel);
+            if (bombMult > 1) {
+                // 快照掉落物列表，避免遍历中修改
+                List<ItemEntity> snapshot = new java.util.ArrayList<>(event.getDrops());
+                for (ItemEntity item : snapshot) {
+                    if (item == null || !item.isAlive()) {
+                        continue;
+                    }
+                    // 复制 (bombMult-1) 份（item.copy() 独立栈）
+                    for (int i = 1; i < bombMult; i++) {
+                        ItemEntity copy = new ItemEntity(sp.level(),
+                                item.getX(), item.getY(), item.getZ(),
+                                item.getItem().copy());
+                        copy.setPickUpDelay(0);
+                        event.getDrops().add(copy);
+                    }
+                }
+                // 纯掉落翻倍：无音效、无粒子、无散射，掉落物像原版一样自然落地
+                // 不发送聊天提示（每杀必触发会刷屏）
+            }
+        }
         double mult = SkillEffects.getDropMultiplier(record);
         if (mult <= 1.0) {
             return;

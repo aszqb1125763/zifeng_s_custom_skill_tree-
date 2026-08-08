@@ -67,8 +67,10 @@ public class SkillEvents {
         if (event.getEntity() instanceof ServerPlayer player) {
             // 清空该玩家所有技能属性修饰符（空 record 等价于全部移除）
             SkillEffects.applyAll(player, new PlayerSkillRecord(player.getUUID()));
-            // 先回收本模组技能授予的飞行权限（不碰创造模式/其他模组飞行）+ 重置飞行速度防跨存档残留
-            UltimateEvents.clearPlayerFlight(player);
+            // 飞行权限不回收：宇宙的青睐点亮状态存在存档里，重进后 tick 自动重新授予，
+            // 保留 mayfly=true 让原版 player.dat 持久化，进出存档飞行不丢（只有关闭技能时才回收）
+            // UltimateEvents.clearPlayerFlight(player);
+            // 重置飞行速度防跨存档残留（flyingSpeed 会被原版持久化到 player.dat）
             UltimateEvents.resetFlyingSpeed(player);
             // 再清理终极被动 static 状态（连击/金身冷却）+ 移除连击攻速修饰符
             UltimateEvents.clearPlayer(player);

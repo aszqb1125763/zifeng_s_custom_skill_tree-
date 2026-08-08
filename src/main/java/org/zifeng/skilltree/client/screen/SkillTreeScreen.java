@@ -10,7 +10,7 @@ import org.zifeng.skilltree.event.AuraEvents;
 import org.zifeng.skilltree.network.AuraTargetC2SPacket;
 import org.zifeng.skilltree.network.LearnSkillC2SPacket;
 import org.zifeng.skilltree.network.OpenSkillTreeC2SPacket;
-import org.zifeng.skilltree.network.ResetSkillsC2SPacket;
+import org.zifeng.skilltree.network.ResetSkillC2SPacket;
 import org.zifeng.skilltree.network.SetSkillLevelC2SPacket;
 import org.zifeng.skilltree.network.SetSkillToggleC2SPacket;
 import org.zifeng.skilltree.skill.SkillEffects;
@@ -170,7 +170,7 @@ public class SkillTreeScreen extends Screen {
         String statusLine = "技能点：" + String.format("%.1f", skillPoints)
                 + "  ·  光环:" + (auraEnabled ? "开" : "关")
                 + "  ·  目标:" + modeText
-                + "  ·  左键加点 / Shift+左键×10 / 右键开关 / 滚轮调级 / Ctrl+R 重洗";
+                + "  ·  左键加点 / Shift+左键×10 / 右键开关 / 滚轮调级 / Shift+Ctrl+滚轮×100 / Ctrl+R 重置该技能";
         // 光环快捷键未绑定提示（默认空键，引导玩家自行设置）
         boolean showWarn = org.zifeng.skilltree.client.ModKeyBindingEvents.hasUnboundAuraKeys();
         String warnLine = showWarn ? "⚠ 光环技能快捷键未绑定（治愈/时环/晴空），请在 设置→控制 中设置" : null;
@@ -231,6 +231,34 @@ public class SkillTreeScreen extends Screen {
         }
     }
 
+    /**
+     * 技能按钮是否与属性面板/顶部标题区重叠（按钮局部坐标 → 屏幕坐标判定）。
+     * 重叠时跳过 renderItem 图标渲染（物品渲染穿透面板；fill/文字会被 guiOverlay 盖住，无需处理）。
+     */
+    private boolean isButtonUnderUI(int localX, int localY) {
+        // 按钮四个角 + 中心 采样点 → 屏幕坐标
+        float ox = (float) (width / 2.0 - 60 + panX);
+        float oy = (float) (height / 2.0 + 10 + panY);
+        int[][] points = {
+                {localX, localY},
+                {localX + BUTTON_WIDTH, localY},
+                {localX, localY + BUTTON_HEIGHT},
+                {localX + BUTTON_WIDTH, localY + BUTTON_HEIGHT},
+                {localX + BUTTON_WIDTH / 2, localY + BUTTON_HEIGHT / 2}
+        };
+        for (int[] p : points) {
+            float sx = ox + p[0] * (float) scale;
+            float sy = oy + p[1] * (float) scale;
+            if (Config.PANEL_VISIBLE.get() && isMouseOverPanel(sx, sy)) {
+                return true; // 与属性面板重叠
+            }
+            if (isMouseOverHeader(sx, sy)) {
+                return true; // 与顶部标题区重叠
+            }
+        }
+        return false;
+    }
+
     private void renderSkillButton(GuiGraphics guiGraphics, SkillButton button) {
         boolean hovered = button.isHovered(lastMouseX, lastMouseY, this);
         Skills.SkillType type = Skills.getType(button.skillId());
@@ -261,8 +289,27 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.fill(button.x(), button.y(), button.x() + 1, button.y() + BUTTON_HEIGHT, borderColor);
         guiGraphics.fill(button.x() + BUTTON_WIDTH - 1, button.y(), button.x() + BUTTON_WIDTH, button.y() + BUTTON_HEIGHT, borderColor);
 
+        // 图标是否会被属性面板/顶部标题区遮挡：遮挡则跳过 renderItem（物品渲染穿透面板，其他 fill/文字会被 guiOverlay 盖住）
+        boolean iconOverlapped = isButtonUnderUI(button.x(), button.y());
         // 技能图标（左侧 16×16，用原版物品图标）
-        guiGraphics.renderItem(new net.minecraft.world.item.ItemStack(Skills.getIcon(button.skillId())), button.x() + 3, button.y() + 3);
+        if (!iconOverlapped) {
+            guiGraphics.renderItem(new net.minecraft.world.item.ItemStack(Skills.getIcon(button.skillId())), button.x() + 3, button.y() + 3);
+            // 虚空系技能（虚空之矛/虚空之躯）：图标外圈金色边框（伤害吸收金边主题）
+            // 图标绘制区域 = (x+3, y+3) ~ (x+19, y+19)，金边包在图标四周 1px
+            if (Skills.AURA_VOID.equals(button.skillId()) || Skills.ULT_VOID_BODY.equals(button.skillId())) {
+                int ix = button.x() + 2, iy = button.y() + 2, iw = 18, ih = 18; // 图标外扩 1px 边界
+                int gold = enabled ? 0xFFFFD700 : 0xFFB8860B; // 开启=亮金，关闭=暗金
+                guiGraphics.fill(ix, iy, ix + iw, iy + 1, gold);
+                guiGraphics.fill(ix, iy + ih - 1, ix + iw, iy + ih, gold);
+                guiGraphics.fill(ix, iy, ix + 1, iy + ih, gold);
+                guiGraphics.fill(ix + iw - 1, iy, ix + iw, iy + ih, gold);
+                // 四角提亮（伤害吸收黄心质感）
+                guiGraphics.fill(ix, iy, ix + 2, iy + 2, 0xFFFFFFAA);
+                guiGraphics.fill(ix + iw - 2, iy, ix + iw, iy + 2, 0xFFFFFFAA);
+                guiGraphics.fill(ix, iy + ih - 2, ix + 2, iy + ih, 0xFFFFFFAA);
+                guiGraphics.fill(ix + iw - 2, iy + ih - 2, ix + iw, iy + ih, 0xFFFFFFAA);
+            }
+        }
         // 图标左移提示：名称从图标右侧开始（x+22）
         // 名称 + 开关标记
         String name = (enabled ? "" : "⛔ ") + Skills.getDisplayName(button.skillId());
@@ -292,7 +339,13 @@ public class SkillTreeScreen extends Screen {
                 for (int i = 0; i < points; i++) {
                     total += Skills.getAuraCost(button.skillId(), i);
                 }
-                costText = "已耗" + total + "点 下1级:" + (long) nextCost + "点";
+                // 有等级的光环（伤害/速度/治愈）：显示生效:X/Y（与基础技能一致，滚轮可调）
+                if (Skills.getAuraMaxPoints(button.skillId()) > 1) {
+                    int active = activeLevels.getOrDefault(button.skillId(), points);
+                    costText = "生效:" + active + "/" + points + " 下1级:" + (long) nextCost + "点";
+                } else {
+                    costText = "已耗" + total + "点 下1级:" + (long) nextCost + "点";
+                }
             }
         } else if (type == Skills.SkillType.BASE || type == Skills.SkillType.AMPLIFY) {
             double unitCost = type == Skills.SkillType.BASE ? Skills.basePointCost() : Skills.amplifyPointCost();
@@ -301,10 +354,18 @@ public class SkillTreeScreen extends Screen {
             costText = "生效:" + active + "/" + points + " 下1级:" + fmtCost(unitCost) + "点";
         } else if (type == Skills.SkillType.ULTIMATE) {
             // 终极节点：单次解锁消耗（浴血/金身/涅槃=500，死神=1000，全能精通=5000，宇宙的青睐=1000，夜视/饱食=100）
+            // 多级终极（节点类）：村庄英雄10点/级、接触距离1点/级、发光1点，显示已耗+下一级
             if (Skills.ULT_FAVOR.equals(button.skillId())) {
                 costText = points > 0 ? "已解锁" : "需" + Skills.ultFavorCost() + "点";
             } else if (Skills.NIGHT_VISION.equals(button.skillId()) || Skills.SATURATION.equals(button.skillId())) {
                 costText = points > 0 ? "已解锁" : "需" + Skills.minorUltCost() + "点";
+            } else if (Skills.getUltimateMaxPoints(button.skillId()) > 1) {
+                // 多级终极（节点类，阶梯递增消耗，可滚轮调生效等级）：生效:X/Y + 下一级（与基础技能一致）
+                double unitCost = Skills.getUltimateLevelCost(button.skillId(), points);
+                int active = activeLevels.getOrDefault(button.skillId(), points);
+                costText = points > 0
+                        ? "生效:" + active + "/" + points + " 下1级:" + fmtCost(unitCost) + "点"
+                        : "需" + fmtCost(unitCost) + "点";
             } else {
                 costText = points > 0 ? "已解锁" : "需" + Skills.ultimateCost(button.skillId()) + "点";
             }
@@ -337,7 +398,7 @@ public class SkillTreeScreen extends Screen {
         int current = learnedSkills.getOrDefault(skillId, 0);
         if (type == Skills.SkillType.BASE && current >= Skills.BASE_MAX_POINTS) return false;
         if (type == Skills.SkillType.AMPLIFY && current >= Skills.AMPLIFY_MAX_POINTS) return false;
-        if (type == Skills.SkillType.ULTIMATE && current >= 1) return false;
+        if (type == Skills.SkillType.ULTIMATE && current >= Skills.getUltimateMaxPoints(skillId)) return false;
         if (type == Skills.SkillType.AURA && current >= Skills.getAuraMaxPoints(skillId)) return false;
         // 终极前置：前置是终极节点只需解锁（1点）；是基础/增幅技能需 500 点（Config 可调）
         if (type == Skills.SkillType.ULTIMATE && !Skills.ULT_FAVOR.equals(skillId)) {
@@ -393,7 +454,7 @@ public class SkillTreeScreen extends Screen {
         String statusLine = "技能点：" + String.format("%.1f", skillPoints)
                 + "  ·  光环:" + (auraEnabled ? "开" : "关")
                 + "  ·  目标:" + modeText
-                + "  ·  左键加点 / Shift+左键×10 / 右键开关 / 滚轮调级 / Ctrl+R 重洗";
+                + "  ·  左键加点 / Shift+左键×10 / 右键开关 / 滚轮调级 / Shift+Ctrl+滚轮×100 / Ctrl+R 重置该技能";
         int maxWidth = Math.max(font.width(title), font.width(statusLine));
         if (org.zifeng.skilltree.client.ModKeyBindingEvents.hasUnboundAuraKeys()) {
             maxWidth = Math.max(maxWidth, font.width("⚠ 光环技能快捷键未绑定（治愈/时环/晴空），请在 设置→控制 中设置"));
@@ -463,8 +524,11 @@ public class SkillTreeScreen extends Screen {
         double reduction = org.zifeng.skilltree.Config.AURA_SPEED_INTERVAL_REDUCTION.get();
         int interval = Math.max(10, (int) Math.round(baseInterval - speedLevel * reduction));
         addRow(rows, "光环频率/秒", Math.round(20.0 / interval * 10.0) / 10.0, "%.1f");
-        // 光环范围半径（Config 可调，360° 球形覆盖）
-        addRow(rows, "光环半径", org.zifeng.skilltree.Config.AURA_ATTACK_RADIUS.get(), "%.0f格");
+        // 光环范围半径（Config 可调，360° 球形覆盖；学了虚空之矛 → 范围放大到 50 格）
+        double auraRadius = rec.getLearnedPoints(Skills.AURA_VOID) > 0 && rec.isEnabled(Skills.AURA_VOID)
+                ? org.zifeng.skilltree.Config.VOID_AURA_RADIUS.get()
+                : org.zifeng.skilltree.Config.AURA_ATTACK_RADIUS.get();
+        addRow(rows, "光环半径", auraRadius, "%.0f格");
         rows.add(new String[]{"技能点", String.format("%.1f", skillPoints), "#FFFFD700"});
         return rows;
     }
@@ -745,15 +809,26 @@ public class SkillTreeScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // Ctrl+R：技能重洗（防误触；服务端按返还率加回技能点后回发校准）
+        // Ctrl+R：重置鼠标指着的技能（防误触；服务端按该技能返还率加回技能点后回发校准）
         if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_R && Screen.hasControlDown()) {
-            PacketDistributor.sendToServer(new ResetSkillsC2SPacket());
-            // 本地乐观清空，等待服务端回发（tick 轮询 40 tick 内校准）
-            skillPoints = 0;
-            learnedSkills.clear();
-            toggles.clear();
-            activeLevels.clear();
-            rebuildButtons();
+            // 找到鼠标悬停的技能
+            for (SkillButton skillButton : buttons) {
+                if (skillButton.isHovered(lastMouseX, lastMouseY, this)) {
+                    String skillId = skillButton.skillId();
+                    if (learnedSkills.getOrDefault(skillId, 0) <= 0) {
+                        // 未学的技能无法重置
+                        return true;
+                    }
+                    PacketDistributor.sendToServer(new ResetSkillC2SPacket(skillId));
+                    // 本地乐观移除该技能，等待服务端回发校准
+                    skillPoints += nextCostLocal(skillId); // 乐观加回（服务端按返还率精确计算后回发覆盖）
+                    learnedSkills.remove(skillId);
+                    toggles.remove(skillId);
+                    activeLevels.remove(skillId);
+                    rebuildButtons();
+                    return true;
+                }
+            }
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -764,6 +839,7 @@ public class SkillTreeScreen extends Screen {
         if (Skills.NIGHT_VISION.equals(skillId) || Skills.SATURATION.equals(skillId)) return Skills.minorUltCost();
         if (Skills.AURA_MAGNET.equals(skillId)) return org.zifeng.skilltree.Config.MAGNET_COST.get();
         if (Skills.AURA_LOCK.equals(skillId)) return org.zifeng.skilltree.Config.LOCK_COST.get();
+        if (Skills.AURA_VOID.equals(skillId)) return org.zifeng.skilltree.Config.VOID_AURA_COST.get();
         if (Skills.AURA_TIME.equals(skillId) || Skills.AURA_WEATHER.equals(skillId)) return Skills.minorUltCost();
         Skills.SkillType type = Skills.getType(skillId);
         if (type == Skills.SkillType.AURA) {
@@ -771,7 +847,7 @@ public class SkillTreeScreen extends Screen {
         }
         if (type == Skills.SkillType.BASE) return Skills.basePointCost();
         if (type == Skills.SkillType.AMPLIFY) return Skills.amplifyPointCost();
-        return Skills.ultimateCost(skillId); // 终极节点（浴血/金身/涅槃500，死神1000，全能精通5000）
+        return Skills.getUltimateLevelCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 终极节点（单次或节点类阶梯递增）
     }
 
     private boolean isShiftHeld() {
@@ -805,15 +881,23 @@ public class SkillTreeScreen extends Screen {
             panelScroll -= (int) (verticalAmount * step);
             return true;
         }
-        // 悬停在基础/增幅技能上：滚轮调节生效等级（0 ~ 已学等级）
+        // 悬停在基础/增幅/多级终极技能上：滚轮调节生效等级（0 ~ 已学等级）
         for (SkillButton skillButton : buttons) {
             if (skillButton.isHovered(mouseX, mouseY, this)) {
-                Skills.SkillType type = Skills.getType(skillButton.skillId());
-                if (type == Skills.SkillType.BASE || type == Skills.SkillType.AMPLIFY) {
+                // 多级判定：等级上限 > 1（基础/增幅/多级终极均可滚轮调生效等级）
+                int maxLevel = Skills.getMaxPoints(skillButton.skillId());
+                if (maxLevel > 1) {
                     int points = learnedSkills.getOrDefault(skillButton.skillId(), 0);
                     int active = activeLevels.getOrDefault(skillButton.skillId(), points);
-                    // Shift 按下 → 翻倍步进
-                    int step = Screen.hasShiftDown() ? 10 : 1;
+                    // Shift+Ctrl 同时按下 → 一次调整 100 级；Shift → 10 级；否则 1 级
+                    int step;
+                    if (Screen.hasShiftDown() && Screen.hasControlDown()) {
+                        step = 100;
+                    } else if (Screen.hasShiftDown()) {
+                        step = 10;
+                    } else {
+                        step = 1;
+                    }
                     int delta = verticalAmount > 0 ? step : -step;
                     int next = Math.max(0, Math.min(points, active + delta));
                     activeLevels.put(skillButton.skillId(), next);
@@ -823,9 +907,20 @@ public class SkillTreeScreen extends Screen {
                 break;
             }
         }
-        // 否则缩放
+        // 否则缩放：以鼠标位置为缩放中心（鼠标指向的点保持不动，界面不漂移）
+        // 原理：屏幕坐标 = 变换原点 + scale × 局部坐标；缩放前后保持鼠标下的局部坐标不变，
+        //       反解出新的 panX/panY，使鼠标指向的技能/位置在缩放后仍在鼠标处。
         double factor = verticalAmount > 0 ? 1.1 : 1.0 / 1.1;
-        scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
+        double newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
+        if (newScale != scale) {
+            double ox = width / 2.0 - 60 + panX;
+            double oy = height / 2.0 + 10 + panY;
+            double localX = (mouseX - ox) / scale;
+            double localY = (mouseY - oy) / scale;
+            scale = newScale;
+            panX = mouseX - (width / 2.0 - 60) - newScale * localX;
+            panY = mouseY - (height / 2.0 + 10) - newScale * localY;
+        }
         return true;
     }
 
@@ -840,13 +935,5 @@ public class SkillTreeScreen extends Screen {
 
     double toPanelY(double screenY) {
         return (screenY - (height / 2.0 + 10) - panY) / scale;
-    }
-
-    private record SkillButton(String skillId, int x, int y) {
-        boolean isHovered(double mouseX, double mouseY, SkillTreeScreen screen) {
-            double px = screen.toPanelX(mouseX);
-            double py = screen.toPanelY(mouseY);
-            return px >= x && px <= x + BUTTON_WIDTH && py >= y && py <= y + BUTTON_HEIGHT;
-        }
     }
 }

@@ -33,6 +33,13 @@ public class ModKeyBindingEvents {
     /** 磁力光环是否已学习（客户端缓存，服务端回发校准，圆环渲染判断用） */
     private static boolean magnetLearnedClient = false;
 
+    /** 杀戮光环·伤害/速度是否已学（客户端缓存，服务端回发校准；配合 toggles 判断光环真实状态） */
+    private static boolean auraDamageLearned = false;
+    private static boolean auraSpeedLearned = false;
+
+    /** 所有光环技能已学缓存（独立快捷键未学不触发用） */
+    private static final Map<String, Boolean> auraLearnedCache = new HashMap<>();
+
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Pre event) {
         while (ModKeyBindings.OPEN_SKILL_TREE.consumeClick()) {
@@ -58,9 +65,12 @@ public class ModKeyBindingEvents {
         while (ModKeyBindings.TOGGLE_AURA_LOCK.consumeClick()) {
             PacketDistributor.sendToServer(new org.zifeng.skilltree.network.ToggleLockC2SPacket());
         }
-        // 光环技能独立开关快捷键（默认空键，未绑定不触发）
+        // 光环技能独立开关快捷键（默认空键，未绑定不触发；未学的技能不处理，防止缓存污染）
         for (Map.Entry<String, net.minecraft.client.KeyMapping> entry : ModKeyBindings.auraKeyMappings().entrySet()) {
             while (entry.getValue().consumeClick()) {
+                if (!auraLearnedCache.getOrDefault(entry.getKey(), Boolean.FALSE)) {
+                    continue; // 未学：不切换也不发包（等服务端校准数据即可）
+                }
                 boolean now = !auraToggles.getOrDefault(entry.getKey(), Boolean.TRUE);
                 auraToggles.put(entry.getKey(), now);
                 PacketDistributor.sendToServer(new SetSkillToggleC2SPacket(entry.getKey(), now));
@@ -84,10 +94,10 @@ public class ModKeyBindingEvents {
         return auraEnabledClient;
     }
 
-    /** 光环是否有攻击能力（伤害或速度技能任一开启，渲染圆环用） */
+    /** 光环是否有攻击能力（伤害或速度技能【已学且开启】，渲染圆环用；isEnabled 默认 true，必须配合已学判断） */
     public static boolean isAuraAttackEnabled() {
-        return auraToggles.getOrDefault(Skills.AURA_DAMAGE, Boolean.TRUE)
-                || auraToggles.getOrDefault(Skills.AURA_SPEED, Boolean.TRUE);
+        return (auraDamageLearned && auraToggles.getOrDefault(Skills.AURA_DAMAGE, Boolean.TRUE))
+                || (auraSpeedLearned && auraToggles.getOrDefault(Skills.AURA_SPEED, Boolean.TRUE));
     }
 
     /** 磁力光环是否开启（已学习且开关开启，渲染蓝色圆环用） */
@@ -106,6 +116,18 @@ public class ModKeyBindingEvents {
         }
         for (String skillId : Skills.AURA_SKILLS) {
             auraToggles.put(skillId, toggles.getOrDefault(skillId, Boolean.TRUE));
+        }
+    }
+
+    /** 由服务端回发的技能数据校准光环技能已学状态（圆环渲染防重置残留 + 未学快捷键不触发） */
+    public static void updateAuraLearned(Map<String, Integer> learnedSkills) {
+        if (learnedSkills == null) {
+            return;
+        }
+        auraDamageLearned = learnedSkills.getOrDefault(Skills.AURA_DAMAGE, 0) > 0;
+        auraSpeedLearned = learnedSkills.getOrDefault(Skills.AURA_SPEED, 0) > 0;
+        for (String skillId : Skills.AURA_SKILLS) {
+            auraLearnedCache.put(skillId, learnedSkills.getOrDefault(skillId, 0) > 0);
         }
     }
 

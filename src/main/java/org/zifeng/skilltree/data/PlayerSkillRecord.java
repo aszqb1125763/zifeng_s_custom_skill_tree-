@@ -152,7 +152,7 @@ public class PlayerSkillRecord {
             return current < Skills.AMPLIFY_MAX_POINTS;
         }
         if (type == Skills.SkillType.ULTIMATE) {
-            return current < 1;
+            return current < Skills.getUltimateMaxPoints(skillId);
         }
         if (type == Skills.SkillType.AURA) {
             return current < Skills.getAuraMaxPoints(skillId);
@@ -174,6 +174,9 @@ public class PlayerSkillRecord {
         if (Skills.AURA_LOCK.equals(skillId)) {
             return org.zifeng.skilltree.Config.LOCK_COST.get(); // 光环锁定：一次性解锁
         }
+        if (Skills.AURA_VOID.equals(skillId)) {
+            return org.zifeng.skilltree.Config.VOID_AURA_COST.get(); // 杀戮光环·虚空之矛：一次性解锁
+        }
         if (Skills.AURA_TIME.equals(skillId) || Skills.AURA_WEATHER.equals(skillId)) {
             return Skills.minorUltCost(); // 时之环/晴空环：一次性解锁（默认 100 点）
         }
@@ -187,7 +190,7 @@ public class PlayerSkillRecord {
         if (type == Skills.SkillType.AMPLIFY) {
             return Skills.amplifyPointCost();
         }
-        return Skills.ultimateCost(skillId); // 终极节点（浴血/金身/涅槃500，死神1000，全能精通5000）
+        return Skills.getUltimateLevelCost(skillId, getLearnedPoints(skillId)); // 终极节点（单次或节点类阶梯递增）
     }
 
     /**
@@ -231,9 +234,29 @@ public class PlayerSkillRecord {
         return refund;
     }
 
-    /** 某技能已投入 points 点的总消耗（与 getNextCost 的消耗规则一致，含递增光环） */
-    private static double totalSpent(String skillId, int points) {
+    /** 单技能已投入总消耗（对外公开，供单技能重置包使用） */
+    public double totalSpentOf(String skillId) {
+        return totalSpent(skillId, getLearnedPoints(skillId));
+    }
+
+    /** 重置单个技能：返还该技能消耗 × 返还率，移除该技能的已学/开关/生效等级。返回返还点数。 */
+    public double resetSkill(String skillId) {
+        int points = getLearnedPoints(skillId);
         if (points <= 0) {
+            return 0;
+        }
+        double refund = totalSpent(skillId, points) * org.zifeng.skilltree.Config.RESET_REFUND_RATE.get();
+        if (refund > 0) {
+            skillPoints += refund;
+        }
+        learnedSkills.remove(skillId);
+        toggles.remove(skillId);
+        activeLevels.remove(skillId);
+        return refund;
+    }
+
+    /** 某技能已投入 points 点的总消耗（与 getNextCost 的消耗规则一致，含递增光环） */
+    private static double totalSpent(String skillId, int points) {        if (points <= 0) {
             return 0;
         }
         if (Skills.ULT_FAVOR.equals(skillId)) {
@@ -248,13 +271,22 @@ public class PlayerSkillRecord {
         if (Skills.AURA_LOCK.equals(skillId)) {
             return org.zifeng.skilltree.Config.LOCK_COST.get();
         }
+        if (Skills.AURA_VOID.equals(skillId)) {
+            return org.zifeng.skilltree.Config.VOID_AURA_COST.get();
+        }
         if (Skills.AURA_TIME.equals(skillId) || Skills.AURA_WEATHER.equals(skillId)) {
             return Skills.minorUltCost();
         }
         return switch (Skills.getType(skillId)) {
             case BASE -> points * Skills.basePointCost();
             case AMPLIFY -> points * Skills.amplifyPointCost();
-            case ULTIMATE -> Skills.ultimateCost(skillId); // 一次性解锁（浴血/金身/涅槃500，死神1000，全能精通5000）
+            case ULTIMATE -> { // 单次解锁或节点类阶梯递增（逐级累加，与学习时实际扣除一致）
+                long total = 0;
+                for (int i = 0; i < points; i++) {
+                    total += (long) Math.ceil(Skills.getUltimateLevelCost(skillId, i));
+                }
+                yield total;
+            }
             case AURA -> {
                 long total = 0;
                 for (int i = 0; i < points; i++) {

@@ -21,6 +21,6 @@ public class ModNetwork {
         registrar.playToServer(ToggleAuraC2SPacket.TYPE, ToggleAuraC2SPacket.STREAM_CODEC, ToggleAuraC2SPacket::handle);
         registrar.playToServer(ToggleMagnetC2SPacket.TYPE, ToggleMagnetC2SPacket.STREAM_CODEC, ToggleMagnetC2SPacket::handle);
         registrar.playToServer(ToggleLockC2SPacket.TYPE, ToggleLockC2SPacket.STREAM_CODEC, ToggleLockC2SPacket::handle);
-        registrar.playToServer(ResetSkillsC2SPacket.TYPE, ResetSkillsC2SPacket.STREAM_CODEC, ResetSkillsC2SPacket::handle);
+        registrar.playToServer(ResetSkillC2SPacket.TYPE, ResetSkillC2SPacket.STREAM_CODEC, ResetSkillC2SPacket::handle);
     }
 }
