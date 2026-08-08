@@ -40,8 +40,7 @@ public record AuraTargetC2SPacket(int mode) implements CustomPacketPayload {
                 };
                 player.sendSystemMessage(net.minecraft.network.chat.Component.literal("🎯 杀戮光环目标：" + modeText));
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
-                        new SkillTreeDataS2CPacket(record.getSkillPoints(), record.getLearnedSkills(), record.getToggles(),
-                                record.getActiveLevels(), record.isAuraEnabled(), record.getAuraTargetMode()));
+                        SkillTreeDataS2CPacket.from(record));
             }
         });
     }

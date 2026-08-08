@@ -41,8 +41,7 @@ public record SetSkillLevelC2SPacket(String skillId, int level) implements Custo
                 data.setDirty();
                 SkillEffects.applyAll(player, record);
                 PacketDistributor.sendToPlayer(player,
-                        new SkillTreeDataS2CPacket(record.getSkillPoints(), record.getLearnedSkills(),
-                                record.getToggles(), record.getActiveLevels(), record.isAuraEnabled(), record.getAuraTargetMode()));
+                        SkillTreeDataS2CPacket.from(record));
             }
         });
     }

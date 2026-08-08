@@ -11,7 +11,6 @@ import net.neoforged.neoforge.event.entity.EntityAttributeModificationEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
-import org.zifeng.skilltree.SkillTreeMod;
 import org.zifeng.skilltree.blockentity.StarEnergyConverterBlockEntity;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
@@ -39,14 +38,18 @@ public class SkillEvents {
         if (!event.has(EntityType.PLAYER, Attributes.MINING_EFFICIENCY)) {
             event.add(EntityType.PLAYER, Attributes.MINING_EFFICIENCY);
         }
+        // 自定义物理减伤属性（护甲减伤封顶 80% 后继续叠的独立减伤层）
+        if (!event.has(EntityType.PLAYER, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION)) {
+            event.add(EntityType.PLAYER, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION);
+        }
     }
 
     @SubscribeEvent
     public static void onPlayerJoin(EntityJoinLevelEvent event) {
         if (event.getEntity() instanceof ServerPlayer player && event.getLevel() instanceof ServerLevel level) {
-            // 双保险：先清空所有可能残留的技能修饰符 + 重置 abilities（防跨存档/跨会话残留）
+            // 双保险：先清空所有可能残留的技能修饰符 + 重置飞行速度（不干预 mayfly，避免误关创造模式/其他模组飞行）
             SkillEffects.applyAll(player, new PlayerSkillRecord(player.getUUID()));
-            UltimateEvents.resetAbilities(player);
+            UltimateEvents.resetFlyingSpeed(player);
             // 再按当前存档数据应用
             PlayerSkillSavedData data = PlayerSkillSavedData.get(level);
             PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
@@ -55,20 +58,22 @@ public class SkillEvents {
     }
 
     /**
-     * 玩家登出/切换存档时清理：确保属性修饰符、终极被动临时状态、环绕剑全部移除，
+     * 玩家登出/切换存档时清理：确保属性修饰符、终极被动临时状态全部移除，
      * 防止跨存档/跨会话残留（每个存档数据独立，但实体状态必须随玩家退出清空）。
+     * 杀戮光环已无实体（客户端纯渲染圆环），无需清理实体。
      */
     @SubscribeEvent
     public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             // 清空该玩家所有技能属性修饰符（空 record 等价于全部移除）
             SkillEffects.applyAll(player, new PlayerSkillRecord(player.getUUID()));
-            // 清理终极被动 static 状态（连击/金身冷却）
-            UltimateEvents.clearPlayer(player.getUUID());
-            // 重置 abilities（flyingSpeed/mayfly）→ 防飞行速度写入 player.dat 跨存档保留
-            UltimateEvents.resetAbilities(player);
-            // 清理环绕钻石剑
-            AuraEvents.clearSwords(player);
+            // 先回收本模组技能授予的飞行权限（不碰创造模式/其他模组飞行）+ 重置飞行速度防跨存档残留
+            UltimateEvents.clearPlayerFlight(player);
+            UltimateEvents.resetFlyingSpeed(player);
+            // 再清理终极被动 static 状态（连击/金身冷却）+ 移除连击攻速修饰符
+            UltimateEvents.clearPlayer(player);
+            // 清理时之环/晴空环全局锁定计数（防残留导致 gamerule 永远锁死）
+            AuraEvents.onPlayerLogout(player);
         }
     }
 

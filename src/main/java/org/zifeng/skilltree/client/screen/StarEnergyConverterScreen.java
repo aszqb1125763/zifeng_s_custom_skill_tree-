@@ -56,8 +56,8 @@ public class StarEnergyConverterScreen extends AbstractContainerScreen<StarEnerg
         }
         guiGraphics.drawCenteredString(font, "能量转换进度: " + pct + "%", x + imageWidth / 2, barY + barH + 5, 0xFFFFFFFF);
 
-        // 已转换技能点
-        guiGraphics.drawCenteredString(font, "已转换技能点: " + menu.getTotalConverted(),
+        // 已转换技能点（玩家整体累计，跨机器共享，阶梯消耗依据）
+        guiGraphics.drawCenteredString(font, "玩家累计已转换: " + menu.getTotalConverted(),
                 x + imageWidth / 2, barY + barH + 22, 0xFFFFD700);
 
         // 绑定状态
@@ -65,9 +65,9 @@ public class StarEnergyConverterScreen extends AbstractContainerScreen<StarEnerg
         int bindColor = menu.isBound() ? 0xFF55FF55 : 0xFFFF5555;
         guiGraphics.drawCenteredString(font, bindText, x + imageWidth / 2, barY + barH + 38, bindColor);
 
-        // 说明
+        // 说明：当前每点消耗（阶梯制，按玩家整体累计计算）
         guiGraphics.drawCenteredString(font,
-                "每点技能点消耗: " + Config.ENERGY_PER_SKILL_POINT.get() + " FE · 能量中断进度清空",
+                "当前每点消耗: " + menu.getCurrentCost() + " FE · 按玩家累计 · 能量中断进度清空",
                 x + imageWidth / 2, barY + barH + 54, 0xFFAAAAAA);
     }
 

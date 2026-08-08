@@ -5,5 +5,12 @@
   "key.categories.zifeng_s_custom_skill_tree": "Zifeng's Custom Skill Tree",
   "key.zifeng_s_custom_skill_tree.open_skill_tree": "Open Skill Tree",
   "key.zifeng_s_custom_skill_tree.toggle_aura": "Toggle Slaughter Aura",
-  "key.zifeng_s_custom_skill_tree.cycle_aura_target": "Cycle Aura Target Type"
+  "key.zifeng_s_custom_skill_tree.toggle_magnet": "Toggle Magnet Aura (default H, costs skill points)",
+  "key.zifeng_s_custom_skill_tree.cycle_aura_target": "Cycle Aura Target Type",
+  "key.zifeng_s_custom_skill_tree.toggle_aura_damage": "Slaughter Aura Damage Toggle (default U)",
+  "key.zifeng_s_custom_skill_tree.toggle_aura_speed": "Slaughter Aura Speed Toggle (default I)",
+  "key.zifeng_s_custom_skill_tree.toggle_aura_heal": "Healing Aura Toggle (default O)",
+  "key.zifeng_s_custom_skill_tree.toggle_aura_time": "Eternal Noon Aura Toggle (unbound)",
+  "key.zifeng_s_custom_skill_tree.toggle_aura_weather": "Eternal Clear Aura Toggle (unbound)",
+  "key.zifeng_s_custom_skill_tree.toggle_aura_guard": "Guard Aura Toggle (unbound)"
 }

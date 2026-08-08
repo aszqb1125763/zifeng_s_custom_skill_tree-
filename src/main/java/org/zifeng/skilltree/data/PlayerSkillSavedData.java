@@ -25,20 +25,8 @@ public class PlayerSkillSavedData extends SavedData {
     private final Map<UUID, PlayerSkillRecord> players = new HashMap<>();
     private final Map<String, UUID> machineOwnerMap = new HashMap<>();
 
-    public Map<UUID, PlayerSkillRecord> getPlayers() {
-        return players;
-    }
-
-    public Map<String, UUID> getMachineOwnerMap() {
-        return machineOwnerMap;
-    }
-
     public PlayerSkillRecord getOrCreatePlayer(UUID uuid) {
         return players.computeIfAbsent(uuid, PlayerSkillRecord::new);
-    }
-
-    public UUID getMachineOwner(String machineKey) {
-        return machineOwnerMap.get(machineKey);
     }
 
     public void bindMachine(String machineKey, UUID owner) {
@@ -61,10 +49,6 @@ public class PlayerSkillSavedData extends SavedData {
         ServerLevel overworld = level.getServer().overworld();
         return overworld.getDataStorage()
                 .computeIfAbsent(new SavedData.Factory<>(PlayerSkillSavedData::new, PlayerSkillSavedData::load), DATA_NAME);
-    }
-
-    public static PlayerSkillSavedData create() {
-        return new PlayerSkillSavedData();
     }
 
     public static PlayerSkillSavedData load(CompoundTag tag, HolderLookup.Provider registries) {

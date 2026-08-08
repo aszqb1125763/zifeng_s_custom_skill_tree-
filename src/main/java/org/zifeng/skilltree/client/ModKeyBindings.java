@@ -33,9 +33,78 @@ public class ModKeyBindings {
             GLFW.GLFW_KEY_L,
             CATEGORY);
 
+    /** 磁铁开关（默认 H，开启消耗技能点） */
+    public static final KeyMapping TOGGLE_MAGNET = new KeyMapping(
+            "key." + SkillTreeMod.MOD_ID + ".toggle_magnet",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_H,
+            CATEGORY);
+
+    // ============ 光环技能独立开关快捷键（U/I/O 默认键，各自独立切换对应技能） ============
+
+    /** 杀戮光环·伤害 开关 */
+    public static final KeyMapping TOGGLE_AURA_DAMAGE = new KeyMapping(
+            "key." + SkillTreeMod.MOD_ID + ".toggle_aura_damage",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_U,
+            CATEGORY);
+
+    /** 杀戮光环·速度 开关 */
+    public static final KeyMapping TOGGLE_AURA_SPEED = new KeyMapping(
+            "key." + SkillTreeMod.MOD_ID + ".toggle_aura_speed",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_I,
+            CATEGORY);
+
+    /** 治愈光环 开关 */
+    public static final KeyMapping TOGGLE_AURA_HEAL = new KeyMapping(
+            "key." + SkillTreeMod.MOD_ID + ".toggle_aura_heal",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_O,
+            CATEGORY);
+
+    /** 时之环·永恒正午 开关（默认空键，需玩家自行绑定） */
+    public static final KeyMapping TOGGLE_AURA_TIME = new KeyMapping(
+            "key." + SkillTreeMod.MOD_ID + ".toggle_aura_time",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_UNKNOWN,
+            CATEGORY);
+
+    /** 晴空环·永恒晴天 开关（默认空键，需玩家自行绑定） */
+    public static final KeyMapping TOGGLE_AURA_WEATHER = new KeyMapping(
+            "key." + SkillTreeMod.MOD_ID + ".toggle_aura_weather",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_UNKNOWN,
+            CATEGORY);
+
+    /** 守卫光环 开关（默认空键，需玩家自行绑定） */
+    public static final KeyMapping TOGGLE_AURA_GUARD = new KeyMapping(
+            "key." + SkillTreeMod.MOD_ID + ".toggle_aura_guard",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_UNKNOWN,
+            CATEGORY);
+
+    /** 光环技能快捷键：技能ID → 对应 KeyMapping（供事件/提示统一遍历） */
+    public static java.util.Map<String, KeyMapping> auraKeyMappings() {
+        return java.util.Map.of(
+                org.zifeng.skilltree.skill.Skills.AURA_DAMAGE, TOGGLE_AURA_DAMAGE,
+                org.zifeng.skilltree.skill.Skills.AURA_SPEED, TOGGLE_AURA_SPEED,
+                org.zifeng.skilltree.skill.Skills.AURA_HEAL, TOGGLE_AURA_HEAL,
+                org.zifeng.skilltree.skill.Skills.AURA_TIME, TOGGLE_AURA_TIME,
+                org.zifeng.skilltree.skill.Skills.AURA_WEATHER, TOGGLE_AURA_WEATHER,
+                org.zifeng.skilltree.skill.Skills.AURA_GUARD, TOGGLE_AURA_GUARD);
+    }
+
     public static void registerKeyBindings(RegisterKeyMappingsEvent event) {
         event.register(OPEN_SKILL_TREE);
         event.register(TOGGLE_AURA);
         event.register(CYCLE_AURA_TARGET);
+        event.register(TOGGLE_MAGNET);
+        event.register(TOGGLE_AURA_DAMAGE);
+        event.register(TOGGLE_AURA_SPEED);
+        event.register(TOGGLE_AURA_HEAL);
+        event.register(TOGGLE_AURA_TIME);
+        event.register(TOGGLE_AURA_WEATHER);
+        event.register(TOGGLE_AURA_GUARD);
     }
 }

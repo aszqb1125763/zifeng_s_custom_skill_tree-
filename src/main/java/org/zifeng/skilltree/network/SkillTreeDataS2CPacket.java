@@ -33,6 +33,12 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
         return TYPE;
     }
 
+    /** 从玩家技能记录构建数据包（统一便捷入口） */
+    public static SkillTreeDataS2CPacket from(org.zifeng.skilltree.data.PlayerSkillRecord record) {
+        return new SkillTreeDataS2CPacket(record.getSkillPoints(), record.getLearnedSkills(), record.getToggles(),
+                record.getActiveLevels(), record.isAuraEnabled(), record.getAuraTargetMode());
+    }
+
     public static void handle(SkillTreeDataS2CPacket packet, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (ctx.flow().isClientbound()) {
@@ -40,6 +46,15 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
                 if (mc.player == null) {
                     return;
                 }
+                // 校准光环目标模式本地状态（L 键循环 / UI Shift+右键切换都用它，防切换顺序错乱）
+                org.zifeng.skilltree.client.ModKeyBindingEvents.setLastMode(packet.auraTargetMode());
+                // 校准光环总开关本地状态（圆环渲染器判断是否显示淡红光环）
+                org.zifeng.skilltree.client.ModKeyBindingEvents.setAuraEnabledClient(packet.auraEnabled());
+                // 校准光环技能开关缓存（独立快捷键取反发送用）
+                org.zifeng.skilltree.client.ModKeyBindingEvents.updateAuraToggles(packet.toggles());
+                // 校准磁力光环已学状态（蓝色圆环显示用）
+                org.zifeng.skilltree.client.ModKeyBindingEvents.setMagnetLearnedClient(
+                        packet.learnedSkills().getOrDefault(org.zifeng.skilltree.skill.Skills.AURA_MAGNET, 0) > 0);
                 // 只在技能树界面已打开时更新数据，绝不强制打开界面
                 // （否则 K/L 键切换光环/目标时回发的数据包会把技能树界面弹出来）
                 if (mc.screen instanceof SkillTreeScreen screen) {

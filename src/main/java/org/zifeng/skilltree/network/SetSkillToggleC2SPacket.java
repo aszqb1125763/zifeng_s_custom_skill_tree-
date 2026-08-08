@@ -1,6 +1,7 @@
 package org.zifeng.skilltree.network;
 
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -41,10 +42,23 @@ public record SetSkillToggleC2SPacket(String skillId, boolean enabled) implement
                 data.setDirty();
                 // 重挂属性使开关生效
                 SkillEffects.applyAll(player, record);
+                // 开关提示（光环技能显示对应图标）
+                if (Skills.getType(packet.skillId()) == Skills.SkillType.AURA) {
+                    String name = Skills.getDisplayName(packet.skillId());
+                    String icon = switch (packet.skillId()) {
+                        case Skills.AURA_MAGNET -> "🧲";
+                        case Skills.AURA_TIME -> "⏰";
+                        case Skills.AURA_WEATHER -> "☀";
+                        case Skills.AURA_GUARD -> "🛡";
+                        default -> "⚔";
+                    };
+                    player.sendSystemMessage(Component.literal(packet.enabled()
+                            ? icon + " " + name + "已开启"
+                            : icon + " " + name + "已关闭"));
+                }
                 // 回发最新状态
                 PacketDistributor.sendToPlayer(player,
-                        new SkillTreeDataS2CPacket(record.getSkillPoints(), record.getLearnedSkills(), record.getToggles(),
-                                record.getActiveLevels(), record.isAuraEnabled(), record.getAuraTargetMode()));
+                        SkillTreeDataS2CPacket.from(record));
             }
         });
     }

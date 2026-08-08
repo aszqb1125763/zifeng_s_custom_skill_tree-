@@ -36,14 +36,9 @@ public record ToggleAuraC2SPacket() implements CustomPacketPayload {
                 // 聊天提示
                 player.sendSystemMessage(Component.literal(now
                         ? "⚔ 杀戮光环已开启"
-                        : "✖ 杀戮光环已关闭（环绕剑已移除）"));
-                // 关闭时立即清除环绕剑
-                if (!now) {
-                    AuraEvents.clearSwords(player);
-                }
+                        : "✖ 杀戮光环已关闭"));
                 PacketDistributor.sendToPlayer(player,
-                        new SkillTreeDataS2CPacket(record.getSkillPoints(), record.getLearnedSkills(),
-                                record.getToggles(), record.getActiveLevels(), record.isAuraEnabled(), record.getAuraTargetMode()));
+                        SkillTreeDataS2CPacket.from(record));
             }
         });
     }

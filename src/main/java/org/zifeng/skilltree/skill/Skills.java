@@ -1,6 +1,9 @@
 package org.zifeng.skilltree.skill;
 
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
+import org.zifeng.skilltree.Config;
 import org.zifeng.skilltree.SkillTreeMod;
 
 import java.util.ArrayList;
@@ -25,18 +28,49 @@ public final class Skills {
     public static final int BASE_MAX_POINTS = 1000;
     /** 特殊增幅类每项上限 */
     public static final int AMPLIFY_MAX_POINTS = 500;
-    /** 基础技能每级技能点消耗 */
+    /** 基础技能每级技能点消耗（默认值，可被 Config 覆盖） */
     public static final double BASE_POINT_COST = 0.2;
-    /** 特殊增幅每级技能点消耗 */
+    /** 特殊增幅每级技能点消耗（默认值，可被 Config 覆盖） */
     public static final double AMPLIFY_POINT_COST = 0.5;
-    /** 终极节点前置：两个指定技能各需投入点数 */
+    /** 终极节点前置：两个指定技能各需投入点数（默认值，可被 Config 覆盖） */
     public static final int ULTIMATE_REQUIRE_POINTS = 500;
-    /** 宇宙的青睐：一次性消耗技能点数 */
+    /** 宇宙的青睐：一次性消耗技能点数（默认值，可被 Config 覆盖） */
     public static final int ULT_FAVOR_COST = 1000;
-    /** 杀戮光环基础消耗（每级） */
+    /** 杀戮光环基础消耗（每级，默认值，可被 Config 覆盖） */
     public static final int AURA_BASE_COST = 1000;
-    /** 杀戮光环每级消耗递增倍率（×1.5） */
-    public static final double AURA_COST_MULTIPLIER = 1.5;
+    /** 杀戮光环每级消耗递增倍率（默认值，可被 Config 覆盖） */
+    public static final double AURA_COST_MULTIPLIER = 1.05;
+
+    // ============ Config 驱动 getter（游戏内可热重载） ============
+
+    public static double basePointCost() {
+        return Config.BASE_POINT_COST.get();
+    }
+
+    public static double amplifyPointCost() {
+        return Config.AMPLIFY_POINT_COST.get();
+    }
+
+    public static int ultimateRequirePoints() {
+        return Config.ULTIMATE_REQUIRE_POINTS.get();
+    }
+
+    public static int ultFavorCost() {
+        return Config.ULT_FAVOR_COST.get();
+    }
+
+    /** 夜视/饱食一次性消耗（Config 可调） */
+    public static int minorUltCost() {
+        return Config.MINOR_ULT_COST.get();
+    }
+
+    public static int auraBaseCost() {
+        return Config.AURA_BASE_COST.get();
+    }
+
+    public static double auraCostMultiplier() {
+        return Config.AURA_COST_MULTIPLIER.get();
+    }
 
     public enum SkillType {
         /** 基础属性（固定数值） */
@@ -50,7 +84,8 @@ public final class Skills {
     }
 
     // ============ 基础属性技能 ============
-    public static final String BODY = "body";                 // 体魄强化（起始）
+    public static final String BODY_HP = "body_hp";           // 生命强化（每级 +2 生命）
+    public static final String BODY = "body";                 // 体魄强化（护甲 + 物理减伤）
     public static final String TOUGH = "tough";               // 坚韧之躯
     public static final String BLADE = "blade";               // 锋刃精通
     public static final String ATTACK_SPEED = "attack_speed"; // 疾攻术
@@ -61,18 +96,29 @@ public final class Skills {
     public static final String JUMP = "jump";                 // 跃升体术（跳跃高度）
     public static final String FLY = "fly";                   // 御空术（飞行速度）
     public static final String SWIM = "swim";                 // 潜游术（游泳速度）
+    public static final String CRIT = "crit";                 // 暴击精通（暴击几率）
+    public static final String LIFESTEAL = "lifesteal";       // 生命汲取（吸血）
+    public static final String THORNS = "thorns";             // 荆棘反伤（受击反弹）
+    public static final String ARMOR_PEN = "armor_pen";       // 破甲精通（无视护甲增伤）
 
-    // ============ 特殊增幅技能 ============
-    public static final String AMP_DAMAGE = "amp_damage";             // 战斗强化
-    public static final String AMP_ATTACK_SPEED = "amp_attack_speed"; // 攻速增幅
-    public static final String AMP_MINING = "amp_mining";             // 采掘效率
-    public static final String AMP_REGEN = "amp_regen";               // 生命涌泉
-    public static final String AMP_ARMOR = "amp_armor";               // 防御强化
-    public static final String AMP_MOVE = "amp_move";                 // 移速增幅
-    public static final String AMP_DROP = "amp_drop";                 // 掉落增幅
-    public static final String AMP_JUMP = "amp_jump";                 // 跃升增幅（跳跃高度倍率）
-    public static final String AMP_FLY = "amp_fly";                   // 御空增幅（飞行速度倍率）
-    public static final String AMP_SWIM = "amp_swim";                 // 潜游增幅（游泳速度倍率）
+    // ============ 特殊增幅技能（与基础技能一一对应，顺序同纵列1） ============
+    public static final String AMP_HP = "amp_hp";                     // 生命增幅（对应生命强化）
+    public static final String AMP_ARMOR = "amp_armor";               // 防御强化（对应体魄强化）
+    public static final String AMP_TOUGH = "amp_tough";               // 坚韧增幅（对应坚韧之躯）
+    public static final String AMP_DAMAGE = "amp_damage";             // 锋刃增幅（对应锋刃精通）
+    public static final String AMP_ATTACK_SPEED = "amp_attack_speed"; // 疾攻增幅（对应疾攻术）
+    public static final String AMP_MINING = "amp_mining";             // 采掘增幅（对应采掘熟稔）
+    public static final String AMP_MOVE = "amp_move";                 // 疾行增幅（对应疾行步法）
+    public static final String AMP_REGEN = "amp_regen";               // 再生增幅（对应再生体魄）
+    public static final String AMP_LUCK = "amp_luck";                 // 幸运增幅（对应幸运眷顾）
+    public static final String AMP_JUMP = "amp_jump";                 // 跃升增幅（对应跃升体术）
+    public static final String AMP_FLY = "amp_fly";                   // 御空增幅（对应御空术）
+    public static final String AMP_SWIM = "amp_swim";                 // 潜游增幅（对应潜游术）
+    public static final String AMP_CRIT = "amp_crit";                 // 暴击增幅（对应暴击精通）
+    public static final String AMP_LIFESTEAL = "amp_lifesteal";       // 吸血增幅（对应生命汲取）
+    public static final String AMP_THORNS = "amp_thorns";             // 荆棘增幅（对应荆棘反伤）
+    public static final String AMP_ARMOR_PEN = "amp_armor_pen";       // 破甲增幅（对应破甲精通）
+    public static final String AMP_DROP = "amp_drop";                 // 掉落增幅（独立：掉落/经验）
 
     // ============ 终极节点 ============
     public static final String ULT_BLOOD = "ult_blood";     // 浴血奋战
@@ -83,20 +129,29 @@ public final class Skills {
     public static final String ULT_FAVOR = "ult_favor";     // 宇宙的青睐（真创造飞行）
     public static final String NIGHT_VISION = "night_vision"; // 夜视（100点，1级）
     public static final String SATURATION = "saturation";     // 饱食（100点，1级）
+    public static final String ULT_REVIVE = "ult_revive";   // 凤凰涅槃（死亡复活）
+    public static final String ULT_REAPER = "ult_reaper";   // 死神凝视（处决低血目标）
 
     // ============ 杀戮光环（AURA，独立系统） ============
-    public static final String AURA_DAMAGE = "aura_damage"; // 杀戮光环·伤害
-    public static final String AURA_WEAPON = "aura_weapon"; // 杀戮光环·武器（钻石剑）
-    public static final String AURA_SPEED = "aura_speed";   // 杀戮光环·速度
+    public static final String AURA_DAMAGE = "aura_damage";   // 杀戮光环·伤害
+    public static final String AURA_SPEED = "aura_speed";     // 杀戮光环·速度
+    public static final String AURA_HEAL = "aura_heal";       // 治愈光环（群体治疗）
+    public static final String AURA_MAGNET = "aura_magnet";   // 磁力光环（吸取经验/掉落物）
+    public static final String AURA_TIME = "aura_time";       // 时之环·永恒正午（锁定世界时间）
+    public static final String AURA_WEATHER = "aura_weather"; // 晴空环·永恒晴天（锁定天气）
+    public static final String AURA_GUARD = "aura_guard";     // 守卫光环（全伤害防护）
 
     /** 所有基础技能（纵列1） */
-    public static final List<String> BASE_SKILLS = List.of(BODY, TOUGH, BLADE, ATTACK_SPEED, MINING, MOVE, REGEN, LUCK, JUMP, FLY, SWIM);
-    /** 所有增幅技能（纵列2） */
-    public static final List<String> AMPLIFY_SKILLS = List.of(AMP_DAMAGE, AMP_ATTACK_SPEED, AMP_MINING, AMP_REGEN, AMP_ARMOR, AMP_MOVE, AMP_DROP, AMP_JUMP, AMP_FLY, AMP_SWIM);
+    public static final List<String> BASE_SKILLS = List.of(BODY_HP, BODY, TOUGH, BLADE, ATTACK_SPEED, MINING, MOVE, REGEN, LUCK, JUMP, FLY, SWIM, CRIT, LIFESTEAL, THORNS, ARMOR_PEN);
+    /** 所有增幅技能（纵列2）：与基础技能一一对应，顺序与纵列1相同；掉落增幅独立放末尾 */
+    public static final List<String> AMPLIFY_SKILLS = List.of(
+            AMP_HP, AMP_ARMOR, AMP_TOUGH, AMP_DAMAGE, AMP_ATTACK_SPEED, AMP_MINING, AMP_MOVE,
+            AMP_REGEN, AMP_LUCK, AMP_JUMP, AMP_FLY, AMP_SWIM,
+            AMP_CRIT, AMP_LIFESTEAL, AMP_THORNS, AMP_ARMOR_PEN, AMP_DROP);
     /** 所有终极节点（纵列3） */
-    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_COMBO, ULT_GOLDEN, ULT_DIG, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION);
+    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_COMBO, ULT_GOLDEN, ULT_DIG, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER);
     /** 所有杀戮光环（纵列4） */
-    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_WEAPON, AURA_SPEED);
+    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_GUARD);
 
     public static final List<String> ALL_SKILLS = new ArrayList<>() {{
         addAll(BASE_SKILLS);
@@ -117,8 +172,11 @@ public final class Skills {
     public static int getAuraMaxPoints(String skillId) {
         return switch (skillId) {
             case AURA_DAMAGE -> 1000;
-            case AURA_WEAPON -> 10;
             case AURA_SPEED -> 100;
+            case AURA_HEAL -> 100;
+            case AURA_MAGNET -> 1;
+            case AURA_TIME, AURA_WEATHER -> 1; // 一次性解锁（100 技能点）
+            case AURA_GUARD -> 100;
             default -> 0;
         };
     }
@@ -133,13 +191,14 @@ public final class Skills {
         };
     }
 
-    /** 杀戮光环：下一级消耗 = 1000 × 1.5^当前等级 */
+    /** 杀戮光环：下一级消耗 = 1000 × 1.05^当前等级（数值均走 Config） */
     public static int getAuraCost(String skillId, int currentLevel) {
-        return (int) Math.round(AURA_BASE_COST * Math.pow(AURA_COST_MULTIPLIER, currentLevel));
+        return (int) Math.round(auraBaseCost() * Math.pow(auraCostMultiplier(), currentLevel));
     }
 
     public static String getDisplayName(String skillId) {
         return switch (skillId) {
+            case BODY_HP -> "生命强化";
             case BODY -> "体魄强化";
             case TOUGH -> "坚韧之躯";
             case BLADE -> "锋刃精通";
@@ -151,16 +210,27 @@ public final class Skills {
             case JUMP -> "跃升体术";
             case FLY -> "御空术";
             case SWIM -> "潜游术";
-            case AMP_DAMAGE -> "战斗强化";
-            case AMP_ATTACK_SPEED -> "攻速增幅";
-            case AMP_MINING -> "采掘效率";
-            case AMP_REGEN -> "生命涌泉";
+            case CRIT -> "暴击精通";
+            case LIFESTEAL -> "生命汲取";
+            case THORNS -> "荆棘反伤";
+            case ARMOR_PEN -> "破甲精通";
+            case AMP_HP -> "生命增幅";
+            case AMP_DAMAGE -> "锋刃增幅";
+            case AMP_ATTACK_SPEED -> "疾攻增幅";
+            case AMP_MINING -> "采掘增幅";
+            case AMP_REGEN -> "再生增幅";
             case AMP_ARMOR -> "防御强化";
-            case AMP_MOVE -> "移速增幅";
+            case AMP_MOVE -> "疾行增幅";
             case AMP_DROP -> "掉落增幅";
             case AMP_JUMP -> "跃升增幅";
             case AMP_FLY -> "御空增幅";
             case AMP_SWIM -> "潜游增幅";
+            case AMP_TOUGH -> "坚韧增幅";
+            case AMP_LUCK -> "幸运增幅";
+            case AMP_CRIT -> "暴击增幅";
+            case AMP_LIFESTEAL -> "吸血增幅";
+            case AMP_THORNS -> "荆棘增幅";
+            case AMP_ARMOR_PEN -> "破甲增幅";
             case ULT_BLOOD -> "浴血奋战";
             case ULT_COMBO -> "疾风连斩";
             case ULT_GOLDEN -> "不坏金身";
@@ -169,47 +239,71 @@ public final class Skills {
             case ULT_FAVOR -> "宇宙的青睐";
             case NIGHT_VISION -> "星瞳·夜视";
             case SATURATION -> "星食·饱腹";
+            case ULT_REVIVE -> "凤凰涅槃";
+            case ULT_REAPER -> "死神凝视";
             case AURA_DAMAGE -> "杀戮光环·伤害";
-            case AURA_WEAPON -> "杀戮光环·武器";
             case AURA_SPEED -> "杀戮光环·速度";
+            case AURA_HEAL -> "治愈光环";
+            case AURA_MAGNET -> "磁力光环";
+            case AURA_TIME -> "时之环·永恒正午";
+            case AURA_WEATHER -> "晴空环·永恒晴天";
+            case AURA_GUARD -> "守卫光环";
             default -> "未知技能";
         };
     }
 
     public static String getDescription(String skillId) {
         return switch (skillId) {
-            case BODY -> "锤炼肉身根基：每点 +0.5 最大生命、+0.2 护甲";
-            case TOUGH -> "强化骨骼肌肉：每点 +0.3 护甲韧性、+0.1% 击退抗性";
-            case BLADE -> "打磨战斗技巧：每点 +0.4 近战攻击伤害";
-            case ATTACK_SPEED -> "淬炼出手速度：每点 +0.02 攻击速度";
-            case MINING -> "掌握采掘节奏：每点 +0.3 挖掘速度、+0.5 工具耐久损耗减免";
-            case MOVE -> "锻炼下肢力量：每点 +0.005 移动速度";
-            case REGEN -> "加速身体自愈：每点 +0.1/秒 生命恢复";
-            case LUCK -> "提升稀有掉落：每点 +0.1 幸运值";
-            case JUMP -> "锻炼腿部爆发力：每点 +0.01 跳跃高度";
-            case FLY -> "掌控气流：每点 +0.005 飞行速度";
-            case SWIM -> "精通水性：每点 +0.005 游泳速度";
-            case AMP_DAMAGE -> "放大近战基础伤害：每点 +0.5% 近战伤害倍率";
-            case AMP_ATTACK_SPEED -> "放大基础攻速：每点 +0.4% 攻击速度倍率";
-            case AMP_MINING -> "放大基础挖速：每点 +0.6% 挖掘速度倍率";
-            case AMP_REGEN -> "放大基础恢复：每点 +0.8% 生命恢复倍率";
-            case AMP_ARMOR -> "放大物理护甲：每点 +0.3% 护甲倍率";
-            case AMP_MOVE -> "放大基础移速：每点 +0.5% 移动速度倍率";
-            case AMP_DROP -> "提升掉落与经验：每点 +4% 怪物掉落、+5% 经验获取";
-            case AMP_JUMP -> "放大跳跃高度：每点 +0.5% 跳跃高度倍率";
-            case AMP_FLY -> "放大飞行速度：每点 +0.5% 飞行速度倍率";
-            case AMP_SWIM -> "放大游泳速度：每点 +0.5% 游泳速度倍率";
-            case ULT_BLOOD -> "生命低于30%时近战伤害+50%，但受到伤害+20%。前置：体魄强化500点 + 锋刃精通500点";
-            case ULT_COMBO -> "连续攻击第3次起攻速额外+30%，中断重计。前置：疾攻术500点 + 攻速增幅500点";
-            case ULT_GOLDEN -> "致命伤害保1血+3秒无敌，冷却180秒。前置：坚韧之躯500点 + 防御强化500点";
-            case ULT_DIG -> "挖掘20%概率瞬间完成不耗耐久，仅限基础挖掘≤1.5秒方块。前置：采掘熟稔500点 + 采掘效率500点";
-            case ULT_MASTER -> "所有基础属性效果+25%，技能点获取速度-20%。前置：需解锁全部4个终极节点（浴血奋战/疾风连斩/不坏金身/万物皆可挖）";
-            case ULT_FAVOR -> "宇宙的青睐：消耗 1000 技能点一次性点亮，解锁真正的创造飞行";
-            case NIGHT_VISION -> "星瞳·夜视：消耗 100 技能点一次性点亮，永久获得夜视效果";
-            case SATURATION -> "星食·饱腹：消耗 100 技能点一次性点亮，饱食度与饱和度永远保持满值";
-            case AURA_DAMAGE -> "杀戮光环·伤害：每级+0.5攻击伤害，上限1000级，每级消耗×1.5（并入攻伤属性，可被战斗强化/全能精通加成）";
-            case AURA_WEAPON -> "杀戮光环·武器：每级增加1把环绕钻石剑自动攻击，上限10级，攻击半径20格";
-            case AURA_SPEED -> "杀戮光环·速度：每级+0.19攻速，上限100级，点满每秒攻击20次（并入攻速属性，可被攻速增幅/全能精通加成）";
+            case BODY_HP -> "生命强化：每点 +2 最大生命\n（拆分自原体魄强化，纯生命成长）";
+            case BODY -> "体魄强化：每点 +0.2 护甲、\n+0.05% 物理减伤（超原版 80% 护甲上限后继续成长）";
+            case TOUGH -> "坚韧之躯：每点 +0.3 护甲韧性、\n+0.1% 击退抗性";
+            case BLADE -> "锋刃精通：每点 +0.4 近战攻击伤害";
+            case ATTACK_SPEED -> "疾攻术：每点 +0.02 攻击速度";
+            case MINING -> "采掘熟稔：每点 +0.3 挖掘速度、\n+20% 工具耐久损耗减免（5级封顶：工具不毁）";
+            case MOVE -> "疾行步法：每点 +0.005 移动速度";
+            case REGEN -> "再生体魄：每点 +0.1/秒 生命恢复";
+            case LUCK -> "幸运眷顾：每点 +0.1 幸运值";
+            case JUMP -> "跃升体术：每点 +0.01 跳跃高度";
+            case FLY -> "御空术：每点 +0.005 飞行速度";
+            case SWIM -> "潜游术：每点 +0.005 游泳速度";
+            case CRIT -> "暴击精通：每点 +0.1% 暴击几率\n（上限 100%，暴击造成 1.5 倍伤害）";
+            case LIFESTEAL -> "生命汲取：每点 +0.1% 吸血\n（按造成的伤害回复生命）";
+            case THORNS -> "荆棘之体：每点 +0.05 反伤\n（受击时反弹伤害给攻击者）";
+            case ARMOR_PEN -> "破甲精通：每点 +0.15% 最终伤害\n（无视目标护甲）";
+            case AMP_HP -> "生命增幅：每点 +0.5% 最大生命倍率";
+            case AMP_DAMAGE -> "锋刃增幅：每点 +0.5% 近战伤害倍率";
+            case AMP_ATTACK_SPEED -> "疾攻增幅：每点 +0.4% 攻击速度倍率";
+            case AMP_MINING -> "采掘增幅：每点 +0.6% 挖掘速度倍率";
+            case AMP_REGEN -> "再生增幅：每点 +0.8% 生命恢复倍率";
+            case AMP_ARMOR -> "防御强化：每点 +0.05% 物理减伤\n（独立减伤层，护甲 80% 封顶后继续防护）";
+            case AMP_MOVE -> "疾行增幅：每点 +0.5% 移动速度倍率";
+            case AMP_DROP -> "掉落增幅：每点 +4% 生物掉落、\n+4% 方块掉落、+5% 经验获取\n（仅对可受时运/抢夺的方块和生物生效）";
+            case AMP_JUMP -> "跃升增幅：每点 +0.5% 跳跃高度倍率";
+            case AMP_FLY -> "御空增幅：每点 +0.5% 飞行速度倍率";
+            case AMP_SWIM -> "潜游增幅：每点 +0.5% 游泳速度倍率";
+            case AMP_TOUGH -> "坚韧增幅：每点 +0.5% 护甲韧性与击退抗性倍率";
+            case AMP_LUCK -> "幸运增幅：每点 +0.5% 幸运值倍率";
+            case AMP_CRIT -> "暴击增幅：每点 +0.5% 暴击伤害倍率\n（在暴击 1.5 倍基础上叠加）";
+            case AMP_LIFESTEAL -> "吸血增幅：每点 +0.4% 吸血量倍率";
+            case AMP_THORNS -> "荆棘增幅：每点 +0.4% 反伤倍率";
+            case AMP_ARMOR_PEN -> "破甲增幅：每点 +0.4% 破甲增伤倍率";
+            case ULT_BLOOD -> "浴血奋战：生命<30% 近战伤害+50%，\n但受到伤害+20%\n前置：体魄500 + 锋刃500";
+            case ULT_COMBO -> "疾风连斩：连续攻击第3次起\n攻速额外+30%，中断重计\n前置：疾攻术500 + 疾攻增幅500";
+            case ULT_GOLDEN -> "不坏金身：致命伤害保1血+3秒无敌，\n冷却180秒\n前置：坚韧之躯500 + 防御强化500";
+            case ULT_DIG -> "万物皆可挖：挖掘20%概率瞬间完成\n不耗耐久（限基础挖速≤1.5秒方块）\n前置：采掘熟稔500 + 采掘增幅500";
+            case ULT_MASTER -> "全能精通：所有基础属性效果+25%，\n技能点获取速度-20%\n前置：解锁全部4个终极节点";
+            case ULT_FAVOR -> "宇宙的青睐：消耗 1000 技能点\n一次性点亮，解锁真正的创造飞行";
+            case NIGHT_VISION -> "星瞳·夜视：消耗 100 技能点\n一次性点亮，永久夜视（不闪烁）";
+            case SATURATION -> "星食·饱腹：消耗 100 技能点\n一次性点亮，饱食度永远满值";
+            case ULT_REVIVE -> "凤凰涅槃：死亡原地复活一次，\n回复50%生命并清除负面效果，冷却10分钟\n前置：生命汲取500 + 暴击精通500";
+            case ULT_REAPER -> "死神凝视：攻击生命<15%的非玩家生物时\n30%概率直接处决\n前置：破甲精通500 + 锋刃精通500";
+            case AURA_DAMAGE -> "杀戮光环·伤害：每级+5%伤害倍率，\n360°范围伤害全部目标\n上限1000级，消耗×1.05/级";
+            case AURA_SPEED -> "杀戮光环·速度：每级+0.19攻速\n（光环攻击频率），上限100级\n点满每秒攻击20次";
+            case AURA_HEAL -> "治愈光环：每级每秒恢复周围10格内\n友好生物0.5生命，上限100级\n（需总开关开启）";
+            case AURA_MAGNET -> "磁力光环：一次性解锁（消耗 " + String.format("%.0f", org.zifeng.skilltree.Config.MAGNET_COST.get()) + " 技能点）\n按 H 键开关，自动吸取经验与掉落物\n（潜行时暂停）";
+            case AURA_TIME -> "时之环·永恒正午：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定世界时间\n为正午，不被睡觉/时间命令影响\n关闭后立即恢复正常时间流动";
+            case AURA_WEATHER -> "晴空环·永恒晴天：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定晴天\n不被下雨/天气命令影响\n关闭后立即恢复正常天气";
+            case AURA_GUARD -> "守卫光环：每级 +1% 全伤害防护\n（包括真伤/混沌/指令伤害）\n100级=100%免疫，连 /kill 也无法击杀\n上限100级，消耗随等级递增";
             default -> "";
         };
     }
@@ -222,11 +316,77 @@ public final class Skills {
             case ULT_GOLDEN -> List.of(TOUGH, AMP_ARMOR);
             case ULT_DIG -> List.of(MINING, AMP_MINING);
             case ULT_MASTER -> List.of(ULT_BLOOD, ULT_COMBO, ULT_GOLDEN, ULT_DIG);
+            case ULT_REVIVE -> List.of(LIFESTEAL, CRIT);
+            case ULT_REAPER -> List.of(ARMOR_PEN, BLADE);
             default -> List.of(); // 宇宙的青睐/夜视/饱食无前置
         };
     }
 
     public static ResourceLocation id(String path) {
         return ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, path);
+    }
+
+    /**
+     * 技能图标：使用原版物品图标（辨识度高、零资源成本）。
+     * 设计原则：图标物品与技能主题强关联（剑=伤害、镐=挖掘、靴=移速等）。
+     */
+    public static Item getIcon(String skillId) {
+        return switch (skillId) {
+            // ===== 基础属性（纵列1） =====
+            case BODY_HP -> Items.APPLE;                       // 生命强化：苹果（生命）
+            case BODY -> Items.IRON_CHESTPLATE;                // 体魄：铁胸甲（护甲）
+            case TOUGH -> Items.SHIELD;                        // 坚韧：盾牌（抗击退）
+            case BLADE -> Items.IRON_SWORD;                    // 锋刃：铁剑
+            case ATTACK_SPEED -> Items.SUGAR;                  // 疾攻：糖（快速）
+            case MINING -> Items.IRON_PICKAXE;                 // 采掘：铁镐
+            case MOVE -> Items.LEATHER_BOOTS;                  // 疾行：皮靴
+            case REGEN -> Items.POTION;                        // 再生：药水（回血）
+            case LUCK -> Items.EMERALD;                        // 幸运：绿宝石
+            case JUMP -> Items.RABBIT_FOOT;                    // 跃升：兔子脚
+            case FLY -> Items.ELYTRA;                          // 御空：鞘翅
+            case SWIM -> Items.COD;                            // 潜游：鳕鱼
+            case CRIT -> Items.FLINT;                          // 暴击：燧石（尖锐）
+            case LIFESTEAL -> Items.NETHER_WART;               // 吸血：下界疣（暗红）
+            case THORNS -> Items.CACTUS;                       // 荆棘：仙人掌
+            case ARMOR_PEN -> Items.TRIDENT;                   // 破甲：三叉戟（穿透）
+            // ===== 特殊增幅（纵列2，与基础一一对应，用进阶材质） =====
+            case AMP_HP -> Items.GOLDEN_APPLE;                 // 生命增幅：金苹果（苹果进阶）
+            case AMP_ARMOR -> Items.DIAMOND_CHESTPLATE;        // 防御强化：钻石胸甲（铁胸甲进阶）
+            case AMP_TOUGH -> Items.DIAMOND;                   // 坚韧增幅：钻石（坚硬）
+            case AMP_DAMAGE -> Items.DIAMOND_SWORD;            // 锋刃增幅：钻石剑（铁剑进阶）
+            case AMP_ATTACK_SPEED -> Items.GOLD_INGOT;         // 疾攻增幅：金锭
+            case AMP_MINING -> Items.DIAMOND_PICKAXE;          // 采掘增幅：钻石镐（铁镐进阶）
+            case AMP_MOVE -> Items.DIAMOND_BOOTS;              // 疾行增幅：钻石靴（皮靴进阶）
+            case AMP_REGEN -> Items.GLISTERING_MELON_SLICE;    // 再生增幅：闪烁西瓜（药水材料）
+            case AMP_LUCK -> Items.EMERALD_BLOCK;              // 幸运增幅：绿宝石块（绿宝石进阶）
+            case AMP_JUMP -> Items.RABBIT;                     // 跃升增幅：兔肉（兔子脚进阶）
+            case AMP_FLY -> Items.PHANTOM_MEMBRANE;            // 御空增幅：幻翼膜（鞘翅材料）
+            case AMP_SWIM -> Items.PUFFERFISH;                 // 潜游增幅：河豚（鳕鱼进阶）
+            case AMP_CRIT -> Items.QUARTZ;                     // 暴击增幅：下界石英（燧石进阶）
+            case AMP_LIFESTEAL -> Items.CRIMSON_FUNGUS;        // 吸血增幅：绯红菌（下界主题）
+            case AMP_THORNS -> Items.ROSE_BUSH;                // 荆棘增幅：玫瑰丛（带刺植物）
+            case AMP_ARMOR_PEN -> Items.NETHERITE_INGOT;       // 破甲增幅：下界合金锭
+            case AMP_DROP -> Items.GOLD_BLOCK;                 // 掉落增幅：金块（宝物）
+            // ===== 终极节点（纵列3） =====
+            case ULT_BLOOD -> Items.BLAZE_ROD;                 // 浴血奋战：烈焰棒
+            case ULT_COMBO -> Items.GOLDEN_SWORD;              // 疾风连斩：金剑
+            case ULT_GOLDEN -> Items.ENCHANTED_GOLDEN_APPLE;   // 不坏金身：附魔金苹果
+            case ULT_DIG -> Items.NETHERITE_PICKAXE;           // 万物皆可挖：下界合金镐
+            case ULT_MASTER -> Items.NETHER_STAR;              // 全能精通：下界之星
+            case ULT_FAVOR -> Items.DRAGON_EGG;                // 宇宙的青睐：龙蛋
+            case NIGHT_VISION -> Items.GOLDEN_CARROT;          // 星瞳·夜视：金胡萝卜
+            case SATURATION -> Items.CAKE;                     // 星食·饱腹：蛋糕
+            case ULT_REVIVE -> Items.TOTEM_OF_UNDYING;         // 凤凰涅槃：不死图腾
+            case ULT_REAPER -> Items.WITHER_SKELETON_SKULL;    // 死神凝视：凋灵骷髅头
+            // ===== 杀戮光环（纵列4） =====
+            case AURA_DAMAGE -> Items.STONE_SWORD;             // 光环·伤害：石剑
+            case AURA_SPEED -> Items.REDSTONE;                 // 光环·速度：红石粉（高频）
+            case AURA_HEAL -> Items.HONEY_BOTTLE;              // 治愈光环：蜂蜜瓶
+            case AURA_MAGNET -> Items.LODESTONE;               // 磁力光环：磁石（吸铁）
+            case AURA_TIME -> Items.CLOCK;                     // 时之环：时钟（锁定时间）
+            case AURA_WEATHER -> Items.SUNFLOWER;              // 晴空环：向日葵（面向太阳）
+            case AURA_GUARD -> Items.NETHERITE_CHESTPLATE;     // 守卫光环：下界合金胸甲（顶级防护）
+            default -> Items.BARRIER;
+        };
     }
 }

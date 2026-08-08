@@ -10,13 +10,14 @@ import net.neoforged.neoforge.common.NeoForge;
 import org.slf4j.Logger;
 import org.zifeng.skilltree.client.ClientRegistrar;
 import org.zifeng.skilltree.event.AuraEvents;
+import org.zifeng.skilltree.event.MagnetEvents;
 import org.zifeng.skilltree.event.SkillEvents;
 import org.zifeng.skilltree.event.UltimateEvents;
 import org.zifeng.skilltree.init.ModBlockEntities;
 import org.zifeng.skilltree.init.ModBlocks;
+import org.zifeng.skilltree.init.ModAttributes;
 import org.zifeng.skilltree.init.ModCapabilities;
 import org.zifeng.skilltree.init.ModCreativeTabs;
-import org.zifeng.skilltree.init.ModEntities;
 import org.zifeng.skilltree.init.ModItems;
 import org.zifeng.skilltree.init.ModMenus;
 import org.zifeng.skilltree.network.ModNetwork;
@@ -32,7 +33,7 @@ public class SkillTreeMod {
         ModBlockEntities.BLOCK_ENTITIES.register(modEventBus);
         ModMenus.MENUS.register(modEventBus);
         ModCreativeTabs.TABS.register(modEventBus);
-        ModEntities.ENTITIES.register(modEventBus);
+        ModAttributes.ATTRIBUTES.register(modEventBus);
 
         modEventBus.addListener(ModNetwork::register);
         modEventBus.addListener(ModCapabilities::registerCapabilities);
@@ -43,6 +44,7 @@ public class SkillTreeMod {
         NeoForge.EVENT_BUS.register(SkillEvents.class);
         NeoForge.EVENT_BUS.register(UltimateEvents.class);
         NeoForge.EVENT_BUS.register(AuraEvents.class);
+        NeoForge.EVENT_BUS.register(MagnetEvents.class);
 
         if (FMLLoader.getDist().isClient()) {
             ClientRegistrar.register(modEventBus);

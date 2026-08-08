@@ -34,8 +34,7 @@ public record OpenSkillTreeC2SPacket() implements CustomPacketPayload {
                 PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
                 PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
                 PacketDistributor.sendToPlayer(player,
-                        new SkillTreeDataS2CPacket(record.getSkillPoints(), record.getLearnedSkills(), record.getToggles(),
-                                record.getActiveLevels(), record.isAuraEnabled(), record.getAuraTargetMode()));
+                        SkillTreeDataS2CPacket.from(record));
             }
         });
     }

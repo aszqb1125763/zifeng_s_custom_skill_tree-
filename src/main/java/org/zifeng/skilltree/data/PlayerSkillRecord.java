@@ -34,6 +34,8 @@ public class PlayerSkillRecord {
     private int auraTargetMode;
     /** 杀戮光环总开关（默认开启） */
     private boolean auraEnabled = true;
+    /** 玩家整体累计转换的技能点数（原始整数，星能转换机阶梯消耗按此计算，跨机器共享） */
+    private long totalConvertedPoints;
 
     public PlayerSkillRecord(UUID owner) {
         this.owner = owner;
@@ -121,6 +123,18 @@ public class PlayerSkillRecord {
         this.auraEnabled = auraEnabled;
     }
 
+    // ============ 玩家整体累计转换（阶梯消耗用，跨机器共享） ============
+
+    /** 玩家全部星能转换机累计转换的技能点数（原始整数） */
+    public long getTotalConvertedPoints() {
+        return totalConvertedPoints;
+    }
+
+    /** 累计转换点数（仅增加；技能重洗不影响，属于机器产出历史） */
+    public void addTotalConvertedPoints(long amount) {
+        this.totalConvertedPoints = Math.max(0, this.totalConvertedPoints + amount);
+    }
+
     /**
      * 判断某技能当前是否还能继续加点。
      * 基础类：上限 {@link Skills#BASE_MAX_POINTS}；终极/宇宙的青睐：单次解锁；杀戮光环：各自上限。
@@ -146,23 +160,29 @@ public class PlayerSkillRecord {
         return true;
     }
 
-    /** 下一级需要的技能点数：基础 0.2 / 增幅 0.5 / 终极 1 / 光环按消耗公式 / 宇宙的青睐 1000 / 夜视·饱食 100 */
+    /** 下一级需要的技能点数：基础 0.2 / 增幅 0.5 / 终极 1 / 光环按消耗公式 / 宇宙的青睐 1000 / 夜视·饱食 100（数值走 Config） */
     public double getNextCost(String skillId) {
         if (Skills.ULT_FAVOR.equals(skillId)) {
-            return Skills.ULT_FAVOR_COST;
+            return Skills.ultFavorCost();
         }
         if (Skills.NIGHT_VISION.equals(skillId) || Skills.SATURATION.equals(skillId)) {
-            return 100;
+            return Skills.minorUltCost();
+        }
+        if (Skills.AURA_MAGNET.equals(skillId)) {
+            return org.zifeng.skilltree.Config.MAGNET_COST.get(); // 磁力光环：一次性解锁
+        }
+        if (Skills.AURA_TIME.equals(skillId) || Skills.AURA_WEATHER.equals(skillId)) {
+            return Skills.minorUltCost(); // 时之环/晴空环：一次性解锁（默认 100 点）
         }
         Skills.SkillType type = Skills.getType(skillId);
         if (type == Skills.SkillType.AURA) {
             return Skills.getAuraCost(skillId, getLearnedPoints(skillId));
         }
         if (type == Skills.SkillType.BASE) {
-            return Skills.BASE_POINT_COST;   // 0.2
+            return Skills.basePointCost();
         }
         if (type == Skills.SkillType.AMPLIFY) {
-            return Skills.AMPLIFY_POINT_COST; // 0.5
+            return Skills.amplifyPointCost();
         }
         return 1; // 终极
     }
@@ -184,6 +204,59 @@ public class PlayerSkillRecord {
         skillPoints -= cost;
         learnedSkills.merge(skillId, 1, Integer::sum);
         return true;
+    }
+
+    // ============ 技能重洗 ============
+
+    /**
+     * 重洗全部技能：按总消耗 × 返还率（Config）加回技能点，清空所有已学/开关/生效等级/光环状态。
+     * 返回返还的技能点数（不含原有剩余）。
+     */
+    public double resetAll() {
+        double refund = 0;
+        for (Map.Entry<String, Integer> entry : learnedSkills.entrySet()) {
+            refund += totalSpent(entry.getKey(), entry.getValue());
+        }
+        if (refund > 0) {
+            skillPoints += refund * org.zifeng.skilltree.Config.RESET_REFUND_RATE.get();
+        }
+        learnedSkills.clear();
+        toggles.clear();
+        activeLevels.clear();
+        auraTargetMode = 0;
+        auraEnabled = true;
+        return refund;
+    }
+
+    /** 某技能已投入 points 点的总消耗（与 getNextCost 的消耗规则一致，含递增光环） */
+    private static double totalSpent(String skillId, int points) {
+        if (points <= 0) {
+            return 0;
+        }
+        if (Skills.ULT_FAVOR.equals(skillId)) {
+            return Skills.ultFavorCost();
+        }
+        if (Skills.NIGHT_VISION.equals(skillId) || Skills.SATURATION.equals(skillId)) {
+            return Skills.minorUltCost();
+        }
+        if (Skills.AURA_MAGNET.equals(skillId)) {
+            return org.zifeng.skilltree.Config.MAGNET_COST.get();
+        }
+        if (Skills.AURA_TIME.equals(skillId) || Skills.AURA_WEATHER.equals(skillId)) {
+            return Skills.minorUltCost();
+        }
+        return switch (Skills.getType(skillId)) {
+            case BASE -> points * Skills.basePointCost();
+            case AMPLIFY -> points * Skills.amplifyPointCost();
+            case ULTIMATE -> points; // 普通终极 1 点/个
+            case AURA -> {
+                long total = 0;
+                for (int i = 0; i < points; i++) {
+                    total += Skills.getAuraCost(skillId, i);
+                }
+                yield total;
+            }
+        };
     }
 
     public CompoundTag save() {
@@ -208,6 +281,7 @@ public class PlayerSkillRecord {
         tag.put("Toggles", togglesList);
         tag.putInt("AuraTargetMode", auraTargetMode);
         tag.putBoolean("AuraEnabled", auraEnabled);
+        tag.putLong("TotalConvertedPoints", totalConvertedPoints);
         ListTag activeList = new ListTag();
         for (Map.Entry<String, Integer> entry : activeLevels.entrySet()) {
             CompoundTag activeTag = new CompoundTag();
@@ -249,6 +323,7 @@ public class PlayerSkillRecord {
         }
         record.auraTargetMode = tag.getInt("AuraTargetMode");
         record.auraEnabled = !tag.contains("AuraEnabled") || tag.getBoolean("AuraEnabled");
+        record.totalConvertedPoints = tag.getLong("TotalConvertedPoints"); // 旧存档无此字段默认 0
         if (tag.contains("ActiveLevels", Tag.TAG_LIST)) {
             ListTag activeList = tag.getList("ActiveLevels", Tag.TAG_COMPOUND);
             for (int i = 0; i < activeList.size(); i++) {

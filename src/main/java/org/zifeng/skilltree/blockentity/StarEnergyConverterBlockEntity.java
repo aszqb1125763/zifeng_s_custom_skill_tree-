@@ -15,12 +15,14 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.energy.IEnergyStorage;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.NotNull;
 import org.zifeng.skilltree.Config;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
 import org.zifeng.skilltree.menu.StarEnergyConverterMenu;
 import org.zifeng.skilltree.init.ModBlockEntities;
+import org.zifeng.skilltree.network.SkillTreeDataS2CPacket;
 
 import java.math.BigInteger;
 import java.util.UUID;
@@ -41,13 +43,17 @@ public class StarEnergyConverterBlockEntity extends BlockEntity implements MenuP
     private long lastReceiveTick = -1;
     private UUID ownerUUID;
 
+    /** 能量输入中断判定阈值：超过 1 秒（20 tick）未收到能量输入才清空进度 */
+    private static final long PROGRESS_IDLE_TICKS = 20;
+
     private final ContainerData data = new ContainerData() {
         @Override
         public int get(int index) {
             return switch (index) {
                 case 0 -> getProgressPercent();
-                case 1 -> totalConverted.min(BigInteger.valueOf(Integer.MAX_VALUE)).intValue();
+                case 1 -> getPlayerConvertedPoints().min(BigInteger.valueOf(Integer.MAX_VALUE)).intValue(); // 玩家整体累计转换（跨机器共享）
                 case 2 -> ownerUUID != null ? 1 : 0;
+                case 3 -> getThreshold().min(BigInteger.valueOf(Integer.MAX_VALUE)).intValue(); // 当前每点消耗
                 default -> 0;
             };
         }
@@ -58,7 +64,7 @@ public class StarEnergyConverterBlockEntity extends BlockEntity implements MenuP
 
         @Override
         public int getCount() {
-            return 3;
+            return 4;
         }
     };
 
@@ -143,8 +149,32 @@ public class StarEnergyConverterBlockEntity extends BlockEntity implements MenuP
         return progress.multiply(BigInteger.valueOf(100)).divide(threshold).min(BigInteger.valueOf(100)).intValue();
     }
 
+    /**
+     * 阶梯阈值：前 ENERGY_STEP_POINTS 点内，每点消耗从 ENERGY_START_COST 线性递增到 ENERGY_PER_SKILL_POINT；
+     * 之后固定为最终消耗。
+     * <p>⚠️ 2026-08-07 改为【玩家整体计算】：已转换点数取玩家全部机器累计（跨机器共享），
+     * 不再是单台机器的 totalConverted——多台机器共享同一个阶梯进度，符合挂机多机玩法预期。
+     */
     private BigInteger getThreshold() {
-        return BigInteger.valueOf(Math.max(1, Config.ENERGY_PER_SKILL_POINT.get()));
+        long finalCost = Math.max(1, Config.ENERGY_PER_SKILL_POINT.get());
+        long startCost = Math.max(1, Math.min(finalCost, Config.ENERGY_START_COST.get()));
+        int step = Math.max(1, Config.ENERGY_STEP_POINTS.get());
+        long converted = getPlayerConvertedPoints().min(BigInteger.valueOf(step)).longValue();
+        long increment = (finalCost - startCost) / step; // 每点增量（线性递增）
+        return BigInteger.valueOf(startCost + converted * increment);
+    }
+
+    /**
+     * 玩家整体累计转换的技能点数（阶梯消耗依据）。
+     * 未绑定 owner 或服务端不可用时降级用本机累计（保持显示/计算不崩）。
+     */
+    private BigInteger getPlayerConvertedPoints() {
+        if (ownerUUID == null || !(level instanceof ServerLevel serverLevel)) {
+            return totalConverted;
+        }
+        PlayerSkillSavedData data = PlayerSkillSavedData.get(serverLevel);
+        PlayerSkillRecord record = data.getOrCreatePlayer(ownerUUID);
+        return BigInteger.valueOf(record.getTotalConvertedPoints());
     }
 
     /** 由方块 getTicker 驱动的服务端每 tick 逻辑 */
@@ -153,7 +183,9 @@ public class StarEnergyConverterBlockEntity extends BlockEntity implements MenuP
             return;
         }
         long gameTime = level.getGameTime();
-        if (be.lastReceiveTick < 0 || gameTime - be.lastReceiveTick > 1) {
+        // 能量输入中断判定：超过 1 秒（20 tick）未收到能量输入才清空进度。
+        // 原来 >1 tick 就清空，导致推送间隔 >2 tick 的能量源（线缆/发电机等）进度被反复清零，永远到不了 100%。
+        if (be.lastReceiveTick < 0 || gameTime - be.lastReceiveTick > PROGRESS_IDLE_TICKS) {
             // 能量输入中断（或从未输入）→ 进度直接清空，重新计算
             if (be.progress.signum() > 0) {
                 be.progress = BigInteger.ZERO;
@@ -179,6 +211,8 @@ public class StarEnergyConverterBlockEntity extends BlockEntity implements MenuP
         if (level instanceof ServerLevel serverLevel) {
             PlayerSkillSavedData data = PlayerSkillSavedData.get(serverLevel);
             PlayerSkillRecord record = data.getOrCreatePlayer(ownerUUID);
+            // 玩家整体累计转换量 +amount（阶梯消耗按玩家计算，跨机器共享）
+            record.addTotalConvertedPoints(amount);
             // 全能精通：技能点获取速度 -20%
             double rate = org.zifeng.skilltree.skill.SkillEffects.getSkillPointRate(record);
             double granted = amount * rate;
@@ -186,6 +220,12 @@ public class StarEnergyConverterBlockEntity extends BlockEntity implements MenuP
                 record.addSkillPoints(granted);
             }
             data.setDirty();
+            // 实时同步：玩家在线则立即回发技能数据包，技能树界面打开时技能点实时刷新
+            // （否则界面只能等 2 秒轮询，转换中的技能点显示滞后）
+            net.minecraft.server.level.ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(ownerUUID);
+            if (owner != null) {
+                PacketDistributor.sendToPlayer(owner, SkillTreeDataS2CPacket.from(record));
+            }
         }
     }
 

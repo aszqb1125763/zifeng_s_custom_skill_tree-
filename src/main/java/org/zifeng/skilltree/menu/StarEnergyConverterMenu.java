@@ -18,7 +18,7 @@ public class StarEnergyConverterMenu extends AbstractContainerMenu {
     private final ContainerData data;
 
     public StarEnergyConverterMenu(int containerId, Inventory inventory) {
-        this(containerId, inventory, new SimpleContainerData(3));
+        this(containerId, inventory, new SimpleContainerData(4));
     }
 
     public StarEnergyConverterMenu(int containerId, Inventory inventory, StarEnergyConverterBlockEntity blockEntity) {
@@ -41,6 +41,11 @@ public class StarEnergyConverterMenu extends AbstractContainerMenu {
 
     public boolean isBound() {
         return data.get(2) == 1;
+    }
+
+    /** 当前每点技能点消耗（FE，阶梯制实时值） */
+    public int getCurrentCost() {
+        return data.get(3);
     }
 
     @Override
