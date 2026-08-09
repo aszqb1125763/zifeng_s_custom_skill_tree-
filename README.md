@@ -1,4 +1,4 @@
-# 子枫的自定义技能树 (zifeng_s custom skill tree)
+# Zifeng Skill Tree（子枫技能树）
 
 一个基于 **NeoForge 1.21.1** 的 Minecraft 技能树模组：通过星能转换机把 FE 能量转化为技能点，在技能树界面中解锁技能（基础 / 增幅 / 终极 / 杀戮光环），并利用多余电力获得全方位战斗与生存强化。
 

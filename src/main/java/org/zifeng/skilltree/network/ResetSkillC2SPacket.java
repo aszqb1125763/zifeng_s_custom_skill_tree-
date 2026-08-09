@@ -51,7 +51,8 @@ public record ResetSkillC2SPacket(String skillId) implements CustomPacketPayload
                 data.setDirty();
                 // 更新属性修饰符 + 清理终极被动临时状态
                 SkillEffects.applyAll(player, record);
-                UltimateEvents.clearPlayer(player);
+                // ⚠️ 顺序关键：先回收飞行权限（clearPlayerFlight 依赖 SKILL_FLIGHT_GRANTED 集合），
+                //    再 clearPlayer 清状态（clearPlayer 会移除 SKILL_FLIGHT_GRANTED 条目，先清会导致无法回收）
                 // 重置御空术/御空增幅 → 还原原版飞行速度（防止残留被持久化）
                 if (Skills.FLY.equals(skillId) || Skills.AMP_FLY.equals(skillId)) {
                     UltimateEvents.resetFlyingSpeed(player);
@@ -60,6 +61,7 @@ public record ResetSkillC2SPacket(String skillId) implements CustomPacketPayload
                 if (Skills.ULT_FAVOR.equals(skillId)) {
                     UltimateEvents.clearPlayerFlight(player);
                 }
+                UltimateEvents.clearPlayer(player);
 
                 // 重置村庄英雄/发光/战利品爆炸/虚空之躯等被动 → 状态由事件每次 tick 按记录重判，无残留
                 double rate = org.zifeng.skilltree.Config.RESET_REFUND_RATE.get();

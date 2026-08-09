@@ -38,8 +38,11 @@ public record ToggleAuraC2SPacket() implements CustomPacketPayload {
                 if (!anyLearned) {
                     return;
                 }
-                // 判断杀戮光环当前状态（伤害/速度任一开启即视为开）
-                boolean now = !(record.isEnabled(Skills.AURA_DAMAGE) || record.isEnabled(Skills.AURA_SPEED));
+                // 判断杀戮光环当前状态（只基于【已学】技能的开关：伤害/速度任一已学且开启即视为开）
+                // ⚠️ isEnabled 对未学技能默认返回 true，必须配合已学判断，否则未学技能会干扰 now 计算
+                boolean damageOn = record.getLearnedPoints(Skills.AURA_DAMAGE) > 0 && record.isEnabled(Skills.AURA_DAMAGE);
+                boolean speedOn = record.getLearnedPoints(Skills.AURA_SPEED) > 0 && record.isEnabled(Skills.AURA_SPEED);
+                boolean now = !(damageOn || speedOn);
                 // 只切换已学技能（未学的不动）
                 if (record.getLearnedPoints(Skills.AURA_DAMAGE) > 0) {
                     record.setEnabled(Skills.AURA_DAMAGE, now);
