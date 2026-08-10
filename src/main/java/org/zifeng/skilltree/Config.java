@@ -18,6 +18,12 @@ public class Config {
     /** 阶梯消耗：前多少点内从起始消耗线性递增到最终消耗，默认 2000 */
     public static final ModConfigSpec.IntValue ENERGY_STEP_POINTS;
 
+    /** 技能点转换机：每 tick 最大输入 FE 上限（默认 10 万） */
+    public static final ModConfigSpec.LongValue MACHINE_MAX_INPUT_RATE;
+
+    /** 技能点转换机：能量缓冲上限（FE，64 位 Long.MAX_VALUE = 9223372036854775807），达到上限后停止接收 */
+    public static final ModConfigSpec.LongValue MACHINE_ENERGY_CAPACITY;
+
     /** 技能树界面背景色（淡灰，ARGB） */
     public static final ModConfigSpec.IntValue SKILL_TREE_BACKGROUND_COLOR;
 
@@ -194,7 +200,7 @@ public class Config {
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
-        builder.comment("星能转换机：每消耗多少 FE 能量转换 1 点技能点（1 亿 = 100000000）")
+        builder.comment("技能点转换机：每消耗多少 FE 能量转换 1 点技能点（1 亿 = 100000000）")
                 .push("machine");
         ENERGY_PER_SKILL_POINT = builder
                 .comment("每 1 点技能点所需能量（FE）。进度中断（停止输入能量超过 1 秒）会清空重算")
@@ -205,6 +211,12 @@ public class Config {
         ENERGY_STEP_POINTS = builder
                 .comment("阶梯消耗：前 N 点内每点消耗从起始值线性递增到最终值（默认 2000），之后固定最终消耗")
                 .defineInRange("energyStepPoints", 2000, 1, 1000000);
+        MACHINE_MAX_INPUT_RATE = builder
+                .comment("技能点转换机：每 tick 最大输入能量（FE/t，默认 100000）。GUI 内可开启\"无限制输入\"忽略此限制")
+                .defineInRange("machineMaxInputRate", 100_000L, 1L, Long.MAX_VALUE);
+        MACHINE_ENERGY_CAPACITY = builder
+                .comment("技能点转换机：能量缓冲上限（FE，64 位上限 Long.MAX_VALUE = 9223372036854775807）。达到上限后停止接收能量输入")
+                .defineInRange("machineEnergyCapacity", Long.MAX_VALUE, 1L, Long.MAX_VALUE);
         MACHINE_PROGRESS_COLOR = builder
                 .comment("机器界面进度条颜色（ARGB，默认星辉蓝 0xFF4FC3F7）")
                 .defineInRange("machineProgressColor", 0xFF4FC3F7, Integer.MIN_VALUE, Integer.MAX_VALUE);
@@ -262,8 +274,8 @@ public class Config {
                 .comment("光环基础攻击间隔（tick，200 = 10 秒一次；未学/关闭光环速度时）")
                 .defineInRange("auraBaseIntervalTicks", 200, 10, 12000);
         AURA_SPEED_INTERVAL_REDUCTION = builder
-                .comment("光环速度：每级减少的攻击间隔（tick，默认 9.5；20 级 → 间隔 10 tick = 每秒 2 次）")
-                .defineInRange("auraSpeedIntervalReduction", 9.5, 0.0, 20.0);
+                .comment("光环速度：每级攻击间隔缩减比例（乘法递减，0.1 = 每级间隔×0.9；\n前10级从 200 tick 降到 70 tick，20级 ≈ 24 tick = 每秒约1.2次）")
+                .defineInRange("auraSpeedIntervalReduction", 0.1, 0.0, 0.5);
         AURA_DAMAGE_MULTIPLIER_PER_LEVEL = builder
                 .comment("杀戮光环·伤害：每级伤害倍率（小数，0.10 = 每级 +10%，乘算叠加到攻击伤害属性）")
                 .defineInRange("damageMultiplierPerLevel", 0.10, 0.001, 1.0);
@@ -361,14 +373,14 @@ public class Config {
                 .comment("暴击基础伤害倍率（1.5 = 暴击造成 1.5 倍伤害）")
                 .defineInRange("critDamageBase", 1.5, 1.0, 10.0);
         CRIT_DAMAGE_PER_POINT = builder
-                .comment("暴击增幅：每点暴击伤害倍率（小数，0.005 = +0.5%/点）")
-                .defineInRange("critDamagePerPoint", 0.005, 0.0, 0.1);
+                .comment("暴击增幅：每点暴击伤害倍率（小数，0.05 = +5%/点，1.2.3 ×10）")
+                .defineInRange("critDamagePerPoint", 0.05, 0.0, 0.5);
         LIFESTEAL_PER_POINT = builder
                 .comment("生命汲取：每点吸血比例（小数，0.001 = 0.1%/点，1000 点 = 100% 吸血）")
                 .defineInRange("lifestealPerPoint", 0.001, 0.0001, 0.05);
         LIFESTEAL_AMP_PER_POINT = builder
-                .comment("吸血增幅：每点吸血量倍率（小数，0.004 = +0.4%/点）")
-                .defineInRange("lifestealAmpPerPoint", 0.004, 0.0, 0.05);
+                .comment("吸血增幅：每点吸血量倍率（小数，0.04 = +4%/点，1.2.3 ×10）")
+                .defineInRange("lifestealAmpPerPoint", 0.04, 0.0, 0.5);
         REVIVE_COOLDOWN_TICKS = builder
                 .comment("凤凰涅槃：冷却时长（tick，1200 = 1 分钟）")
                 .defineInRange("reviveCooldownTicks", 1200, 100, 240000);

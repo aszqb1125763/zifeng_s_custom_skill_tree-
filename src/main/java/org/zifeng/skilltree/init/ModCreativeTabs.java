@@ -14,9 +14,9 @@ public class ModCreativeTabs {
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> MAIN = TABS.register("main",
             () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.zifeng_s_custom_skill_tree"))
-                    .icon(() -> new ItemStack(ModItems.STAR_ENERGY_CONVERTER_ITEM.get()))
+                    .icon(() -> new ItemStack(ModItems.SKILL_POINT_CONVERTER_ITEM.get()))
                     .displayItems((parameters, output) -> {
-                        output.accept(ModItems.STAR_ENERGY_CONVERTER_ITEM.get());
+                        output.accept(ModItems.SKILL_POINT_CONVERTER_ITEM.get());
                         output.accept(ModItems.CREATIVE_ENERGY_ITEM.get());
                     })
                     .build());

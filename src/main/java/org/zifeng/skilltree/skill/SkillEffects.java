@@ -61,8 +61,8 @@ public final class SkillEffects {
             new BaseSkill(Skills.FLY, Attributes.FLYING_SPEED, 0.005),
             new BaseSkill(Skills.SWIM, net.neoforged.neoforge.common.NeoForgeMod.SWIM_SPEED, 0.005), // 游泳用 NeoForge SWIM_SPEED
             // 杀戮光环·速度：不再加成攻速属性（改由 AuraEvents 直接控制光环攻击间隔，性能优化）
-            // 防御强化：护甲倍率在护甲原版上限（30）内无意义 → 改为直接加物理减伤（每点 +0.05%），独立乘算层不依赖护甲
-            new BaseSkill(Skills.AMP_ARMOR, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION, 0.0005)
+            // 防御强化：护甲倍率在护甲原版上限（30）内无意义 → 改为直接加物理减伤（每点 +0.5%，1.2.3 ×10），独立乘算层不依赖护甲
+            new BaseSkill(Skills.AMP_ARMOR, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION, 0.005)
     );
 
     // ============ 多级终极（节点类）属性技能：技能ID → [属性, 单点固定值] ============
@@ -73,18 +73,19 @@ public final class SkillEffects {
     );
 
     // ============ 增幅技能：技能ID → [属性, 单点百分比(小数)]（与基础技能一一对应） ============
+    // 1.2.3：增幅属性原设计 +0.5% 太弱，翻倍后再 ×10（+1% → +10%、+0.8% → +8%、+1.2% → +12%）
     private static final List<BaseSkill> AMPLIFY_SKILLS = List.of(
-            new BaseSkill(Skills.AMP_HP, Attributes.MAX_HEALTH, 0.005),
-            new BaseSkill(Skills.AMP_TOUGH, Attributes.ARMOR_TOUGHNESS, 0.005),
-            new BaseSkill(Skills.AMP_TOUGH, Attributes.KNOCKBACK_RESISTANCE, 0.005),
-            new BaseSkill(Skills.AMP_LUCK, Attributes.LUCK, 0.005),
-            new BaseSkill(Skills.AMP_DAMAGE, Attributes.ATTACK_DAMAGE, 0.005),
-            new BaseSkill(Skills.AMP_ATTACK_SPEED, Attributes.ATTACK_SPEED, 0.004),
-            new BaseSkill(Skills.AMP_MINING, Attributes.MINING_EFFICIENCY, 0.006),
-            new BaseSkill(Skills.AMP_MOVE, Attributes.MOVEMENT_SPEED, 0.005),
-            new BaseSkill(Skills.AMP_JUMP, Attributes.JUMP_STRENGTH, 0.005),
-            new BaseSkill(Skills.AMP_FLY, Attributes.FLYING_SPEED, 0.005),
-            new BaseSkill(Skills.AMP_SWIM, net.neoforged.neoforge.common.NeoForgeMod.SWIM_SPEED, 0.005)
+            new BaseSkill(Skills.AMP_HP, Attributes.MAX_HEALTH, 0.1),
+            new BaseSkill(Skills.AMP_TOUGH, Attributes.ARMOR_TOUGHNESS, 0.1),
+            new BaseSkill(Skills.AMP_TOUGH, Attributes.KNOCKBACK_RESISTANCE, 0.1),
+            new BaseSkill(Skills.AMP_LUCK, Attributes.LUCK, 0.1),
+            new BaseSkill(Skills.AMP_DAMAGE, Attributes.ATTACK_DAMAGE, 0.1),
+            new BaseSkill(Skills.AMP_ATTACK_SPEED, Attributes.ATTACK_SPEED, 0.08),
+            new BaseSkill(Skills.AMP_MINING, Attributes.MINING_EFFICIENCY, 0.12),
+            new BaseSkill(Skills.AMP_MOVE, Attributes.MOVEMENT_SPEED, 0.1),
+            new BaseSkill(Skills.AMP_JUMP, Attributes.JUMP_STRENGTH, 0.1),
+            new BaseSkill(Skills.AMP_FLY, Attributes.FLYING_SPEED, 0.1),
+            new BaseSkill(Skills.AMP_SWIM, net.neoforged.neoforge.common.NeoForgeMod.SWIM_SPEED, 0.1)
     );
 
     private record BaseSkill(String skillId, Holder<Attribute> attribute, double perPoint) {
@@ -179,6 +180,39 @@ public final class SkillEffects {
                 blood ? org.zifeng.skilltree.Config.BLOOD_ATTACK_BONUS.get() : 0);
         applyMultiplier(player, Attributes.MAX_HEALTH, BLOOD_HEALTH_MOD,
                 blood ? org.zifeng.skilltree.Config.BLOOD_HEALTH_BONUS.get() : 0);
+        // 3.7 魔法增幅（MAGIC 列）：全部反射兼容，未装模组自动跳过
+        // 新生魔艺：最大魔力 ×(1+10%/级)、魔力恢复 ×(1+40%/级)
+        double arsManaAmp = record.isEnabled(Skills.MANA_AMP) ? record.getActiveLevel(Skills.MANA_AMP) * 0.1 : 0;
+        org.zifeng.skilltree.compat.ArsNouveauCompat.applyManaAmp(player, arsManaAmp);
+        double arsManaRegen = record.isEnabled(Skills.ARS_MANA_REGEN) ? record.getActiveLevel(Skills.ARS_MANA_REGEN) * 0.4 : 0;
+        org.zifeng.skilltree.compat.ArsNouveauCompat.applyManaRegenAmp(player, arsManaRegen);
+        // 铁魔法：最大魔力 ×(1+10%/级)、魔力恢复 ×(1+40%/级)、吟唱缩减 ×(1+10%/级)、9流派强度 ×(1+10%/级)
+        double ironManaAmp = record.isEnabled(Skills.IRON_MANA_AMP) ? record.getActiveLevel(Skills.IRON_MANA_AMP) * 0.1 : 0;
+        org.zifeng.skilltree.compat.IronSpellsCompat.applyMaxManaAmp(player, ironManaAmp);
+        double ironManaRegen = record.isEnabled(Skills.IRON_MANA_REGEN) ? record.getActiveLevel(Skills.IRON_MANA_REGEN) * 0.4 : 0;
+        org.zifeng.skilltree.compat.IronSpellsCompat.applyManaRegenAmp(player, ironManaRegen);
+        double ironCastTime = record.isEnabled(Skills.IRON_CAST_TIME) ? record.getActiveLevel(Skills.IRON_CAST_TIME) * 0.1 : 0;
+        org.zifeng.skilltree.compat.IronSpellsCompat.applyCastTimeReduction(player, ironCastTime);
+        double ironCooldown = record.isEnabled(Skills.IRON_COOLDOWN) ? record.getActiveLevel(Skills.IRON_COOLDOWN) * 0.1 : 0;
+        org.zifeng.skilltree.compat.IronSpellsCompat.applyCooldownReduction(player, ironCooldown);
+        org.zifeng.skilltree.compat.IronSpellsCompat.applySchoolPowerAmp(player, "fire",
+                record.isEnabled(Skills.IRON_FIRE) ? record.getActiveLevel(Skills.IRON_FIRE) * 0.1 : 0);
+        org.zifeng.skilltree.compat.IronSpellsCompat.applySchoolPowerAmp(player, "ice",
+                record.isEnabled(Skills.IRON_ICE) ? record.getActiveLevel(Skills.IRON_ICE) * 0.1 : 0);
+        org.zifeng.skilltree.compat.IronSpellsCompat.applySchoolPowerAmp(player, "lightning",
+                record.isEnabled(Skills.IRON_LIGHTNING) ? record.getActiveLevel(Skills.IRON_LIGHTNING) * 0.1 : 0);
+        org.zifeng.skilltree.compat.IronSpellsCompat.applySchoolPowerAmp(player, "holy",
+                record.isEnabled(Skills.IRON_HOLY) ? record.getActiveLevel(Skills.IRON_HOLY) * 0.1 : 0);
+        org.zifeng.skilltree.compat.IronSpellsCompat.applySchoolPowerAmp(player, "ender",
+                record.isEnabled(Skills.IRON_ENDER) ? record.getActiveLevel(Skills.IRON_ENDER) * 0.1 : 0);
+        org.zifeng.skilltree.compat.IronSpellsCompat.applySchoolPowerAmp(player, "blood",
+                record.isEnabled(Skills.IRON_BLOOD) ? record.getActiveLevel(Skills.IRON_BLOOD) * 0.1 : 0);
+        org.zifeng.skilltree.compat.IronSpellsCompat.applySchoolPowerAmp(player, "evocation",
+                record.isEnabled(Skills.IRON_EVOCATION) ? record.getActiveLevel(Skills.IRON_EVOCATION) * 0.1 : 0);
+        org.zifeng.skilltree.compat.IronSpellsCompat.applySchoolPowerAmp(player, "nature",
+                record.isEnabled(Skills.IRON_NATURE) ? record.getActiveLevel(Skills.IRON_NATURE) * 0.1 : 0);
+        org.zifeng.skilltree.compat.IronSpellsCompat.applySchoolPowerAmp(player, "eldritch",
+                record.isEnabled(Skills.IRON_ELDRITCH) ? record.getActiveLevel(Skills.IRON_ELDRITCH) * 0.1 : 0);
         // 4. 生命值同步（避免加血上限后血量不涨）
         AttributeInstance maxHealth = player.getAttribute(Attributes.MAX_HEALTH);
         if (maxHealth != null && player.getHealth() > player.getMaxHealth()) {
@@ -222,28 +256,35 @@ public final class SkillEffects {
             return 0;
         }
         double amp = record.isEnabled(Skills.AMP_REGEN)
-                ? record.getActiveLevel(Skills.AMP_REGEN) * 0.008 : 0;
+                ? record.getActiveLevel(Skills.AMP_REGEN) * 0.08 : 0; // 1.2.3 ×10：每点 +16%
         return base * (1 + amp);
     }
 
-    /** 怪物掉落倍率（掉落增幅；尊重生效等级与开关） */
-    public static double getDropMultiplier(PlayerSkillRecord record) {
-        double points = record.isEnabled(Skills.AMP_DROP)
-                ? record.getActiveLevel(Skills.AMP_DROP) : 0;
-        return 1 + points * 0.04;
+    /** 怪物掉落倍率（生物掉落倍率终极技能；尊重生效等级与开关）：每级 +1 倍，1级=2倍，10级=11倍 */
+    public static double getMobDropMultiplier(PlayerSkillRecord record) {
+        double points = record.isEnabled(Skills.MOB_DROP)
+                ? record.getActiveLevel(Skills.MOB_DROP) : 0;
+        return 1 + points;
     }
 
-    /** 经验获取倍率（掉落增幅；尊重生效等级与开关） */
+    /** 方块掉落倍率（方块掉落倍率终极技能；尊重生效等级与开关）：每级 +1 倍 */
+    public static double getBlockDropMultiplier(PlayerSkillRecord record) {
+        double points = record.isEnabled(Skills.BLOCK_DROP)
+                ? record.getActiveLevel(Skills.BLOCK_DROP) : 0;
+        return 1 + points;
+    }
+
+    /** 经验获取倍率（经验获取倍率终极技能；尊重生效等级与开关）：每级 +2 倍，1级=3倍，10级=21倍 */
     public static double getExperienceMultiplier(PlayerSkillRecord record) {
-        double points = record.isEnabled(Skills.AMP_DROP)
-                ? record.getActiveLevel(Skills.AMP_DROP) : 0;
-        return 1 + points * 0.05;
+        double points = record.isEnabled(Skills.XP_GAIN)
+                ? record.getActiveLevel(Skills.XP_GAIN) : 0;
+        return 1 + points * 2;
     }
 
-    /** 工具耐久损耗减免（采掘熟稔；尊重生效等级与开关）：每级 +20%，封顶 100%（达到后工具不消耗耐久） */
+    /** 工具耐久损耗减免（工具不毁终极技能；尊重生效等级与开关）：每级 +20%，封顶 100%（工具不消耗耐久） */
     public static double getToolDurabilityReduction(PlayerSkillRecord record) {
-        double points = record.isEnabled(Skills.MINING)
-                ? record.getActiveLevel(Skills.MINING) : 0;
+        double points = record.isEnabled(Skills.UNBREAKABLE)
+                ? record.getActiveLevel(Skills.UNBREAKABLE) : 0;
         return Math.min(1.0, points * 0.2);
     }
 
@@ -251,6 +292,47 @@ public final class SkillEffects {
     public static double getSkillPointRate(PlayerSkillRecord record) {
         return record.getLearnedPoints(Skills.ULT_MASTER) > 0 && record.isEnabled(Skills.ULT_MASTER)
                 ? org.zifeng.skilltree.Config.MASTER_SKILL_POINT_RATE.get() : 1.0;
+    }
+
+    /** 魔法增幅：新生魔艺魔力倍率（每级 +10%：level × 0.1；需技能启用） */
+    public static double getManaAmpPercent(PlayerSkillRecord record) {
+        return record.isEnabled(Skills.MANA_AMP)
+                ? record.getActiveLevel(Skills.MANA_AMP) * 0.1 : 0;
+    }
+
+    /** 通用魔法增幅倍率（每级 +ratio/级；需技能启用） */
+    private static double magicAmp(PlayerSkillRecord record, String skillId, double perLevel) {
+        return record.isEnabled(skillId) ? record.getActiveLevel(skillId) * perLevel : 0;
+    }
+
+    /** 新生魔艺魔力恢复倍率（每级 +40%：level × 0.4；需技能启用） */
+    public static double getArsManaRegenPercent(PlayerSkillRecord record) {
+        return magicAmp(record, Skills.ARS_MANA_REGEN, 0.4);
+    }
+
+    /** 铁魔法魔力倍率（每级 +10%：level × 0.1；需技能启用） */
+    public static double getIronManaAmpPercent(PlayerSkillRecord record) {
+        return magicAmp(record, Skills.IRON_MANA_AMP, 0.1);
+    }
+
+    /** 铁魔法魔力恢复倍率（每级 +40%：level × 0.4；需技能启用） */
+    public static double getIronManaRegenPercent(PlayerSkillRecord record) {
+        return magicAmp(record, Skills.IRON_MANA_REGEN, 0.4);
+    }
+
+    /** 铁魔法吟唱缩减倍率（每级 +10%：level × 0.1；需技能启用） */
+    public static double getIronCastTimePercent(PlayerSkillRecord record) {
+        return magicAmp(record, Skills.IRON_CAST_TIME, 0.1);
+    }
+
+    /** 铁魔法法术冷却缩减倍率（每级 -10%：level × 0.1；需技能启用） */
+    public static double getIronCooldownPercent(PlayerSkillRecord record) {
+        return magicAmp(record, Skills.IRON_COOLDOWN, 0.1);
+    }
+
+    /** 铁魔法流派法术强度倍率（每级 +10%：level × 0.1；需技能启用） */
+    public static double getIronSchoolPercent(PlayerSkillRecord record, String schoolSkillId) {
+        return magicAmp(record, schoolSkillId, 0.1);
     }
 
     // ============ 暴击 / 吸血 / 治愈光环（事件驱动，非属性，尊重技能开关） ============
@@ -292,7 +374,7 @@ public final class SkillEffects {
             return 0;
         }
         double amp = record.isEnabled(Skills.AMP_THORNS)
-                ? record.getActiveLevel(Skills.AMP_THORNS) * 0.004 : 0;
+                ? record.getActiveLevel(Skills.AMP_THORNS) * 0.04 : 0; // 1.2.3 ×10：每点 +8%
         return base * (1 + amp);
     }
 
@@ -304,68 +386,12 @@ public final class SkillEffects {
             return 0;
         }
         double amp = record.isEnabled(Skills.AMP_ARMOR_PEN)
-                ? record.getActiveLevel(Skills.AMP_ARMOR_PEN) * 0.004 : 0;
+                ? record.getActiveLevel(Skills.AMP_ARMOR_PEN) * 0.04 : 0; // 1.2.3 ×10：每点 +8%
         return base * (1 + amp);
     }
 
     /** 治愈光环：作用半径（格，Config 可调，默认 10 = xyz 三轴全 10） */
     public static double getAuraHealRadius() {
         return org.zifeng.skilltree.Config.AURA_HEAL_RADIUS.get();
-    }
-
-    // ============ 技能增幅结果汇总（按钮显示用） ============
-
-    /**
-     * 返回某技能在给定点数下的实际增幅文本（如 "+5❤ +2甲" / "+12%攻伤"）。
-     */
-    public static String getEffectSummary(String skillId, int points) {
-        if (points <= 0) {
-            return "";
-        }
-        return switch (skillId) {
-            // 基础技能（速度显示为每秒方块数：0.005×43.17≈0.22方/秒；跳跃每点≈0.05格）
-            case Skills.BODY_HP -> fmt("+%.1f❤", points * 2.0);
-            case Skills.BODY -> fmt("+%.1f甲", points * 0.2) + " " + fmt("+%.1f%%减伤", points * 0.05);
-            case Skills.TOUGH -> fmt("+%.1f韧", points * 0.3) + " " + fmt("+%.1f%%击退", points * 0.1);
-            case Skills.BLADE -> fmt("+%.1f攻伤", points * 0.4);
-            case Skills.ATTACK_SPEED -> fmt("+%.2f攻速", points * 0.02);
-            case Skills.MINING -> fmt("+%.1f挖速", points * 0.3) + " " + (points * 0.2 >= 1.0
-                    ? "工具不毁"
-                    : fmt("+%.0f%%耐久减免", points * 20));
-            case Skills.MOVE -> fmt("+%.2f方/秒", points * 0.005 * 43.17);
-            case Skills.REGEN -> fmt("+%.1f回血/秒", points * 0.1);
-            case Skills.LUCK -> fmt("+%.1f幸运", points * 0.1);
-            case Skills.JUMP -> fmt("+%.2f格", points * 0.0525); // 每点 +0.01 跳强 ≈ +0.05 格
-            case Skills.FLY -> fmt("+%.2f方/秒", points * 0.005 / 8.0 * 216); // 每点 +0.005 属性 ÷8 对齐 abilities → 实际飞速
-            case Skills.SWIM -> fmt("+%.2f方/秒", points * 0.005 * 3.35); // 每点 +0.005 SWIM_SPEED → 实际游泳速度
-            case Skills.THORNS -> fmt("+%.1f反伤", points * 0.05);
-            case Skills.ARMOR_PEN -> fmt("+%.1f%%破甲", points * 0.15);
-            // 增幅技能
-            case Skills.AMP_HP -> fmt("+%.1f%%生命", points * 0.5);
-            case Skills.AMP_TOUGH -> fmt("+%.1f%%韧性/击退", points * 0.5);
-            case Skills.AMP_LUCK -> fmt("+%.1f%%幸运", points * 0.5);
-            case Skills.AMP_DAMAGE -> fmt("+%.1f%%攻伤", points * 0.5);
-            case Skills.AMP_ATTACK_SPEED -> fmt("+%.1f%%攻速", points * 0.4);
-            case Skills.AMP_MINING -> fmt("+%.1f%%挖速", points * 0.6);
-            case Skills.AMP_REGEN -> fmt("+%.1f%%回血", points * 0.8);
-            case Skills.AMP_ARMOR -> fmt("+%.1f%%减伤", points * 0.05);
-            case Skills.AMP_MOVE -> fmt("+%.1f%%移速", points * 0.5);
-            case Skills.AMP_DROP -> fmt("+%.1f%%掉落", points * 4) + " " + fmt("+%.1f%%经验", points * 5) + " (生物+方块)";
-            case Skills.AMP_JUMP -> fmt("+%.1f%%跳高", points * 0.5);
-            case Skills.AMP_FLY -> fmt("+%.1f%%飞速", points * 0.5);
-            case Skills.AMP_SWIM -> fmt("+%.1f%%游泳", points * 0.5);
-            case Skills.AMP_CRIT -> fmt("+%.1f%%暴击伤害", points * 0.5);
-            case Skills.AMP_LIFESTEAL -> fmt("+%.1f%%吸血", points * 0.4);
-            case Skills.AMP_THORNS -> fmt("+%.1f%%反伤", points * 0.4);
-            case Skills.AMP_ARMOR_PEN -> fmt("+%.1f%%破甲", points * 0.4);
-            // 终极节点
-            case Skills.ULT_BLOOD -> "攻伤+50% 生命+50%";
-            case Skills.ULT_GOLDEN -> "抗性10/吸收100/抗火5";
-            default -> "";
-        };
-    }
-
-    private static String fmt(String format, double value) {
-        return String.format(format, value);
     }
 }

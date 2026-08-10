@@ -8,6 +8,7 @@ import org.zifeng.skilltree.SkillTreeMod;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 子枫技能树完整技能定义表。
@@ -68,6 +69,24 @@ public final class Skills {
         return Config.AURA_BASE_COST.get();
     }
 
+    /**
+     * 基础属性：第 n 级消耗（线性增长，下一级在上一级基础上 +1）。
+     * 第 1 级 = 1 点，第 2 级 = 2 点，第 3 级 = 3 点...
+     * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
+     */
+    public static int getBaseCostAtLevel(int currentLevel) {
+        return currentLevel + 1;
+    }
+
+    /**
+     * 特殊增幅：第 n 级消耗（线性增长，下一级在上一级基础上 +2）。
+     * 第 1 级 = 2 点，第 2 级 = 4 点，第 3 级 = 6 点...
+     * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
+     */
+    public static int getAmplifyCostAtLevel(int currentLevel) {
+        return (currentLevel + 1) * 2;
+    }
+
     public static double auraCostMultiplier() {
         return Config.AURA_COST_MULTIPLIER.get();
     }
@@ -82,11 +101,14 @@ public final class Skills {
             case ULT_REAPER -> Config.ULT_REAPER_COST.get();
             case ULT_MASTER -> Config.ULT_MASTER_COST.get();
             case ULT_VOID_BODY -> (int) Math.round(Config.VOID_BODY_COST.get());
+            case AUTO_SMELT -> 30; // 自动熔炼：一次性 30 点
             default -> 1; // 普通终极 1 点
         };
     }
 
     public enum SkillType {
+        /** 魔法增幅（其余模组兼容，独立列，不参与任何前置） */
+        MAGIC,
         /** 基础属性（固定数值） */
         BASE,
         /** 特殊增幅（百分比） */
@@ -118,6 +140,13 @@ public final class Skills {
     public static final String REACH = "reach";               // 接触距离（触摸/攻击距离，每级+1格，上限50级）
     public static final String GLOW = "glow";                 // 发光（35格生物发光，上限1级）
     public static final String LOOT_BOMB = "loot_bomb";       // 战利品爆炸（掉落翻倍，1级翻一倍，上限100级）
+    public static final String UNBREAKABLE = "unbreakable";   // 工具不毁（耐久减免，上限5级，拆自采掘熟稔）
+    public static final String MOB_DROP = "mob_drop";         // 生物掉落倍率（上限10级，拆自掉落增幅）
+    public static final String BLOCK_DROP = "block_drop";     // 方块掉落倍率（上限10级，拆自掉落增幅）
+    public static final String XP_GAIN = "xp_gain";           // 经验获取倍率（上限10级，拆自掉落增幅）
+    public static final String MOB_SPAWN_EGG = "mob_spawn_egg"; // 刷怪蛋掉落（上限10级，每级10%，独立不吃增幅）
+    public static final String MOB_HEAD = "mob_head";           // 头颅掉落（上限5级，每级20%，独立不吃增幅）
+
     // ============ 特殊增幅技能（与基础技能一一对应，顺序同纵列1） ============
     public static final String AMP_HP = "amp_hp";                     // 生命增幅（对应生命强化）
     public static final String AMP_ARMOR = "amp_armor";               // 防御强化（对应体魄强化）
@@ -135,7 +164,6 @@ public final class Skills {
     public static final String AMP_LIFESTEAL = "amp_lifesteal";       // 吸血增幅（对应生命汲取）
     public static final String AMP_THORNS = "amp_thorns";             // 荆棘增幅（对应荆棘反伤）
     public static final String AMP_ARMOR_PEN = "amp_armor_pen";       // 破甲增幅（对应破甲精通）
-    public static final String AMP_DROP = "amp_drop";                 // 掉落增幅（独立：掉落/经验）
 
     // ============ 终极节点 ============
     public static final String ULT_BLOOD = "ult_blood";     // 浴血奋战
@@ -147,6 +175,7 @@ public final class Skills {
     public static final String ULT_REVIVE = "ult_revive";   // 凤凰涅槃（死亡复活）
     public static final String ULT_REAPER = "ult_reaper";   // 死神凝视（处决低血目标）
     public static final String ULT_VOID_BODY = "ult_void_body"; // 虚空之躯（三层无敌防御）
+    public static final String AUTO_SMELT = "auto_smelt";   // 自动熔炼（挖掘自动熔炼矿物，1级，消耗30）
 
     // ============ 杀戮光环（AURA，独立系统） ============
     public static final String AURA_DAMAGE = "aura_damage";   // 杀戮光环·伤害
@@ -156,21 +185,49 @@ public final class Skills {
     public static final String AURA_TIME = "aura_time";       // 时之环·永恒正午（锁定世界时间）
     public static final String AURA_WEATHER = "aura_weather"; // 晴空环·永恒晴天（锁定天气）
     public static final String AURA_LOCK = "aura_lock";       // 光环锁定（免疫TP/击退）
+    public static final String AURA_EMPOWER = "aura_empower"; // 杀戮光环·强化（混沌/Boss伤害，拆自光环，虚空之矛上方）
     public static final String AURA_VOID = "aura_void";       // 杀戮光环·虚空之矛（虚空伤害/秒杀）
+
+    // ============ 魔法增幅（纵列0，其余模组兼容技能，不参与任何前置） ============
+    public static final String MANA_AMP = "mana_amp";                 // 新生魔艺魔力增幅（每级+10%魔力，上限1000）
+    public static final String ARS_MANA_REGEN = "ars_mana_regen";     // 新生魔艺魔力恢复（每级+40%恢复，上限1000）
+    public static final String IRON_MANA_AMP = "iron_mana_amp";       // 铁魔法魔力增幅（每级+10%魔力，上限1000）
+    public static final String IRON_MANA_REGEN = "iron_mana_regen";   // 铁魔法魔力恢复（每级+40%恢复，上限1000）
+    public static final String IRON_CAST_TIME = "iron_cast_time";     // 铁魔法吟唱缩减（每级-10%吟唱，上限100，消耗5线性+5）
+    public static final String IRON_COOLDOWN = "iron_cooldown";       // 铁魔法法术冷却缩减（每级-10%冷却，上限100，消耗5线性+5）
+    // 铁魔法流派法术强度（9个，独立技能，每级+10%，上限1000）
+    public static final String IRON_FIRE = "iron_fire";               // 火焰
+    public static final String IRON_ICE = "iron_ice";                 // 冰霜
+    public static final String IRON_LIGHTNING = "iron_lightning";     // 雷电
+    public static final String IRON_HOLY = "iron_holy";               // 神圣
+    public static final String IRON_ENDER = "iron_ender";             // 末影
+    public static final String IRON_BLOOD = "iron_blood";             // 鲜血
+    public static final String IRON_EVOCATION = "iron_evocation";     // 召唤
+    public static final String IRON_NATURE = "iron_nature";           // 自然
+    public static final String IRON_ELDRITCH = "iron_eldritch";       // 异界
 
     /** 所有基础技能（纵列1） */
     public static final List<String> BASE_SKILLS = List.of(BODY_HP, BODY, TOUGH, BLADE, ATTACK_SPEED, MINING, MOVE, REGEN, LUCK, JUMP, FLY, SWIM, CRIT, LIFESTEAL, THORNS, ARMOR_PEN);
-    /** 所有增幅技能（纵列2）：与基础技能一一对应，顺序与纵列1相同；掉落增幅独立放末尾 */
+    /** 所有增幅技能（纵列2）：与基础技能一一对应，顺序与纵列1相同 */
     public static final List<String> AMPLIFY_SKILLS = List.of(
             AMP_HP, AMP_ARMOR, AMP_TOUGH, AMP_DAMAGE, AMP_ATTACK_SPEED, AMP_MINING, AMP_MOVE,
             AMP_REGEN, AMP_LUCK, AMP_JUMP, AMP_FLY, AMP_SWIM,
-            AMP_CRIT, AMP_LIFESTEAL, AMP_THORNS, AMP_ARMOR_PEN, AMP_DROP);
+            AMP_CRIT, AMP_LIFESTEAL, AMP_THORNS, AMP_ARMOR_PEN);
     /** 所有终极节点（纵列3） */
-    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY, VILLAGE_HERO, REACH, GLOW, LOOT_BOMB);
-    /** 所有杀戮光环（纵列4） */
-    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_LOCK, AURA_VOID);
+    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY, VILLAGE_HERO, REACH, GLOW, LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN, MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT);
+    /** 所有杀戮光环（纵列4）：杀戮光环·强化 在 虚空之矛 上方 */
+    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_LOCK, AURA_EMPOWER, AURA_VOID);
+    /** 所有魔法增幅（纵列0）：其余模组兼容技能（新生魔艺/铁魔法等），不作为任何前置 */
+    public static final List<String> MAGIC_SKILLS = List.of(
+            // 新生魔艺
+            MANA_AMP, ARS_MANA_REGEN,
+            // 铁魔法
+            IRON_MANA_AMP, IRON_MANA_REGEN, IRON_CAST_TIME, IRON_COOLDOWN,
+            IRON_FIRE, IRON_ICE, IRON_LIGHTNING, IRON_HOLY, IRON_ENDER,
+            IRON_BLOOD, IRON_EVOCATION, IRON_NATURE, IRON_ELDRITCH);
 
     public static final List<String> ALL_SKILLS = new ArrayList<>() {{
+        addAll(MAGIC_SKILLS);
         addAll(BASE_SKILLS);
         addAll(AMPLIFY_SKILLS);
         addAll(ULTIMATE_SKILLS);
@@ -178,6 +235,7 @@ public final class Skills {
     }};
 
     public static SkillType getType(String skillId) {
+        if (MAGIC_SKILLS.contains(skillId)) return SkillType.MAGIC;
         if (BASE_SKILLS.contains(skillId)) return SkillType.BASE;
         if (AMPLIFY_SKILLS.contains(skillId)) return SkillType.AMPLIFY;
         if (ULTIMATE_SKILLS.contains(skillId)) return SkillType.ULTIMATE;
@@ -195,24 +253,50 @@ public final class Skills {
             case AURA_TIME -> 1; // 一次性解锁（100 技能点）
             case AURA_WEATHER -> 1; // 一次性解锁（100 技能点）
             case AURA_LOCK -> 1; // 一次性解锁（1000 技能点）
+            case AURA_EMPOWER -> 1; // 一次性解锁（1000 技能点）
             case AURA_VOID -> 1; // 一次性解锁（5000 技能点）
             default -> 0;
         };
     }
 
-    /** 各技能等级上限（按钮第2行显示用）：基础 1000 / 增幅 500 / 终极 1（多级终极各自上限） / 光环各自上限 */
+    /** 各技能等级上限（按钮第2行显示用）：基础 1000 / 增幅 500 / 终极 1（多级终极各自上限） / 光环各自上限 / 魔法增幅各自上限 */
     public static int getMaxPoints(String skillId) {
         return switch (getType(skillId)) {
             case BASE -> BASE_MAX_POINTS;
             case AMPLIFY -> AMPLIFY_MAX_POINTS;
             case ULTIMATE -> getUltimateMaxPoints(skillId);
             case AURA -> getAuraMaxPoints(skillId);
+            case MAGIC -> getMagicMaxPoints(skillId);
+        };
+    }
+
+    /** 魔法增幅：每项上限（魔力/恢复/流派 1000 级；吟唱/冷却缩减 100 级） */
+    public static int getMagicMaxPoints(String skillId) {
+        return switch (skillId) {
+            case IRON_CAST_TIME, IRON_COOLDOWN -> 100;
+            case MANA_AMP, ARS_MANA_REGEN, IRON_MANA_AMP, IRON_MANA_REGEN,
+                    IRON_FIRE, IRON_ICE, IRON_LIGHTNING, IRON_HOLY, IRON_ENDER,
+                    IRON_BLOOD, IRON_EVOCATION, IRON_NATURE, IRON_ELDRITCH -> 1000;
+            default -> 0;
         };
     }
 
     /**
-     * 终极节点等级上限：默认单次解锁（1）；多级终极节点（节点类，无前置）各自上限：
-     * 村庄英雄 10 / 接触距离 50 / 发光 1 / 战利品爆炸 100
+     * 魔法增幅：第 n 级消耗（线性增长，下一级在上一级基础上 +2）。
+     * 第 1 级 = 2 点，第 2 级 = 4 点，第 3 级 = 6 点...
+     * 吟唱/冷却缩减特殊：基础 5 点，线性 +5/级（5,10,15...）
+     * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
+     */
+    public static int getMagicCostAtLevel(String skillId, int currentLevel) {
+        if (IRON_CAST_TIME.equals(skillId) || IRON_COOLDOWN.equals(skillId)) {
+            return (currentLevel + 1) * 5;
+        }
+        return (currentLevel + 1) * 2;
+    }
+
+    /**
+     * 终极节点等级上限：默认单次解锁（1）；多级终极节点（节点类）各自上限：
+     * 村庄英雄 10 / 接触距离 50 / 发光 1 / 战利品爆炸 100 / 工具不毁 5 / 生物掉落 10 / 方块掉落 10 / 经验 10 / 刷怪蛋 10 / 头颅 5
      */
     public static int getUltimateMaxPoints(String skillId) {
         return switch (skillId) {
@@ -220,6 +304,9 @@ public final class Skills {
             case REACH -> 50;
             case GLOW -> 1;
             case LOOT_BOMB -> 100;
+            case UNBREAKABLE -> 5;
+            case MOB_DROP, BLOCK_DROP, XP_GAIN -> 10;
+            case MOB_SPAWN_EGG, MOB_HEAD -> 5;
             default -> 1;
         };
     }
@@ -227,13 +314,17 @@ public final class Skills {
     /**
      * 终极节点每级消耗（节点类）：阶梯递增——每级消耗在上一级基础上增加 10%（Config 可调）。
      * <pre>cost(第n级) = round(base × 1.1^n)</pre>
-     * 基础值：村庄英雄/战利品爆炸 10、接触距离 1、发光 1；普通单次终极走 ultimateCost。
+     * 基础值：村庄英雄/战利品爆炸 10、接触距离 1、发光 1、工具不毁 1、三掉落 50、刷怪蛋 20、头颅 10；普通单次终极走 ultimateCost。
      * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
      */
     public static double getUltimateLevelCost(String skillId, int currentLevel) {
         double base = switch (skillId) {
             case VILLAGE_HERO, LOOT_BOMB -> 10.0;
             case REACH, GLOW -> 1.0;
+            case UNBREAKABLE -> 1.0;
+            case MOB_DROP, BLOCK_DROP, XP_GAIN -> 50.0;
+            case MOB_SPAWN_EGG -> 20.0;
+            case MOB_HEAD -> 10.0;
             default -> ultimateCost(skillId); // 单次解锁终极：无阶梯
         };
         if (getUltimateMaxPoints(skillId) <= 1) {
@@ -256,6 +347,21 @@ public final class Skills {
 
     public static String getDisplayName(String skillId) {
         return switch (skillId) {
+            case MANA_AMP -> "新生魔艺魔力增幅";
+            case ARS_MANA_REGEN -> "新生魔艺魔力恢复";
+            case IRON_MANA_AMP -> "铁魔法魔力增幅";
+            case IRON_MANA_REGEN -> "铁魔法魔力恢复";
+            case IRON_CAST_TIME -> "铁魔法吟唱缩减";
+            case IRON_COOLDOWN -> "铁魔法法术冷却缩减";
+            case IRON_FIRE -> "火焰法术强度";
+            case IRON_ICE -> "冰霜法术强度";
+            case IRON_LIGHTNING -> "雷电法术强度";
+            case IRON_HOLY -> "神圣法术强度";
+            case IRON_ENDER -> "末影法术强度";
+            case IRON_BLOOD -> "鲜血法术强度";
+            case IRON_EVOCATION -> "召唤法术强度";
+            case IRON_NATURE -> "自然法术强度";
+            case IRON_ELDRITCH -> "异界法术强度";
             case BODY_HP -> "生命强化";
             case BODY -> "体魄强化";
             case TOUGH -> "坚韧之躯";
@@ -276,6 +382,13 @@ public final class Skills {
             case REACH -> "接触距离";
             case GLOW -> "发光";
             case LOOT_BOMB -> "战利品爆炸";
+            case UNBREAKABLE -> "工具不毁";
+            case MOB_DROP -> "生物掉落倍率";
+            case BLOCK_DROP -> "方块掉落倍率";
+            case XP_GAIN -> "经验获取倍率";
+            case MOB_SPAWN_EGG -> "刷怪蛋掉落";
+            case MOB_HEAD -> "头颅掉落";
+            case AURA_EMPOWER -> "杀戮光环·强化";
             case AMP_HP -> "生命增幅";
             case AMP_DAMAGE -> "锋刃增幅";
             case AMP_ATTACK_SPEED -> "疾攻增幅";
@@ -283,7 +396,6 @@ public final class Skills {
             case AMP_REGEN -> "再生增幅";
             case AMP_ARMOR -> "防御强化";
             case AMP_MOVE -> "疾行增幅";
-            case AMP_DROP -> "掉落增幅";
             case AMP_JUMP -> "跃升增幅";
             case AMP_FLY -> "御空增幅";
             case AMP_SWIM -> "潜游增幅";
@@ -302,6 +414,7 @@ public final class Skills {
             case ULT_REVIVE -> "凤凰涅槃";
             case ULT_REAPER -> "死神凝视";
             case ULT_VOID_BODY -> "虚空之躯";
+            case AUTO_SMELT -> "自动熔炼";
             case AURA_DAMAGE -> "杀戮光环·伤害";
             case AURA_SPEED -> "杀戮光环·速度";
             case AURA_HEAL -> "治愈光环";
@@ -316,12 +429,27 @@ public final class Skills {
 
     public static String getDescription(String skillId) {
         return switch (skillId) {
+            case MANA_AMP -> "新生魔艺魔力增幅：\n增幅新生魔艺（Ars Nouveau）最大魔力\n每级 +10%，上限 1000 级\n（1000 级 = 最大魔力 ×101，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装新生魔艺，未安装时学习无效";
+            case ARS_MANA_REGEN -> "新生魔艺魔力恢复：\n增幅新生魔艺（Ars Nouveau）魔力恢复速度\n每级 +40%，上限 1000 级\n（1000 级 = 恢复 ×401，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装新生魔艺，未安装时学习无效";
+            case IRON_MANA_AMP -> "铁魔法魔力增幅：\n增幅铁魔法（Iron's Spells）最大魔力\n每级 +10%，上限 1000 级\n（1000 级 = 最大魔力 ×101，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_MANA_REGEN -> "铁魔法魔力恢复：\n增幅铁魔法（Iron's Spells）魔力恢复速度\n每级 +40%，上限 1000 级\n（1000 级 = 恢复 ×401，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_CAST_TIME -> "铁魔法吟唱缩减：\n减少铁魔法（Iron's Spells）法术吟唱时间\n每级 -10%，上限 100 级\n（100 级 = 吟唱时间大幅缩短）\n每级消耗 5 技能点（线性 +5/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_COOLDOWN -> "铁魔法法术冷却缩减：\n减少铁魔法（Iron's Spells）法术冷却时间\n每级 -10%，上限 100 级\n（100 级 = 冷却时间大幅缩短）\n每级消耗 5 技能点（线性 +5/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_FIRE -> "火焰法术强度：\n增幅铁魔法火焰（Fire）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 火焰法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_ICE -> "冰霜法术强度：\n增幅铁魔法冰霜（Ice）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 冰霜法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_LIGHTNING -> "雷电法术强度：\n增幅铁魔法雷电（Lightning）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 雷电法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_HOLY -> "神圣法术强度：\n增幅铁魔法神圣（Holy）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 神圣法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_ENDER -> "末影法术强度：\n增幅铁魔法末影（Ender）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 末影法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_BLOOD -> "鲜血法术强度：\n增幅铁魔法鲜血（Blood）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 鲜血法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_EVOCATION -> "召唤法术强度：\n增幅铁魔法召唤（Evocation）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 召唤法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_NATURE -> "自然法术强度：\n增幅铁魔法自然（Nature）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 自然法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_ELDRITCH -> "异界法术强度：\n增幅铁魔法异界（Eldritch）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 异界法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
             case BODY_HP -> "生命强化：每点 +2 最大生命\n（拆分自原体魄强化，纯生命成长）";
             case BODY -> "体魄强化：每点 +0.2 护甲、\n+0.05% 物理减伤（超原版 80% 护甲上限后继续成长）";
             case TOUGH -> "坚韧之躯：每点 +0.3 护甲韧性、\n+0.1% 击退抗性";
             case BLADE -> "锋刃精通：每点 +0.4 近战攻击伤害";
             case ATTACK_SPEED -> "疾攻术：每点 +0.02 攻击速度";
-            case MINING -> "采掘熟稔：每点 +0.3 挖掘速度、\n+20% 工具耐久损耗减免（5级封顶：工具不毁）";
+            case MINING -> "采掘熟稔：每点 +0.3 挖掘速度";
             case MOVE -> "疾行步法：每点 +0.005 移动速度";
             case REGEN -> "再生体魄：每点 +0.1/秒 生命恢复";
             case LUCK -> "幸运眷顾：每点 +0.1 幸运值";
@@ -336,23 +464,29 @@ public final class Skills {
             case REACH -> "接触距离：每级 +1 格触摸距离\n和攻击距离（上限50级）\n每级消耗 1 技能点";
             case GLOW -> "发光：给 35 格半径内所有生物\n施加发光效果（除玩家自身）\n一次性解锁，消耗 1 技能点";
             case LOOT_BOMB -> "战利品爆炸：击杀所有生物含Boss\n100%触发战利品爆炸，掉落翻倍\n1级1倍，100级=100倍（线性增长）\n每级消耗阶梯递增（10%涨幅）";
-            case AMP_HP -> "生命增幅：每点 +0.5% 最大生命倍率";
-            case AMP_DAMAGE -> "锋刃增幅：每点 +0.5% 近战伤害倍率";
-            case AMP_ATTACK_SPEED -> "疾攻增幅：每点 +0.4% 攻击速度倍率";
-            case AMP_MINING -> "采掘增幅：每点 +0.6% 挖掘速度倍率";
-            case AMP_REGEN -> "再生增幅：每点 +0.8% 生命恢复倍率";
-            case AMP_ARMOR -> "防御强化：每点 +0.05% 物理减伤\n（独立减伤层，护甲 80% 封顶后继续防护）";
-            case AMP_MOVE -> "疾行增幅：每点 +0.5% 移动速度倍率";
-            case AMP_DROP -> "掉落增幅：每点 +4% 生物掉落、\n+4% 方块掉落、+5% 经验获取\n（仅对可受时运/抢夺的方块和生物生效）";
-            case AMP_JUMP -> "跃升增幅：每点 +0.5% 跳跃高度倍率";
-            case AMP_FLY -> "御空增幅：每点 +0.5% 飞行速度倍率";
-            case AMP_SWIM -> "潜游增幅：每点 +0.5% 游泳速度倍率";
-            case AMP_TOUGH -> "坚韧增幅：每点 +0.5% 护甲韧性与击退抗性倍率";
-            case AMP_LUCK -> "幸运增幅：每点 +0.5% 幸运值倍率";
-            case AMP_CRIT -> "暴击增幅：每点 +0.5% 暴击伤害倍率\n（在暴击 1.5 倍基础上叠加）";
-            case AMP_LIFESTEAL -> "吸血增幅：每点 +0.4% 吸血量倍率";
-            case AMP_THORNS -> "荆棘增幅：每点 +0.4% 反伤倍率";
-            case AMP_ARMOR_PEN -> "破甲增幅：每点 +0.4% 破甲增伤倍率";
+            case UNBREAKABLE -> "工具不毁：每级 +20% 工具耐久损耗减免\n（5级封顶=100%，工具不再消耗耐久）\n每级消耗 1 技能点（阶梯递增）";
+            case MOB_DROP -> "生物掉落倍率：每级 +1 倍生物掉落\n（1级=2倍，10级=11倍）\n仅对可受抢夺影响的生物生效\n每级消耗 50 技能点（阶梯递增）";
+            case BLOCK_DROP -> "方块掉落倍率：每级 +1 倍方块掉落\n（1级=2倍，10级=11倍）\n仅对可受时运影响的方块生效\n每级消耗 50 技能点（阶梯递增）";
+            case XP_GAIN -> "经验获取倍率：每级 +2 倍经验获取\n（1级=3倍，10级=21倍）\n杀怪/挖矿/烧炼经验都生效\n每级消耗 50 技能点（阶梯递增）";
+            case MOB_SPAWN_EGG -> "刷怪蛋掉落：击杀生物时每级 10% 概率\n掉落对应刷怪蛋（满5级=50%）\n对所有生物生效，固定掉 1 个\n不受任何技能增幅（不吃战利品爆炸/生物掉落倍率）\n每级消耗 20 技能点（阶梯递增）";
+            case MOB_HEAD -> "头颅掉落：击杀生物时每级 10% 概率\n掉落对应头颅（满5级=50%）\n僵尸/骷髅/凋灵骷髅/苦力怕/猪灵\n掉对应头颅\n击杀玩家掉对方皮肤的头颅\n无对应头颅的生物不掉\n不受任何技能增幅（不吃战利品爆炸/生物掉落倍率）\n每级消耗 10 技能点（阶梯递增）";
+            case AURA_EMPOWER -> "杀戮光环·强化：消耗 1000 技能点\n杀戮光环获得强化伤害：\n混沌伤害（无视护甲）/Boss混沌连击/\n破盾/守卫水晶特判\n前置：杀戮光环·伤害 50 级";
+            case AMP_HP -> "生命增幅：每点 +10% 最大生命倍率";
+            case AMP_DAMAGE -> "锋刃增幅：每点 +10% 近战伤害倍率";
+            case AMP_ATTACK_SPEED -> "疾攻增幅：每点 +8% 攻击速度倍率";
+            case AMP_MINING -> "采掘增幅：每点 +12% 挖掘速度倍率";
+            case AMP_REGEN -> "再生增幅：每点 +16% 生命恢复倍率";
+            case AMP_ARMOR -> "防御强化：每点 +0.5% 物理减伤\n（独立减伤层，护甲 80% 封顶后继续防护）";
+            case AMP_MOVE -> "疾行增幅：每点 +10% 移动速度倍率";
+            case AMP_JUMP -> "跃升增幅：每点 +10% 跳跃高度倍率";
+            case AMP_FLY -> "御空增幅：每点 +10% 飞行速度倍率";
+            case AMP_SWIM -> "潜游增幅：每点 +10% 游泳速度倍率";
+            case AMP_TOUGH -> "坚韧增幅：每点 +10% 护甲韧性与击退抗性倍率";
+            case AMP_LUCK -> "幸运增幅：每点 +10% 幸运值倍率";
+            case AMP_CRIT -> "暴击增幅：每点 +5% 暴击伤害倍率\n（在暴击 1.5 倍基础上叠加）";
+            case AMP_LIFESTEAL -> "吸血增幅：每点 +8% 吸血量倍率";
+            case AMP_THORNS -> "荆棘增幅：每点 +8% 反伤倍率";
+            case AMP_ARMOR_PEN -> "破甲增幅：每点 +8% 破甲增伤倍率";
             case ULT_BLOOD -> "浴血奋战：消耗 500 技能点，\n常驻攻击力 +50%、最大生命 +50%\n（燃血强化）\n前置：体魄500 + 锋刃500";
             case ULT_GOLDEN -> "不坏金身：消耗 500 技能点，\n常驻抗性提升10级、伤害吸收100级、\n抗火5级\n前置：坚韧之躯500 + 防御强化500";
             case ULT_MASTER -> "全能精通：消耗 5000 技能点，\n全方位防御（全伤害减免/护盾/免死/\n负面免疫），保证玩家不死\n前置：需解锁浴血奋战/不坏金身/凤凰涅槃/死神凝视";
@@ -362,28 +496,35 @@ public final class Skills {
             case ULT_REVIVE -> "凤凰涅槃：消耗 500 技能点，\n死亡原地复活一次，回复50%生命\n并清除负面效果，冷却1分钟\n前置：生命汲取500 + 暴击精通500";
             case ULT_REAPER -> "死神凝视：消耗 1000 技能点，\n攻击生命<15%的非玩家生物时\n30%概率直接处决\n前置：破甲精通500 + 锋刃精通500";
             case ULT_VOID_BODY -> "虚空之躯：消耗 5000 技能点，\n三层无敌：免伤/免死/血量只增不减\n抗击退/免摔落/免火焰/清负面\n前置：全能精通";
-            case AURA_DAMAGE -> "杀戮光环·伤害：每级+10%伤害倍率，\n360°范围伤害，附带混沌伤害\n（无视护甲真实伤害）\n上限1000级，默认10秒攻击一次";
-            case AURA_SPEED -> "杀戮光环·速度：提高光环攻击频率\n（每级减少攻击间隔，20级=每秒2次）\n未点亮默认10秒攻击一次\n上限20级";
+            case AUTO_SMELT -> "自动熔炼：消耗 30 技能点\n挖掘方块时自动熔炼掉落物\n（铁矿石→铁锭、金矿石→金锭等）\n按熔炉配方判断能否熔炼\n判断顺序：先熔炉、再时运、再技能增幅\n一次性点亮，1 级";
+            case AURA_DAMAGE -> "杀戮光环·伤害：每级+10%伤害倍率，\n360°范围伤害，默认10秒攻击一次\n上限1000级\n前置：锋刃精通100 + 疾攻术100";
+            case AURA_SPEED -> "杀戮光环·速度：提高光环攻击频率\n（每级攻击间隔×0.9，20级=每秒约1.2次）\n上限20级\n前置：锋刃精通100 + 疾攻术100";
             case AURA_HEAL -> "治愈光环：每级给周围10格内\n友方单位对应等级的生命回复效果\n（50级 = 生命回复50级）\n上限50级，消耗随等级递增";
             case AURA_MAGNET -> "磁力光环：一次性解锁（消耗 " + String.format("%.0f", org.zifeng.skilltree.Config.MAGNET_COST.get()) + " 技能点）\n按 H 键开关，自动吸取经验与掉落物\n（潜行时暂停）";
             case AURA_TIME -> "时之环·永恒正午：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定世界时间\n为正午，不被睡觉/时间命令影响\n关闭后立即恢复正常时间流动";
             case AURA_WEATHER -> "晴空环·永恒晴天：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定晴天\n不被下雨/天气命令影响\n关闭后立即恢复正常天气";
             case AURA_LOCK -> "光环锁定：消耗 1000 技能点\n一次性点亮，开启后免疫 TP 与击退\n（传送/瞬移/击退均无效）\n只有自己移动/飞行才能真正移动";
-            case AURA_VOID -> "杀戮光环·虚空之矛：消耗 5000 技能点\n一次性点亮，杀戮光环获得虚空之矛力量\n（绝对秒杀+范围扩大至50格，K键控制）\n（磁铁范围扩至55格，H键控制）";
+            case AURA_VOID -> "杀戮光环·虚空之矛：消耗 5000 技能点\n一次性点亮，杀戮光环获得虚空之矛力量\n（绝对秒杀+范围扩大至50格，K键控制）\n（磁铁范围扩至55格，H键控制）\n前置：杀戮光环·伤害 100 级";
             default -> "";
         };
     }
 
-    /** 终极节点前置：两个技能各需投入的指定点数 */
-    public static List<String> getUltimateRequirements(String skillId) {
+    /**
+     * 通用前置系统：技能 → [(前置技能, 所需等级), ...]
+     * 覆盖终极节点、杀戮光环（锋刃/疾攻前置、强化前置、虚空之矛前置）。
+     */
+    public static List<Map.Entry<String, Integer>> getPrerequisites(String skillId) {
         return switch (skillId) {
-            case ULT_BLOOD -> List.of(BODY, BLADE);
-            case ULT_GOLDEN -> List.of(TOUGH, AMP_ARMOR);
-            case ULT_MASTER -> List.of(ULT_BLOOD, ULT_GOLDEN, ULT_REVIVE, ULT_REAPER);
-            case ULT_REVIVE -> List.of(LIFESTEAL, CRIT);
-            case ULT_REAPER -> List.of(ARMOR_PEN, BLADE);
-            case ULT_VOID_BODY -> List.of(ULT_MASTER); // 前置：全能精通
-            default -> List.of(); // 宇宙的青睐/夜视/饱食/村庄英雄/接触距离/发光/战利品爆炸无前置
+            case ULT_BLOOD -> List.of(Map.entry(BODY, 500), Map.entry(BLADE, 500));
+            case ULT_GOLDEN -> List.of(Map.entry(TOUGH, 500), Map.entry(AMP_ARMOR, 500));
+            case ULT_MASTER -> List.of(Map.entry(ULT_BLOOD, 1), Map.entry(ULT_GOLDEN, 1), Map.entry(ULT_REVIVE, 1), Map.entry(ULT_REAPER, 1));
+            case ULT_REVIVE -> List.of(Map.entry(LIFESTEAL, 500), Map.entry(CRIT, 500));
+            case ULT_REAPER -> List.of(Map.entry(ARMOR_PEN, 500), Map.entry(BLADE, 500));
+            case ULT_VOID_BODY -> List.of(Map.entry(ULT_MASTER, 1)); // 前置：全能精通
+            case AURA_DAMAGE, AURA_SPEED -> List.of(Map.entry(BLADE, 100), Map.entry(ATTACK_SPEED, 100)); // 锋刃/疾攻 100
+            case AURA_EMPOWER -> List.of(Map.entry(AURA_DAMAGE, 50)); // 杀戮伤害 50
+            case AURA_VOID -> List.of(Map.entry(AURA_DAMAGE, 100)); // 杀戮伤害 100
+            default -> List.of(); // 宇宙的青睐/夜视/饱食/村庄英雄/接触距离/发光/战利品爆炸/工具不毁/掉落/经验无前置
         };
     }
 
@@ -397,6 +538,22 @@ public final class Skills {
      */
     public static Item getIcon(String skillId) {
         return switch (skillId) {
+            // ===== 魔法增幅（纵列0，其余模组兼容） =====
+            case MANA_AMP -> Items.LAPIS_LAZULI;              // 新生魔艺魔力增幅：青金石（魔法墨水/魔力）
+            case ARS_MANA_REGEN -> Items.GLOW_BERRIES;        // 新生魔艺魔力恢复：发光浆果（恢复能量）
+            case IRON_MANA_AMP -> Items.IRON_INGOT;           // 铁魔法魔力增幅：铁锭（铁魔法主题）
+            case IRON_MANA_REGEN -> Items.GHAST_TEAR;         // 铁魔法魔力恢复：恶魂之泪（魔法恢复）
+            case IRON_CAST_TIME -> Items.BLAZE_POWDER;        // 铁魔法吟唱缩减：烈焰粉（快速施法）
+            case IRON_COOLDOWN -> Items.FEATHER;              // 铁魔法法术冷却缩减：羽毛（轻盈/更快再施法）
+            case IRON_FIRE -> Items.FLINT_AND_STEEL;          // 火焰法术强度：打火石（火焰）
+            case IRON_ICE -> Items.PACKED_ICE;                // 冰霜法术强度：浮冰（寒冰）
+            case IRON_LIGHTNING -> Items.CONDUIT;             // 雷电法术强度：潮涌核心（电能）
+            case IRON_HOLY -> Items.GOLD_BLOCK;               // 神圣法术强度：金块（神圣）
+            case IRON_ENDER -> Items.ENDER_EYE;               // 末影法术强度：末影之眼
+            case IRON_BLOOD -> Items.NETHER_WART;             // 鲜血法术强度：下界疣（血药）
+            case IRON_EVOCATION -> Items.BONE;                // 召唤法术强度：骨头（召唤骷髅）
+            case IRON_NATURE -> Items.OAK_SAPLING;            // 自然法术强度：橡树苗（自然）
+            case IRON_ELDRITCH -> Items.SHULKER_SHELL;        // 异界法术强度：潜影贝壳（异界）
             // ===== 基础属性（纵列1） =====
             case BODY_HP -> Items.APPLE;                       // 生命强化：苹果（生命）
             case BODY -> Items.IRON_CHESTPLATE;                // 体魄：铁胸甲（护甲）
@@ -435,7 +592,6 @@ public final class Skills {
             case AMP_LIFESTEAL -> Items.CRIMSON_FUNGUS;        // 吸血增幅：绯红菌（下界主题）
             case AMP_THORNS -> Items.ROSE_BUSH;                // 荆棘增幅：玫瑰丛（带刺植物）
             case AMP_ARMOR_PEN -> Items.NETHERITE_INGOT;       // 破甲增幅：下界合金锭
-            case AMP_DROP -> Items.GOLD_BLOCK;                 // 掉落增幅：金块（宝物）
             // ===== 终极节点（纵列3） =====
             case ULT_BLOOD -> Items.BLAZE_ROD;                 // 浴血奋战：烈焰棒
             case ULT_GOLDEN -> Items.BEACON;                   // 不坏金身：信标（常驻buff光环）
@@ -446,6 +602,14 @@ public final class Skills {
             case ULT_REVIVE -> Items.TOTEM_OF_UNDYING;         // 凤凰涅槃：不死图腾
             case ULT_REAPER -> Items.WITHER_SKELETON_SKULL;    // 死神凝视：凋灵骷髅头
             case ULT_VOID_BODY -> Items.DIAMOND_CHESTPLATE;    // 虚空之躯：原版钻石甲（金边=伤害吸收）
+            case AUTO_SMELT -> Items.FURNACE;                  // 自动熔炼：熔炉（熔炼主题）
+            case UNBREAKABLE -> Items.ANVIL;                   // 工具不毁：铁砧（永不损坏）
+            case MOB_DROP -> Items.ROTTEN_FLESH;               // 生物掉落：腐肉（战利品）
+            case BLOCK_DROP -> Items.DIAMOND_ORE;              // 方块掉落：钻石矿（矿物）
+            case XP_GAIN -> Items.EXPERIENCE_BOTTLE;           // 经验获取：经验瓶
+            case MOB_SPAWN_EGG -> Items.CREEPER_SPAWN_EGG;     // 刷怪蛋掉落：苦力怕刷怪蛋
+            case MOB_HEAD -> Items.SKELETON_SKULL;             // 头颅掉落：骷髅头
+            case AURA_EMPOWER -> Items.NETHERITE_SWORD;        // 光环·强化：下界合金剑（强化伤害）
             // ===== 杀戮光环（纵列4） =====
             case AURA_DAMAGE -> Items.TNT;                     // 光环·伤害：TNT（范围爆炸伤害）
             case AURA_SPEED -> Items.REDSTONE;                 // 光环·速度：红石粉（高频）

@@ -34,7 +34,7 @@ public class PlayerSkillRecord {
     private int auraTargetMode;
     /** 杀戮光环总开关（默认开启） */
     private boolean auraEnabled = true;
-    /** 玩家整体累计转换的技能点数（原始整数，星能转换机阶梯消耗按此计算，跨机器共享） */
+    /** 玩家整体累计转换的技能点数（原始整数，技能点转换机阶梯消耗按此计算，跨机器共享） */
     private long totalConvertedPoints;
 
     public PlayerSkillRecord(UUID owner) {
@@ -125,7 +125,7 @@ public class PlayerSkillRecord {
 
     // ============ 玩家整体累计转换（阶梯消耗用，跨机器共享） ============
 
-    /** 玩家全部星能转换机累计转换的技能点数（原始整数） */
+    /** 玩家全部技能点转换机累计转换的技能点数（原始整数） */
     public long getTotalConvertedPoints() {
         return totalConvertedPoints;
     }
@@ -157,6 +157,9 @@ public class PlayerSkillRecord {
         if (type == Skills.SkillType.AURA) {
             return current < Skills.getAuraMaxPoints(skillId);
         }
+        if (type == Skills.SkillType.MAGIC) {
+            return current < Skills.getMagicMaxPoints(skillId);
+        }
         return true;
     }
 
@@ -185,10 +188,13 @@ public class PlayerSkillRecord {
             return Skills.getAuraCost(skillId, getLearnedPoints(skillId));
         }
         if (type == Skills.SkillType.BASE) {
-            return Skills.basePointCost();
+            return Skills.getBaseCostAtLevel(getLearnedPoints(skillId)); // 线性：第 n 级消耗 = n
         }
         if (type == Skills.SkillType.AMPLIFY) {
-            return Skills.amplifyPointCost();
+            return Skills.getAmplifyCostAtLevel(getLearnedPoints(skillId)); // 线性：第 n 级消耗 = 2n
+        }
+        if (type == Skills.SkillType.MAGIC) {
+            return Skills.getMagicCostAtLevel(skillId, getLearnedPoints(skillId)); // 线性：默认第 n 级 = 2n，吟唱缩减 = 5n
         }
         return Skills.getUltimateLevelCost(skillId, getLearnedPoints(skillId)); // 终极节点（单次或节点类阶梯递增）
     }
@@ -278,12 +284,31 @@ public class PlayerSkillRecord {
             return Skills.minorUltCost();
         }
         return switch (Skills.getType(skillId)) {
-            case BASE -> points * Skills.basePointCost();
-            case AMPLIFY -> points * Skills.amplifyPointCost();
-            case ULTIMATE -> { // 单次解锁或节点类阶梯递增（逐级累加，与学习时实际扣除一致）
+            case BASE -> { // 线性消耗累加：1+2+3+...+n = n(n+1)/2
                 long total = 0;
                 for (int i = 0; i < points; i++) {
-                    total += (long) Math.ceil(Skills.getUltimateLevelCost(skillId, i));
+                    total += Skills.getBaseCostAtLevel(i);
+                }
+                yield total;
+            }
+            case AMPLIFY -> { // 线性消耗累加：2+4+6+...+2n = n(n+1)
+                long total = 0;
+                for (int i = 0; i < points; i++) {
+                    total += Skills.getAmplifyCostAtLevel(i);
+                }
+                yield total;
+            }
+            case MAGIC -> { // 线性消耗累加（默认 +2/级；吟唱缩减 +5/级）
+                long total = 0;
+                for (int i = 0; i < points; i++) {
+                    total += Skills.getMagicCostAtLevel(skillId, i);
+                }
+                yield total;
+            }
+            case ULTIMATE -> { // 单次解锁或节点类阶梯递增（逐级累加 double，与学习时实际扣除一致；不再 ceil 防多返）
+                double total = 0;
+                for (int i = 0; i < points; i++) {
+                    total += Skills.getUltimateLevelCost(skillId, i);
                 }
                 yield total;
             }

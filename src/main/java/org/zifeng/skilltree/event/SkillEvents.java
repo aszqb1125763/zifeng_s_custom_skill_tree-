@@ -11,7 +11,7 @@ import net.neoforged.neoforge.event.entity.EntityAttributeModificationEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
-import org.zifeng.skilltree.blockentity.StarEnergyConverterBlockEntity;
+import org.zifeng.skilltree.blockentity.SkillPointConverterBlockEntity;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
 import org.zifeng.skilltree.skill.SkillEffects;
@@ -20,8 +20,8 @@ import org.zifeng.skilltree.skill.SkillEffects;
  * 全局游戏事件（GAME 总线，由 SkillTreeMod 手动注册）：
  * <ul>
  *   <li>玩家进入世界：重新挂载已学技能的属性修饰符</li>
- *   <li>星能转换机放置：默认绑定放置者 UUID（仿 wmp-1.7.0 的 OwnerBindingEvents）</li>
- *   <li>星能转换机破坏：解除绑定</li>
+ *   <li>技能点转换机放置：默认绑定放置者 UUID（仿 wmp-1.7.0 的 OwnerBindingEvents）</li>
+ *   <li>技能点转换机破坏：解除绑定</li>
  * </ul>
  */
 public class SkillEvents {
@@ -82,7 +82,7 @@ public class SkillEvents {
     @SubscribeEvent
     public static void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
         if (event.getLevel() instanceof ServerLevel level && event.getEntity() instanceof Player player) {
-            if (level.getBlockEntity(event.getPos()) instanceof StarEnergyConverterBlockEntity converter) {
+            if (level.getBlockEntity(event.getPos()) instanceof SkillPointConverterBlockEntity converter) {
                 converter.setOwnerUUID(player.getUUID());
                 PlayerSkillSavedData data = PlayerSkillSavedData.get(level);
                 data.bindMachine(machineKey(level, event.getPos()), player.getUUID());
@@ -93,7 +93,7 @@ public class SkillEvents {
     @SubscribeEvent
     public static void onBlockBroken(BlockEvent.BreakEvent event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            if (level.getBlockEntity(event.getPos()) instanceof StarEnergyConverterBlockEntity) {
+            if (level.getBlockEntity(event.getPos()) instanceof SkillPointConverterBlockEntity) {
                 PlayerSkillSavedData data = PlayerSkillSavedData.get(level);
                 data.unbindMachine(machineKey(level, event.getPos()));
             }

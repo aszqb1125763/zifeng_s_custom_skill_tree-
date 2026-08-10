@@ -9,6 +9,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Abilities;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
@@ -589,7 +590,12 @@ public class UltimateEvents {
                 // 不发送聊天提示（每杀必触发会刷屏）
             }
         }
-        double mult = SkillEffects.getDropMultiplier(record);
+        // ============ 刷怪蛋掉落 / 头颅掉落（独立节点技能，不吃战利品爆炸/生物掉落倍率）============
+        // 固定掉 1 个，数量不被任何技能增幅；概率逐级叠加，满级=100% 必掉
+        dropSpawnEgg(sp, event, record);
+        dropMobHead(sp, event, record);
+
+        double mult = SkillEffects.getMobDropMultiplier(record); // 生物掉落倍率（拆分自掉落增幅）
         if (mult <= 1.0) {
             return;
         }
@@ -602,15 +608,98 @@ public class UltimateEvents {
     }
 
     /**
+     * 刷怪蛋掉落（节点技能，独立机制）：击杀生物时按概率掉 1 个对应刷怪蛋。
+     * 每级 +10% 概率（满 10 级 = 100% 必掉）；固定 1 个，不参与任何倍率/爆炸增幅。
+     * 用 {@link SpawnEggItem#byId} 取对应刷怪蛋（所有原版+模组生物通用；无刷怪蛋的生物不掉）。
+     */
+    private static void dropSpawnEgg(ServerPlayer sp, LivingDropsEvent event, PlayerSkillRecord record) {
+        int level = record.isEnabled(Skills.MOB_SPAWN_EGG) ? record.getActiveLevel(Skills.MOB_SPAWN_EGG) : 0;
+        if (level <= 0) {
+            return;
+        }
+        double chance = level * 0.10; // 每级 10%
+        if (sp.level().random.nextDouble() >= chance) {
+            return;
+        }
+        net.minecraft.world.item.SpawnEggItem eggItem = net.minecraft.world.item.SpawnEggItem.byId(event.getEntity().getType());
+        if (eggItem == null) {
+            return;
+        }
+        ItemEntity drop = new ItemEntity(sp.level(),
+                event.getEntity().getX(), event.getEntity().getY(), event.getEntity().getZ(),
+                new ItemStack(eggItem));
+        drop.setPickUpDelay(10);
+        event.getDrops().add(drop);
+    }
+
+    /**
+     * 头颅掉落（节点技能，独立机制）：击杀生物时按概率掉 1 个对应头颅。
+     * 每级 +10% 概率（满 5 级 = 50%）；固定 1 个，不参与任何倍率/爆炸增幅。
+     * 原版可穿戴头颅生物（僵尸/骷髅/凋灵骷髅/苦力怕/猪灵）掉对应头；
+     * 击杀玩家掉对方皮肤对应的玩家头颅（PROFILE 组件带皮肤）；
+     * 无对应头颅的生物不掉（不再掉史蒂夫头）。
+     */
+    private static void dropMobHead(ServerPlayer sp, LivingDropsEvent event, PlayerSkillRecord record) {
+        int level = record.isEnabled(Skills.MOB_HEAD) ? record.getActiveLevel(Skills.MOB_HEAD) : 0;
+        if (level <= 0) {
+            return;
+        }
+        double chance = level * 0.10; // 每级 10%（1.2.3 从 20% 下调，与刷怪蛋一致）
+        if (sp.level().random.nextDouble() >= chance) {
+            return;
+        }
+        // 击杀玩家：掉对方皮肤对应的玩家头颅（SkullOwner/PROFILE 数据）
+        if (event.getEntity() instanceof net.minecraft.world.entity.player.Player victim) {
+            ItemStack head = new ItemStack(net.minecraft.world.item.Items.PLAYER_HEAD);
+            // 1.21：ResolvableProfile 存玩家 GameProfile（名字+UUID → 客户端自动解析皮肤）
+            head.set(net.minecraft.core.component.DataComponents.PROFILE,
+                    new net.minecraft.world.item.component.ResolvableProfile(victim.getGameProfile()));
+            ItemEntity drop = new ItemEntity(sp.level(),
+                    event.getEntity().getX(), event.getEntity().getY(), event.getEntity().getZ(),
+                    head);
+            drop.setPickUpDelay(10);
+            event.getDrops().add(drop);
+            return;
+        }
+        // 击杀生物：仅掉有原版对应头颅的（僵尸/骷髅/凋灵骷髅/苦力怕/猪灵）；无对应头不掉
+        var type = event.getEntity().getType();
+        ItemStack head;
+        if (type == net.minecraft.world.entity.EntityType.ZOMBIE) {
+            head = new ItemStack(net.minecraft.world.item.Items.ZOMBIE_HEAD);
+        } else if (type == net.minecraft.world.entity.EntityType.SKELETON) {
+            head = new ItemStack(net.minecraft.world.item.Items.SKELETON_SKULL);
+        } else if (type == net.minecraft.world.entity.EntityType.WITHER_SKELETON) {
+            head = new ItemStack(net.minecraft.world.item.Items.WITHER_SKELETON_SKULL);
+        } else if (type == net.minecraft.world.entity.EntityType.CREEPER) {
+            head = new ItemStack(net.minecraft.world.item.Items.CREEPER_HEAD);
+        } else if (type == net.minecraft.world.entity.EntityType.PIGLIN) {
+            head = new ItemStack(net.minecraft.world.item.Items.PIGLIN_HEAD);
+        } else {
+            return; // 无对应原版头颅的生物不掉（避免史蒂夫头）
+        }
+        ItemEntity drop = new ItemEntity(sp.level(),
+                event.getEntity().getX(), event.getEntity().getY(), event.getEntity().getZ(),
+                head);
+        drop.setPickUpDelay(10);
+        event.getDrops().add(drop);
+    }
+
+    /**
      * 方块掉落（时运类）：玩家挖掘方块时按掉落增幅放大掉落物数量，
      * 但仅限掉落表含"时运"加成函数的方块（如矿物；泥土/石头不受时运影响不放大）。
      * BlockDropsEvent 在原版掉落（含原版时运附魔）生成后触发 → 与原版时运叠加生效。
+     * 顺序：先应用方块掉落倍率（放大数量），再自动熔炼（熔炼产物）→ 与其他技能兼容叠加。
      */
     @SubscribeEvent
     public static void onBlockDrops(net.neoforged.neoforge.event.level.BlockDropsEvent event) {
         if (event.getBreaker() instanceof ServerPlayer sp) {
             PlayerSkillRecord record = getRecord(sp);
-            double mult = SkillEffects.getDropMultiplier(record);
+            // 自动熔炼（终极节点）：判断顺序【先判断熔炉 → 再时运 → 再技能增幅】
+            //  1.【先判断熔炉】熔炉配方判断：把可熔炼的掉落物先换成成品（铁矿石×N → 铁锭×N）
+            //  2.【再时运】时运额外掉落已含在掉落列表中（原版掉落阶段生效），熔炼保持数量一起烧
+            //  3.【再技能增幅】方块掉落倍率最后应用，对成品同倍放大（铁锭×N → 铁锭×N×倍率）
+            applyAutoSmelt(sp, event.getDrops(), record);
+            double mult = SkillEffects.getBlockDropMultiplier(record); // 方块掉落倍率（拆分自掉落增幅）
             if (mult > 1.0) {
                 net.minecraft.resources.ResourceKey<LootTable> lootKey = event.getState().getBlock().getLootTable();
                 if (lootKey != null && supportsFortune(lootKey, sp.serverLevel())) {
@@ -618,6 +707,74 @@ public class UltimateEvents {
                 }
             }
         }
+    }
+
+    /**
+     * 自动熔炼（终极节点 AUTO_SMELT）：把方块掉落物中可熔炼的物品熔炼成成品。
+     * 判断顺序（以此为准）：【先判断熔炉 → 再时运 → 再技能增幅】
+     *  1.【先判断熔炉】用熔炉配方 SmeltingRecipe 判断能否单次熔炼——铁/金/铜原矿→对应锭、
+     *     沙→玻璃等；支持原版+模组所有熔炉可熔炼物品。不可熔炼直接跳过。
+     *  2.【再时运】时运附魔的额外掉落已在原版掉落阶段生效（BlockDropsEvent 的掉落列表
+     *     已含时运加成），这里保持数量（铁矿石×N → 铁锭×N，时运多掉的每份都熔炼）。
+     *  3.【再技能增幅】方块掉落倍率由 onBlockDrops 在熔炼后统一应用（本方法不处理），
+     *     对成品同倍放大（铁锭×N → 铁锭×N×倍率）。
+     * ⚠️ 配方缓存：首次构建 Map<物品, 熔炼产物>，后续 O(1) 查找（大型整合包上千配方不卡顿）。
+     * 经验不产生。不熔炼已有成品/不可熔炼物。
+     */
+    private static void applyAutoSmelt(ServerPlayer sp, java.util.Collection<net.minecraft.world.entity.item.ItemEntity> drops,
+                                       PlayerSkillRecord record) {
+        // 【先判断熔炉】技能已学且启用才继续
+        if (record.getLearnedPoints(Skills.AUTO_SMELT) <= 0 || !record.isEnabled(Skills.AUTO_SMELT)) {
+            return;
+        }
+        if (!(sp.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return;
+        }
+        java.util.Map<Item, ItemStack> smeltMap = getSmeltMap(serverLevel); // 熔炉配方表
+        for (net.minecraft.world.entity.item.ItemEntity drop : drops) {
+            if (drop == null || drop.getItem().isEmpty() || drop.isRemoved()) {
+                continue;
+            }
+            net.minecraft.world.item.ItemStack stack = drop.getItem();
+            // 【先判断熔炉】熔炉配方匹配：不可熔炼直接跳过
+            ItemStack result = smeltMap.get(stack.getItem());
+            if (result == null || result.isEmpty()) {
+                continue;
+            }
+            // 【再时运】保持时运额外掉落数量（N 份矿石 → N 份锭）
+            net.minecraft.world.item.ItemStack smelted = result.copy();
+            smelted.setCount(stack.getCount());
+            drop.setItem(smelted);
+            // 【再技能增幅】掉落倍率由 onBlockDrops 在熔炼后统一应用（本方法不处理）
+        }
+    }
+
+    /** 熔炼配方缓存：物品 → 熔炼产物（懒构建；跟随配方管理器版本，/reload 后自动重建） */
+    private static java.util.Map<Item, ItemStack> SMELT_CACHE = null;
+    private static long SMELT_CACHE_TICK = -1;
+
+    /** 构建/复用熔炼配方表（物品→产物）；用【熔炉配方 SmeltingRecipe】判断能否单次熔炼 */
+    private static java.util.Map<Item, ItemStack> getSmeltMap(net.minecraft.server.level.ServerLevel level) {
+        var recipeManager = level.getServer().getRecipeManager();
+        // 配方管理器每 /reload 会新建实例 → 用实例身份判断缓存是否过期（无需 tick）
+        if (SMELT_CACHE == null || SMELT_CACHE_TICK != recipeManager.hashCode()) {
+            SMELT_CACHE = new java.util.HashMap<>();
+            SMELT_CACHE_TICK = recipeManager.hashCode();
+            for (net.minecraft.world.item.crafting.RecipeHolder<net.minecraft.world.item.crafting.SmeltingRecipe> holder :
+                    recipeManager.getAllRecipesFor(net.minecraft.world.item.crafting.RecipeType.SMELTING)) {
+                var recipe = holder.value();
+                var result = recipe.getResultItem(level.registryAccess());
+                if (result.isEmpty()) {
+                    continue;
+                }
+                for (net.minecraft.world.item.crafting.Ingredient ing : recipe.getIngredients()) {
+                    for (net.minecraft.world.item.ItemStack input : ing.getItems()) {
+                        SMELT_CACHE.putIfAbsent(input.getItem(), result);
+                    }
+                }
+            }
+        }
+        return SMELT_CACHE;
     }
 
     /** 方块掉落表是否含时运加成（ApplyBonusCount 函数 或 附魔=FORTUNE 的概率条件） */

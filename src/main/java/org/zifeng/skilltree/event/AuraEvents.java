@@ -199,18 +199,21 @@ public class AuraEvents {
         boolean voidSpear = record.getLearnedPoints(Skills.AURA_VOID) > 0
                 && ((record.getLearnedPoints(Skills.AURA_DAMAGE) > 0 && record.isEnabled(Skills.AURA_DAMAGE))
                 || (record.getLearnedPoints(Skills.AURA_SPEED) > 0 && record.isEnabled(Skills.AURA_SPEED)));
+        // 杀戮光环·强化：学了才解锁混沌伤害/Boss混沌连击/破盾/守卫水晶特判（拆自光环本体的强化机制）
+        boolean empower = record.getLearnedPoints(Skills.AURA_EMPOWER) > 0;
         if (damageLevel <= 0 && !voidSpear) {
             return;
         }
         if (!record.isEnabled(Skills.AURA_DAMAGE) && !voidSpear) {
             return;
         }
-        // 攻击间隔（tick）：基础 10 秒（200 tick），每级光环速度 -9.5 tick，20 级 = 10 tick = 每秒 2 次。
+        // 攻击间隔（tick）：基础 10 秒（200 tick），光环速度每级间隔×0.9（乘法递减）。
+        // 前10级 200→70 tick 变化明显，20级 ≈ 24 tick = 每秒约1.2次。
         // ⚠️ 性能优化：不再与攻速属性挂钩（原先每 tick 攻击太耗性能），改为低频间隔触发。
         int baseInterval = org.zifeng.skilltree.Config.AURA_BASE_INTERVAL_TICKS.get();
         int speedLevel = record.isEnabled(Skills.AURA_SPEED) ? record.getActiveLevel(Skills.AURA_SPEED) : 0;
         double reduction = org.zifeng.skilltree.Config.AURA_SPEED_INTERVAL_REDUCTION.get();
-        int interval = Math.max(10, (int) Math.round(baseInterval - speedLevel * reduction));
+        int interval = Math.max(10, (int) Math.round(baseInterval * Math.pow(1 - reduction, speedLevel)));
         if (player.level().getGameTime() % interval != 0) {
             return;
         }
@@ -223,14 +226,20 @@ public class AuraEvents {
         // 范围伤害：360° 球形（玩家为中心），固定半径 Config 可调；xyz 三轴全半径（不再压缩 Y）
         // 参考 ProjectE attackAOE（玩家自身为中心全向范围 + 谓词过滤敌友）
         // ⚠️ 虚空之矛：学了虚空之矛 → 光环攻击半径放大到 50 格（Config 可调，参考虚空之矛模组范围秒杀）
-        // ⚠️ 扫描 Entity.class 而非 LivingEntity.class：DE 的守卫水晶（GuardianCrystalEntity）直接继承 Entity，
-        //    不是 LivingEntity！只扫 LivingEntity 会导致光环永远打不到水晶。
         double radius = voidSpear
                 ? org.zifeng.skilltree.Config.VOID_AURA_RADIUS.get()
                 : org.zifeng.skilltree.Config.AURA_ATTACK_RADIUS.get();
-        List<Entity> targets = player.level().getEntitiesOfClass(Entity.class,
-                player.getBoundingBox().inflate(radius, radius, radius),
-                target -> isTargetValid(player, target, mode));
+        // 性能优化（大型整合包 mspt）：主扫描用 LivingEntity.class（物品/经验球/箭/矿车等非攻击目标不进遍历，
+        // 大整合包实体多时可减 50-80% 遍历量）；DE 守卫水晶（非 LivingEntity）用独立小查询补上。
+        var box = player.getBoundingBox().inflate(radius, radius, radius);
+        List<Entity> targets = new java.util.ArrayList<>();
+        targets.addAll(player.level().getEntitiesOfClass(LivingEntity.class, box,
+                target -> isTargetValid(player, target, mode)));
+        // DE 守卫水晶特判：GuardianCrystalEntity 直接继承 Entity（非 LivingEntity），单独扫一次补进目标
+        if (empower) { // 只有学了光环·强化（能打水晶）才扫
+            targets.addAll(player.level().getEntitiesOfClass(Entity.class, box,
+                    target -> isDraconicCrystal(target) && isTargetValid(player, target, mode)));
+        }
         if (targets.isEmpty()) {
             return;
         }
@@ -242,15 +251,15 @@ public class AuraEvents {
         ItemStack weapon = player.getMainHandItem();
         // 对范围内全部有效目标逐个造成伤害（Draconic/ProjectE 全打思路），每个目标独立命中判定
         for (Entity targetEntity : targets) {
-            // 破盾：目标举盾格挡 → 解除格挡 + 盾牌冷却（原版 Player.disableShield，参考 Draconic 穿透箭破盾逻辑）
-            if (targetEntity instanceof Player p && p.isBlocking() && p.getUseItem().getItem() instanceof ShieldItem) {
+            // 破盾（光环·强化）：目标举盾格挡 → 解除格挡 + 盾牌冷却（原版 Player.disableShield，参考 Draconic 穿透箭破盾逻辑）
+            if (empower && targetEntity instanceof Player p && p.isBlocking() && p.getUseItem().getItem() instanceof ShieldItem) {
                 p.disableShield();
             }
-            // DE 守卫水晶特判：GuardianCrystalEntity 是 Entity 不是 LivingEntity，
+            // DE 守卫水晶特判（光环·强化）：GuardianCrystalEntity 是 Entity 不是 LivingEntity，
             // 普通伤害完全免疫（getCrystalDamageModifier 返回 0），必须用混沌伤害源（chaotic 标签）攻击。
             // ⚠️ 连击削盾：DE 守卫有单次伤害上限（500）+ hitCooldown 保护（伤害 < 上次×1.1 会被忽略），
             //    用多次递增伤害（×1.15）绕过保护，一次光环攻击累计打出大量伤害。
-            if (isDraconicCrystal(targetEntity)) {
+            if (empower && isDraconicCrystal(targetEntity)) {
                 DamageSource chaosSource = buildChaosSource(serverLevel, player);
                 if (chaosSource != null) {
                     float base = Math.max(5000.0F, damage * 400.0F);
@@ -286,12 +295,12 @@ public class AuraEvents {
             // 附魔加成：modifyDamage 把武器附魔的伤害增幅算入本次光环攻击（锋利/亡灵/节肢等）
             float finalDamage = weapon.isEmpty() ? damage
                     : EnchantmentHelper.modifyDamage(serverLevel, weapon, target, source, damage);
-            // Boss 特判：混沌伤害源可穿透 Boss 护盾/免疫机制（DE 混沌守卫、原版 Boss、其他模组 Boss 自动生效）
+            // Boss 混沌连击（光环·强化）：混沌伤害源可穿透 Boss 护盾/免疫机制（DE 混沌守卫、原版 Boss、其他模组 Boss 自动生效）
             // 原理：DE 的 getDamageLevel() 识别带 draconicevolution:chaotic 标签的伤害为 CHAOTIC 级 → chaoticBypassCrystalShield 生效；
             //      其他 Boss 则因混沌伤害 = 无视护甲的真实伤害 + 高倍率，能有效输出。
             // ⚠️ 连击削盾：DE 守卫单次伤害上限 500 + hitCooldown（伤害 < 上次×1.1 忽略），
             //    用多次递增伤害（×1.15）绕过保护，一次光环攻击累计打出大量伤害（约 60 万+）。
-            if (isBossEntity(target)) {
+            if (empower && isBossEntity(target)) {
                 DamageSource chaosSource = buildChaosSource(serverLevel, player);
                 if (chaosSource != null) {
                     float base = Math.max(5000.0F, finalDamage * 400.0F);
@@ -321,10 +330,10 @@ public class AuraEvents {
                 if (!weapon.isEmpty()) {
                     EnchantmentHelper.doPostAttackEffectsWithItemSource(serverLevel, target, source, weapon);
                 }
-                // 混沌伤害：光环攻击附带无视护甲的真实伤害（参考龙之研究混沌武器——混沌能量无视护甲/无敌帧）
+                // 混沌伤害（光环·强化）：光环攻击附带无视护甲的真实伤害（参考龙之研究混沌武器——混沌能量无视护甲/无敌帧）
                 // 比例 Config 可调（默认主伤害的 20%），独立于护甲/减伤结算
                 double chaosRatio = org.zifeng.skilltree.Config.AURA_CHAOS_DAMAGE_RATIO.get();
-                if (chaosRatio > 0) {
+                if (empower && chaosRatio > 0) {
                     float chaosDamage = Math.max(1.0F, finalDamage * (float) chaosRatio);
                     // 魔法伤害无视护甲（混沌武器的真实伤害特性）
                     target.hurt(player.damageSources().indirectMagic(player, player), chaosDamage);

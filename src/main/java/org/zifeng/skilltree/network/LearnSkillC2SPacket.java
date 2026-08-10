@@ -14,6 +14,8 @@ import org.zifeng.skilltree.data.PlayerSkillSavedData;
 import org.zifeng.skilltree.skill.SkillEffects;
 import org.zifeng.skilltree.skill.Skills;
 
+import java.util.Map;
+
 /**
  * 学习技能请求（客户端 → 服务端）：携带技能 ID 与学习级数，服务端校验后扣技能点并应用效果。
  * levels ≥ 1；Shift+点击一次加 10 级时 levels=10（服务端逐级校验，点数/上限不足自动停）。
@@ -39,6 +41,12 @@ public record LearnSkillC2SPacket(String skillId, int levels) implements CustomP
                 // 校验技能 ID 合法 + 级数有效（防刷包）
                 int levels = Math.max(1, Math.min(100, packet.levels()));
                 if (Skills.ALL_SKILLS.contains(skillId) && checkUltimateRequirements(record, skillId)) {
+                    // 其余模组兼容技能：对应模组未安装 → 拒绝学习 + 红字提示（防刷包/误点）
+                    if (!checkModLoaded(skillId, player)) {
+                        PacketDistributor.sendToPlayer(player,
+                                SkillTreeDataS2CPacket.from(record));
+                        return;
+                    }
                     boolean learned = false;
                     for (int i = 0; i < levels; i++) {
                         if (record.learnSkill(skillId)) {
@@ -60,14 +68,38 @@ public record LearnSkillC2SPacket(String skillId, int levels) implements CustomP
         });
     }
 
-    /** 终极节点前置校验：前置是终极节点只需解锁（1点）；是基础/增幅技能需各投入 {@link Skills#ultimateRequirePoints()} 点 */
-    private static boolean checkUltimateRequirements(PlayerSkillRecord record, String skillId) {
-        if (Skills.getType(skillId) != Skills.SkillType.ULTIMATE) {
-            return true;
+    /** 其余模组兼容技能：对应模组未安装 → 拒绝学习并红字提示（保证整合包无该模组时不崩溃） */
+    private static boolean checkModLoaded(String skillId, ServerPlayer player) {
+        String missing = missingModName(skillId);
+        if (missing != null) {
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                    "⚠ 未安装" + missing + "，学习「" + Skills.getDisplayName(skillId) + "」无效")
+                    .withColor(0xFFFF5555));
+            return false;
         }
-        for (String required : Skills.getUltimateRequirements(skillId)) {
-            int need = Skills.getType(required) == Skills.SkillType.ULTIMATE ? 1 : Skills.ultimateRequirePoints();
-            if (record.getLearnedPoints(required) < need) {
+        return true;
+    }
+
+    /** 其余模组兼容技能：返回缺失模组的中文名；模组已装或非兼容技能 → null */
+    private static String missingModName(String skillId) {
+        if (Skills.MANA_AMP.equals(skillId) || Skills.ARS_MANA_REGEN.equals(skillId)) {
+            return org.zifeng.skilltree.compat.ArsNouveauCompat.isLoaded() ? null : "新生魔艺（Ars Nouveau）";
+        }
+        if (Skills.IRON_MANA_AMP.equals(skillId) || Skills.IRON_MANA_REGEN.equals(skillId)
+                || Skills.IRON_CAST_TIME.equals(skillId) || Skills.IRON_COOLDOWN.equals(skillId)
+                || Skills.IRON_FIRE.equals(skillId) || Skills.IRON_ICE.equals(skillId) || Skills.IRON_LIGHTNING.equals(skillId)
+                || Skills.IRON_HOLY.equals(skillId) || Skills.IRON_ENDER.equals(skillId)
+                || Skills.IRON_BLOOD.equals(skillId) || Skills.IRON_EVOCATION.equals(skillId)
+                || Skills.IRON_NATURE.equals(skillId) || Skills.IRON_ELDRITCH.equals(skillId)) {
+            return org.zifeng.skilltree.compat.IronSpellsCompat.isLoaded() ? null : "铁魔法（Iron's Spells）";
+        }
+        return null;
+    }
+
+    /** 前置校验（终极/光环通用）：前置技能 → 所需等级 */
+    private static boolean checkUltimateRequirements(PlayerSkillRecord record, String skillId) {
+        for (Map.Entry<String, Integer> entry : Skills.getPrerequisites(skillId)) {
+            if (record.getLearnedPoints(entry.getKey()) < entry.getValue()) {
                 return false;
             }
         }
