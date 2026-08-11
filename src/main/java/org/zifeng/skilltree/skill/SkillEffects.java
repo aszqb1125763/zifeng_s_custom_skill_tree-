@@ -30,6 +30,25 @@ public final class SkillEffects {
     private SkillEffects() {
     }
 
+    /**
+     * 机器继承判定（机械共鸣系统）：真玩家总是生效；假玩家（模拟玩家机器，如数字型采矿机）
+     * 需对应【共鸣技能】已学且开启才允许继承对应技能效果。
+     * <p>设计意图：默认所有技能只对真玩家生效；学习共鸣技能并开启后，
+     * 机器（FakePlayer 以主人 UUID 触发事件）才能继承掉落/熔炼/伤害类技能效果。
+     * 关闭或重置共鸣技能 → 立即回收（事件每次实时判定，无持久状态）。</p>
+     * @param player 触发事件的玩家（可能是假玩家）
+     * @param record 玩家技能记录
+     * @param resonanceSkillId 对应的机械共鸣技能 ID（如 Skills.MACHINE_AUTO_SMELT）
+     * @return true = 该效果对当前玩家生效
+     */
+    public static boolean isEffectAllowedFor(ServerPlayer player, PlayerSkillRecord record, String resonanceSkillId) {
+        if (!(player instanceof net.neoforged.neoforge.common.util.FakePlayer)) {
+            return true; // 真玩家：无需共鸣，直接生效
+        }
+        // 假玩家（模拟玩家机器）：需共鸣技能已学且开启
+        return record.getLearnedPoints(resonanceSkillId) > 0 && record.isEnabled(resonanceSkillId);
+    }
+
     public static final ResourceLocation MASTER_MOD = ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "skill_master");
 
     /** 杀戮光环·伤害：每级 +5% 攻击伤害倍率（ADD_MULTIPLIED_TOTAL，独立于基础/增幅技能） */

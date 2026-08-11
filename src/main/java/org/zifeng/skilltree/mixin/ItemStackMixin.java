@@ -11,6 +11,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
 import org.zifeng.skilltree.skill.SkillEffects;
+import org.zifeng.skilltree.skill.Skills;
 
 import java.util.function.Consumer;
 
@@ -31,10 +32,13 @@ public abstract class ItemStackMixin {
     private int zifeng$reduceDurabilityDamage(int amount, int ignored, ServerLevel level, LivingEntity entity, Consumer<Item> consumer) {
         if (amount > 0 && entity instanceof ServerPlayer player) {
             PlayerSkillRecord record = PlayerSkillSavedData.get(player.serverLevel()).getOrCreatePlayer(player.getUUID());
-            double reduction = SkillEffects.getToolDurabilityReduction(record);
-            if (reduction > 0) {
-                int reduced = (int) Math.floor(amount * (1 - Math.min(1.0, reduction)));
-                return Math.max(0, reduced);
+            // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 工具不毁·共鸣 才继承耐久减免
+            if (SkillEffects.isEffectAllowedFor(player, record, Skills.MACHINE_UNBREAKABLE)) {
+                double reduction = SkillEffects.getToolDurabilityReduction(record);
+                if (reduction > 0) {
+                    int reduced = (int) Math.floor(amount * (1 - Math.min(1.0, reduction)));
+                    return Math.max(0, reduced);
+                }
             }
         }
         return amount;

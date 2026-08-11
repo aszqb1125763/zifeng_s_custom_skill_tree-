@@ -91,16 +91,17 @@ public class SkillTreeScreen extends Screen {
 
     private int tickCounter = 0;
 
-    /** 五纵列布局：五列顶部对齐（上方对齐），魔法增幅列在最左（其余模组兼容） */
+    /** 六纵列布局：六列顶部对齐（上方对齐），魔法增幅列在最左，机械共鸣列在最右 */
     private void rebuildButtons() {
         buttons.clear();
-        // 5 列中心 x：列宽 150，间隔 30
-        int[] colCenters = {-360, -180, 0, 180, 360};
+        // 6 列中心 x：列宽 150，间隔 30
+        int[] colCenters = {-450, -270, -90, 90, 270, 450};
         placeColumn(Skills.MAGIC_SKILLS, colCenters[0]);
         placeColumn(Skills.BASE_SKILLS, colCenters[1]);
         placeColumn(Skills.AMPLIFY_SKILLS, colCenters[2]);
         placeColumn(Skills.ULTIMATE_SKILLS, colCenters[3]);
         placeColumn(Skills.AURA_SKILLS, colCenters[4]);
+        placeColumn(Skills.MACHINE_SKILLS, colCenters[5]);
     }
 
     /** 五列统一顶部 y（上方对齐）：按钮区上方留空间给列标题（加大后标题占 30px 高） */
@@ -180,12 +181,13 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.pose().scale((float) scale, (float) scale, 1.0F);
 
         // 列标题（大字号 + 类型色边框背景，跟随各列顶部；与按钮区保持间距）
-        int[] colCenters = {-360, -180, 0, 180, 360};
+        int[] colCenters = {-450, -270, -90, 90, 270, 450};
         renderColumnTitle(guiGraphics, "魔法增幅", colCenters[0], 0xFF55FFAA);
         renderColumnTitle(guiGraphics, "基础属性", colCenters[1], 0xFF87CEEB);
         renderColumnTitle(guiGraphics, "特殊增幅", colCenters[2], 0xFFFFAA55);
         renderColumnTitle(guiGraphics, "终极节点", colCenters[3], 0xFFFF5555);
         renderColumnTitle(guiGraphics, "光环", colCenters[4], 0xFFAA55FF);
+        renderColumnTitle(guiGraphics, "机械共鸣", colCenters[5], 0xFFD7D7D7);
 
         for (SkillButton button : buttons) {
             renderSkillButton(guiGraphics, button);
@@ -316,6 +318,7 @@ public class SkillTreeScreen extends Screen {
             case ULTIMATE -> 0xFFFF5555;
             case AURA -> 0xFFAA55FF;
             case MAGIC -> 0xFF55FFAA;
+            case MACHINE -> 0xFFD7D7D7;
         };
         String typeTag = switch (type) {
             case BASE -> "[基础]";
@@ -323,6 +326,7 @@ public class SkillTreeScreen extends Screen {
             case ULTIMATE -> "[终极]";
             case AURA -> "[光环]";
             case MAGIC -> "[魔法]";
+            case MACHINE -> "[共鸣]";
         };
         // 1. 标题行（大字号 + 类型色）
         lines.add(new TooltipLine(typeTag + " " + Skills.getDisplayName(skillId), titleColor, 1.15F));
@@ -340,6 +344,7 @@ public class SkillTreeScreen extends Screen {
             case MAGIC -> "[每级消耗 " + fmtCost(Skills.getMagicCostAtLevel(skillId, 0)) + " 点，线性增长]";
             case AURA -> "[下次消耗 " + (long) recordNextCost(skillId) + " 点]";
             case ULTIMATE -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点]";
+            case MACHINE -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点，一次性]";
         };
         lines.add(new TooltipLine(" ", 0xFF000000, 0.6F));
         lines.add(new TooltipLine(costText, 0xFFFFD700, 0.9F));
@@ -567,6 +572,7 @@ public class SkillTreeScreen extends Screen {
             case AMPLIFY -> hovered ? 0xFF8A5A2A : 0xFF6E4424;
             case ULTIMATE -> hovered ? 0xFF8A2A3A : 0xFF6E242E;
             case AURA -> hovered ? 0xFF5A3A8A : 0xFF3E2470;
+            case MACHINE -> hovered ? 0xFF6A6A6A : 0xFF4A4A4A; // 机械共鸣：铁灰（机械主题）
         };
         int borderColor;
         if (!enabled) {
@@ -590,6 +596,27 @@ public class SkillTreeScreen extends Screen {
         // 技能图标（左侧 16×16，用原版物品图标；跟随技能树整体缩放）
         if (!iconOverlapped) {
             guiGraphics.renderItem(new net.minecraft.world.item.ItemStack(Skills.getIcon(button.skillId())), button.x() + 3, button.y() + 3);
+            // 机械共鸣：图标外圈【钢灰机械边框】+ 右下角【螺丝角标】（与原技能区分，机械主题辨识度高）
+            // 图标绘制区域 = (x+3, y+3) ~ (x+19, y+19)，边框包在四周 1px
+            if (type == Skills.SkillType.MACHINE) {
+                int ix = button.x() + 2, iy = button.y() + 2, iw = 18, ih = 18;
+                int steel = enabled ? 0xFF9AA4AE : 0xFF5A5A5A; // 开启=钢灰亮边，关闭=暗灰
+                guiGraphics.fill(ix, iy, ix + iw, iy + 1, steel);
+                guiGraphics.fill(ix, iy + ih - 1, ix + iw, iy + ih, steel);
+                guiGraphics.fill(ix, iy, ix + 1, iy + ih, steel);
+                guiGraphics.fill(ix + iw - 1, iy, ix + iw, iy + ih, steel);
+                // 四角铆钉（机械质感）
+                guiGraphics.fill(ix, iy, ix + 2, iy + 2, 0xFFD0D5DA);
+                guiGraphics.fill(ix + iw - 2, iy, ix + iw, iy + 2, 0xFFD0D5DA);
+                guiGraphics.fill(ix, iy + ih - 2, ix + 2, iy + ih, 0xFFD0D5DA);
+                guiGraphics.fill(ix + iw - 2, iy + ih - 2, ix + iw, iy + ih, 0xFFD0D5DA);
+                // 右下角螺丝角标（4×4：钢灰螺丝头 + 十字高光）
+                int sx = button.x() + 15, sy = button.y() + 15;
+                guiGraphics.fill(sx, sy, sx + 4, sy + 4, 0xFF7A848E);   // 螺丝头
+                guiGraphics.fill(sx + 1, sy + 1, sx + 3, sy + 3, 0xFFAEB6BE); // 内圈
+                guiGraphics.fill(sx + 1, sy + 1, sx + 2, sy + 2, 0xFFF0F3F5); // 高光十字
+                guiGraphics.fill(sx + 2, sy + 2, sx + 3, sy + 3, 0xFFF0F3F5);
+            }
             // 虚空系技能（虚空之矛/虚空之躯）：图标外圈金色边框（伤害吸收金边主题）
             // 图标绘制区域 = (x+3, y+3) ~ (x+19, y+19)，金边包在图标四周 1px
             if (Skills.AURA_VOID.equals(button.skillId()) || Skills.ULT_VOID_BODY.equals(button.skillId())) {
@@ -670,6 +697,9 @@ public class SkillTreeScreen extends Screen {
             } else {
                 costText = points > 0 ? "已解锁" : "需" + Skills.ultimateCost(button.skillId()) + "点";
             }
+        } else if (type == Skills.SkillType.MACHINE) {
+            // 机械共鸣：单级解锁（机械之星 1000 / 其余共鸣 5000）
+            costText = points > 0 ? "已解锁" : "需" + (long) Skills.getMachineCost(button.skillId()) + "点";
         } else {
             costText = points + "级";
         }
@@ -706,6 +736,7 @@ public class SkillTreeScreen extends Screen {
             // 其余模组兼容技能：对应模组未安装 → 不可学（红字提示见悬停说明）
             if (missingModName(skillId) != null) return false;
         }
+        if (type == Skills.SkillType.MACHINE && current >= Skills.getMachineMaxPoints(skillId)) return false;
         // 前置需求（终极/光环通用：前置技能 → 所需等级）
         for (Map.Entry<String, Integer> entry : Skills.getPrerequisites(skillId)) {
             if (learnedSkills.getOrDefault(entry.getKey(), 0) < entry.getValue()) return false;
@@ -1303,6 +1334,7 @@ public class SkillTreeScreen extends Screen {
         if (type == Skills.SkillType.BASE) return Skills.getBaseCostAtLevel(learnedSkills.getOrDefault(skillId, 0)); // 线性 +1/级
         if (type == Skills.SkillType.AMPLIFY) return Skills.getAmplifyCostAtLevel(learnedSkills.getOrDefault(skillId, 0)); // 线性 +2/级
         if (type == Skills.SkillType.MAGIC) return Skills.getMagicCostAtLevel(skillId, learnedSkills.getOrDefault(skillId, 0)); // 线性（默认+2/级，吟唱缩减+5/级）
+        if (type == Skills.SkillType.MACHINE) return Skills.getMachineCost(skillId); // 机械共鸣：一次性（机械之星 1000 / 其余 5000）
         return Skills.getUltimateLevelCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 终极节点（单次或节点类阶梯递增）
     }
 

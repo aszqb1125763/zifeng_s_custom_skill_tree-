@@ -160,6 +160,9 @@ public class PlayerSkillRecord {
         if (type == Skills.SkillType.MAGIC) {
             return current < Skills.getMagicMaxPoints(skillId);
         }
+        if (type == Skills.SkillType.MACHINE) {
+            return current < Skills.getMachineMaxPoints(skillId);
+        }
         return true;
     }
 
@@ -195,6 +198,9 @@ public class PlayerSkillRecord {
         }
         if (type == Skills.SkillType.MAGIC) {
             return Skills.getMagicCostAtLevel(skillId, getLearnedPoints(skillId)); // 线性：默认第 n 级 = 2n，吟唱缩减 = 5n
+        }
+        if (type == Skills.SkillType.MACHINE) {
+            return Skills.getMachineCost(skillId); // 机械共鸣：一次性（机械之星 1000 / 其余 5000）
         }
         return Skills.getUltimateLevelCost(skillId, getLearnedPoints(skillId)); // 终极节点（单次或节点类阶梯递增）
     }
@@ -305,6 +311,7 @@ public class PlayerSkillRecord {
                 }
                 yield total;
             }
+            case MACHINE -> (long) Skills.getMachineCost(skillId) * points; // 机械共鸣：一次性固定消耗（单级）
             case ULTIMATE -> { // 单次解锁或节点类阶梯递增（逐级累加 double，与学习时实际扣除一致；不再 ceil 防多返）
                 double total = 0;
                 for (int i = 0; i < points; i++) {

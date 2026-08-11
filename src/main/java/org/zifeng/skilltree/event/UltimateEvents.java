@@ -565,7 +565,9 @@ public class UltimateEvents {
         // ============ 战利品爆炸（终极节点，参考神化 FestiveAffix）============
         // 对所有生物（含 Boss、含其他模组怪物）击杀时 100% 触发：掉落物翻倍爆炸散射
         // 1 级 = 掉落 1 倍（即 2 份），100 级 = 100 倍（线性：倍率 = 1 + 等级）
-        int bombLevel = record.isEnabled(Skills.LOOT_BOMB) ? record.getActiveLevel(Skills.LOOT_BOMB) : 0;
+        // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 战利品爆炸·共鸣 才继承
+        int bombLevel = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_LOOT_BOMB)
+                && record.isEnabled(Skills.LOOT_BOMB) ? record.getActiveLevel(Skills.LOOT_BOMB) : 0;
         if (bombLevel > 0 && !event.getDrops().isEmpty()) {
             // 倍率 = 1 + 等级（1级=2倍，100级=101倍，线性增长）
             int maxMult = org.zifeng.skilltree.Config.LOOT_BOMB_MAX_MULTIPLIER.get();
@@ -592,10 +594,17 @@ public class UltimateEvents {
         }
         // ============ 刷怪蛋掉落 / 头颅掉落（独立节点技能，不吃战利品爆炸/生物掉落倍率）============
         // 固定掉 1 个，数量不被任何技能增幅；概率逐级叠加，满级=100% 必掉
-        dropSpawnEgg(sp, event, record);
-        dropMobHead(sp, event, record);
+        // ⚠️ 机械共鸣：假玩家（机器）需对应共鸣技能开启才继承
+        if (SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_SPAWN_EGG)) {
+            dropSpawnEgg(sp, event, record);
+        }
+        if (SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_MOB_HEAD)) {
+            dropMobHead(sp, event, record);
+        }
 
-        double mult = SkillEffects.getMobDropMultiplier(record); // 生物掉落倍率（拆分自掉落增幅）
+        // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 生物掉落·共鸣 才继承生物掉落倍率
+        double mult = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_MOB_DROP)
+                ? SkillEffects.getMobDropMultiplier(record) : 1.0;
         if (mult <= 1.0) {
             return;
         }
@@ -698,8 +707,13 @@ public class UltimateEvents {
             //  1.【先判断熔炉】熔炉配方判断：把可熔炼的掉落物先换成成品（铁矿石×N → 铁锭×N）
             //  2.【再时运】时运额外掉落已含在掉落列表中（原版掉落阶段生效），熔炼保持数量一起烧
             //  3.【再技能增幅】方块掉落倍率最后应用，对成品同倍放大（铁锭×N → 铁锭×N×倍率）
-            applyAutoSmelt(sp, event.getDrops(), record);
-            double mult = SkillEffects.getBlockDropMultiplier(record); // 方块掉落倍率（拆分自掉落增幅）
+            // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 自动熔炼·共鸣 才继承自动熔炼
+            if (SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_AUTO_SMELT)) {
+                applyAutoSmelt(sp, event.getDrops(), record);
+            }
+            // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 方块掉落·共鸣 才继承方块掉落倍率
+            double mult = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_BLOCK_DROP)
+                    ? SkillEffects.getBlockDropMultiplier(record) : 1.0;
             if (mult > 1.0) {
                 net.minecraft.resources.ResourceKey<LootTable> lootKey = event.getState().getBlock().getLootTable();
                 if (lootKey != null && supportsFortune(lootKey, sp.serverLevel())) {
@@ -916,7 +930,9 @@ public class UltimateEvents {
     public static void onExperienceDrop(LivingExperienceDropEvent event) {
         if (event.getAttackingPlayer() instanceof ServerPlayer sp) {
             PlayerSkillRecord record = getRecord(sp);
-            double mult = SkillEffects.getExperienceMultiplier(record);
+            // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 经验获取·共鸣 才继承经验倍率
+            double mult = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_XP_GAIN)
+                    ? SkillEffects.getExperienceMultiplier(record) : 1.0;
             if (mult > 1.0) {
                 event.setDroppedExperience((int) Math.round(event.getOriginalExperience() * mult));
             }

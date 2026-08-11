@@ -197,6 +197,12 @@ public class Config {
     /** 技能重洗：返还技能点比例（小数，1.0 = 全额返还） */
     public static final ModConfigSpec.DoubleValue RESET_REFUND_RATE;
 
+    /** 机械之星：一次性消耗技能点（默认 1000） */
+    public static final ModConfigSpec.IntValue MACHINE_STAR_COST;
+
+    /** 机械共鸣技能：一次性消耗技能点（默认 5000） */
+    public static final ModConfigSpec.IntValue MACHINE_RESONANCE_COST;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
@@ -402,6 +408,12 @@ public class Config {
         RESET_REFUND_RATE = builder
                 .comment("技能重洗（界面按 R 键）：返还技能点比例（小数，1.0 = 全额返还，0.8 = 返还 80%）")
                 .defineInRange("resetRefundRate", 1.0, 0.0, 1.0);
+        MACHINE_STAR_COST = builder
+                .comment("机械共鸣·机械之星：一次性消耗技能点（默认 1000）")
+                .defineInRange("machineStarCost", 1000, 1, 10000000);
+        MACHINE_RESONANCE_COST = builder
+                .comment("机械共鸣技能：一次性消耗技能点（默认 5000；学习并开启后模拟玩家机器才能继承对应技能）")
+                .defineInRange("machineResonanceCost", 5000, 1, 10000000);
         builder.pop();
 
         SPEC = builder.build();

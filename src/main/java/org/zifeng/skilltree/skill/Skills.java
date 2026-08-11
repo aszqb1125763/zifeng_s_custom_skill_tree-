@@ -116,7 +116,9 @@ public final class Skills {
         /** 终极节点（单次解锁） */
         ULTIMATE,
         /** 杀戮光环（独立系统，不受属性加成） */
-        AURA
+        AURA,
+        /** 机械共鸣（模拟玩家机器继承开关，独立列，前置=机械之星+对应原技能） */
+        MACHINE
     }
 
     // ============ 基础属性技能 ============
@@ -206,6 +208,17 @@ public final class Skills {
     public static final String IRON_NATURE = "iron_nature";           // 自然
     public static final String IRON_ELDRITCH = "iron_eldritch";       // 异界
 
+    // ============ 机械共鸣（纵列5，模拟玩家机器继承开关） ============
+    public static final String MACHINE_STAR = "machine_star";             // 机械之星（前置核心，无前置，1级，消耗1000）
+    public static final String MACHINE_LOOT_BOMB = "machine_loot_bomb";   // 战利品爆炸·共鸣（1级，5000）
+    public static final String MACHINE_UNBREAKABLE = "machine_unbreakable"; // 工具不毁·共鸣（1级，5000）
+    public static final String MACHINE_MOB_DROP = "machine_mob_drop";     // 生物掉落·共鸣（1级，5000）
+    public static final String MACHINE_BLOCK_DROP = "machine_block_drop"; // 方块掉落·共鸣（1级，5000）
+    public static final String MACHINE_XP_GAIN = "machine_xp_gain";       // 经验获取·共鸣（1级，5000）
+    public static final String MACHINE_SPAWN_EGG = "machine_spawn_egg";   // 刷怪蛋掉落·共鸣（1级，5000）
+    public static final String MACHINE_MOB_HEAD = "machine_mob_head";     // 头颅掉落·共鸣（1级，5000）
+    public static final String MACHINE_AUTO_SMELT = "machine_auto_smelt"; // 自动熔炼·共鸣（1级，5000）
+
     /** 所有基础技能（纵列1） */
     public static final List<String> BASE_SKILLS = List.of(BODY_HP, BODY, TOUGH, BLADE, ATTACK_SPEED, MINING, MOVE, REGEN, LUCK, JUMP, FLY, SWIM, CRIT, LIFESTEAL, THORNS, ARMOR_PEN);
     /** 所有增幅技能（纵列2）：与基础技能一一对应，顺序与纵列1相同 */
@@ -225,6 +238,11 @@ public final class Skills {
             IRON_MANA_AMP, IRON_MANA_REGEN, IRON_CAST_TIME, IRON_COOLDOWN,
             IRON_FIRE, IRON_ICE, IRON_LIGHTNING, IRON_HOLY, IRON_ENDER,
             IRON_BLOOD, IRON_EVOCATION, IRON_NATURE, IRON_ELDRITCH);
+    /** 所有机械共鸣（纵列5）：机械之星在最上，其余共鸣技能在前置原技能下方 */
+    public static final List<String> MACHINE_SKILLS = List.of(
+            MACHINE_STAR,
+            MACHINE_LOOT_BOMB, MACHINE_UNBREAKABLE, MACHINE_MOB_DROP, MACHINE_BLOCK_DROP,
+            MACHINE_XP_GAIN, MACHINE_SPAWN_EGG, MACHINE_MOB_HEAD, MACHINE_AUTO_SMELT);
 
     public static final List<String> ALL_SKILLS = new ArrayList<>() {{
         addAll(MAGIC_SKILLS);
@@ -232,10 +250,12 @@ public final class Skills {
         addAll(AMPLIFY_SKILLS);
         addAll(ULTIMATE_SKILLS);
         addAll(AURA_SKILLS);
+        addAll(MACHINE_SKILLS);
     }};
 
     public static SkillType getType(String skillId) {
         if (MAGIC_SKILLS.contains(skillId)) return SkillType.MAGIC;
+        if (MACHINE_SKILLS.contains(skillId)) return SkillType.MACHINE;
         if (BASE_SKILLS.contains(skillId)) return SkillType.BASE;
         if (AMPLIFY_SKILLS.contains(skillId)) return SkillType.AMPLIFY;
         if (ULTIMATE_SKILLS.contains(skillId)) return SkillType.ULTIMATE;
@@ -259,7 +279,7 @@ public final class Skills {
         };
     }
 
-    /** 各技能等级上限（按钮第2行显示用）：基础 1000 / 增幅 500 / 终极 1（多级终极各自上限） / 光环各自上限 / 魔法增幅各自上限 */
+    /** 各技能等级上限（按钮第2行显示用）：基础 1000 / 增幅 500 / 终极 1（多级终极各自上限） / 光环各自上限 / 魔法增幅各自上限 / 机械共鸣 1 */
     public static int getMaxPoints(String skillId) {
         return switch (getType(skillId)) {
             case BASE -> BASE_MAX_POINTS;
@@ -267,7 +287,24 @@ public final class Skills {
             case ULTIMATE -> getUltimateMaxPoints(skillId);
             case AURA -> getAuraMaxPoints(skillId);
             case MAGIC -> getMagicMaxPoints(skillId);
+            case MACHINE -> getMachineMaxPoints(skillId);
         };
+    }
+
+    /** 机械共鸣：全部单级解锁（上限 1） */
+    public static int getMachineMaxPoints(String skillId) {
+        return 1;
+    }
+
+    /**
+     * 机械共鸣一次性消耗技能点：机械之星 1000，其余共鸣技能 5000（Config 可调）。
+     * @param skillId 机械共鸣技能 ID
+     */
+    public static int getMachineCost(String skillId) {
+        if (MACHINE_STAR.equals(skillId)) {
+            return Config.MACHINE_STAR_COST.get();
+        }
+        return Config.MACHINE_RESONANCE_COST.get();
     }
 
     /** 魔法增幅：每项上限（魔力/恢复/流派 1000 级；吟唱/冷却缩减 100 级） */
@@ -389,6 +426,15 @@ public final class Skills {
             case MOB_SPAWN_EGG -> "刷怪蛋掉落";
             case MOB_HEAD -> "头颅掉落";
             case AURA_EMPOWER -> "杀戮光环·强化";
+            case MACHINE_STAR -> "机械之星";
+            case MACHINE_LOOT_BOMB -> "战利品爆炸·共鸣";
+            case MACHINE_UNBREAKABLE -> "工具不毁·共鸣";
+            case MACHINE_MOB_DROP -> "生物掉落·共鸣";
+            case MACHINE_BLOCK_DROP -> "方块掉落·共鸣";
+            case MACHINE_XP_GAIN -> "经验获取·共鸣";
+            case MACHINE_SPAWN_EGG -> "刷怪蛋掉落·共鸣";
+            case MACHINE_MOB_HEAD -> "头颅掉落·共鸣";
+            case MACHINE_AUTO_SMELT -> "自动熔炼·共鸣";
             case AMP_HP -> "生命增幅";
             case AMP_DAMAGE -> "锋刃增幅";
             case AMP_ATTACK_SPEED -> "疾攻增幅";
@@ -497,6 +543,15 @@ public final class Skills {
             case ULT_REAPER -> "死神凝视：消耗 1000 技能点，\n攻击生命<15%的非玩家生物时\n30%概率直接处决\n前置：破甲精通500 + 锋刃精通500";
             case ULT_VOID_BODY -> "虚空之躯：消耗 5000 技能点，\n三层无敌：免伤/免死/血量只增不减\n抗击退/免摔落/免火焰/清负面\n前置：全能精通";
             case AUTO_SMELT -> "自动熔炼：消耗 30 技能点\n挖掘方块时自动熔炼掉落物\n（铁矿石→铁锭、金矿石→金锭等）\n按熔炉配方判断能否熔炼\n判断顺序：先熔炉、再时运、再技能增幅\n一次性点亮，1 级";
+            case MACHINE_STAR -> "机械之星：消耗 " + Config.MACHINE_STAR_COST.get() + " 技能点\n一次性点亮，机械共鸣的核心\n学习后才能学习其他共鸣技能\n（共鸣技能让模拟玩家机器\n如数字采矿机继承对应效果）";
+            case MACHINE_LOOT_BOMB -> "战利品爆炸·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器（假玩家）击杀生物\n才能继承战利品爆炸效果\n关闭/重置后立即失效\n前置：机械之星 + 战利品爆炸";
+            case MACHINE_UNBREAKABLE -> "工具不毁·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器使用工具时\n才能继承工具不毁（耐久减免）效果\n关闭/重置后立即失效\n前置：机械之星 + 工具不毁";
+            case MACHINE_MOB_DROP -> "生物掉落·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承生物掉落倍率效果\n关闭/重置后立即失效\n前置：机械之星 + 生物掉落倍率";
+            case MACHINE_BLOCK_DROP -> "方块掉落·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器挖掘方块\n才能继承方块掉落倍率效果\n关闭/重置后立即失效\n前置：机械之星 + 方块掉落倍率";
+            case MACHINE_XP_GAIN -> "经验获取·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀/挖掘产生的经验\n才能继承经验获取倍率效果\n关闭/重置后立即失效\n前置：机械之星 + 经验获取倍率";
+            case MACHINE_SPAWN_EGG -> "刷怪蛋掉落·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承刷怪蛋掉落效果\n关闭/重置后立即失效\n前置：机械之星 + 刷怪蛋掉落";
+            case MACHINE_MOB_HEAD -> "头颅掉落·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承头颅掉落效果\n关闭/重置后立即失效\n前置：机械之星 + 头颅掉落";
+            case MACHINE_AUTO_SMELT -> "自动熔炼·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器挖掘方块\n才能继承自动熔炼效果\n关闭/重置后立即失效\n前置：机械之星 + 自动熔炼";
             case AURA_DAMAGE -> "杀戮光环·伤害：每级+10%伤害倍率，\n360°范围伤害，默认10秒攻击一次\n上限1000级\n前置：锋刃精通100 + 疾攻术100";
             case AURA_SPEED -> "杀戮光环·速度：提高光环攻击频率\n（每级攻击间隔×0.9，20级=每秒约1.2次）\n上限20级\n前置：锋刃精通100 + 疾攻术100";
             case AURA_HEAL -> "治愈光环：每级给周围10格内\n友方单位对应等级的生命回复效果\n（50级 = 生命回复50级）\n上限50级，消耗随等级递增";
@@ -524,7 +579,16 @@ public final class Skills {
             case AURA_DAMAGE, AURA_SPEED -> List.of(Map.entry(BLADE, 100), Map.entry(ATTACK_SPEED, 100)); // 锋刃/疾攻 100
             case AURA_EMPOWER -> List.of(Map.entry(AURA_DAMAGE, 50)); // 杀戮伤害 50
             case AURA_VOID -> List.of(Map.entry(AURA_DAMAGE, 100)); // 杀戮伤害 100
-            default -> List.of(); // 宇宙的青睐/夜视/饱食/村庄英雄/接触距离/发光/战利品爆炸/工具不毁/掉落/经验无前置
+            // 机械共鸣：机械之星无前置；共鸣技能需 机械之星 + 对应原技能已学
+            case MACHINE_LOOT_BOMB -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(LOOT_BOMB, 1));
+            case MACHINE_UNBREAKABLE -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(UNBREAKABLE, 1));
+            case MACHINE_MOB_DROP -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(MOB_DROP, 1));
+            case MACHINE_BLOCK_DROP -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(BLOCK_DROP, 1));
+            case MACHINE_XP_GAIN -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(XP_GAIN, 1));
+            case MACHINE_SPAWN_EGG -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(MOB_SPAWN_EGG, 1));
+            case MACHINE_MOB_HEAD -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(MOB_HEAD, 1));
+            case MACHINE_AUTO_SMELT -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(AUTO_SMELT, 1));
+            default -> List.of(); // 机械之星/宇宙的青睐/夜视/饱食/村庄英雄/接触距离/发光/战利品爆炸/工具不毁/掉落/经验无前置
         };
     }
 
@@ -610,6 +674,17 @@ public final class Skills {
             case MOB_SPAWN_EGG -> Items.CREEPER_SPAWN_EGG;     // 刷怪蛋掉落：苦力怕刷怪蛋
             case MOB_HEAD -> Items.SKELETON_SKULL;             // 头颅掉落：骷髅头
             case AURA_EMPOWER -> Items.NETHERITE_SWORD;        // 光环·强化：下界合金剑（强化伤害）
+            // ===== 机械共鸣（纵列5）：机械之星用活塞（机械核心）；共鸣技能用【前置原技能图标】，
+            //       渲染时由 SkillTreeScreen 叠加机械钢灰边框 + 右下角螺丝角标（与原技能区分，辨识度高） =====
+            case MACHINE_STAR -> Items.PISTON;                 // 机械之星：活塞（机械核心）
+            case MACHINE_LOOT_BOMB -> Items.CREEPER_HEAD;      // 战利品爆炸·共鸣：前置=战利品爆炸（苦力怕头）
+            case MACHINE_UNBREAKABLE -> Items.ANVIL;           // 工具不毁·共鸣：前置=工具不毁（铁砧）
+            case MACHINE_MOB_DROP -> Items.ROTTEN_FLESH;       // 生物掉落·共鸣：前置=生物掉落（腐肉）
+            case MACHINE_BLOCK_DROP -> Items.DIAMOND_ORE;      // 方块掉落·共鸣：前置=方块掉落（钻石矿）
+            case MACHINE_XP_GAIN -> Items.EXPERIENCE_BOTTLE;   // 经验获取·共鸣：前置=经验获取（经验瓶）
+            case MACHINE_SPAWN_EGG -> Items.CREEPER_SPAWN_EGG; // 刷怪蛋掉落·共鸣：前置=刷怪蛋（苦力怕蛋）
+            case MACHINE_MOB_HEAD -> Items.SKELETON_SKULL;     // 头颅掉落·共鸣：前置=头颅掉落（骷髅头）
+            case MACHINE_AUTO_SMELT -> Items.FURNACE;          // 自动熔炼·共鸣：前置=自动熔炼（熔炉）
             // ===== 杀戮光环（纵列4） =====
             case AURA_DAMAGE -> Items.TNT;                     // 光环·伤害：TNT（范围爆炸伤害）
             case AURA_SPEED -> Items.REDSTONE;                 // 光环·速度：红石粉（高频）
