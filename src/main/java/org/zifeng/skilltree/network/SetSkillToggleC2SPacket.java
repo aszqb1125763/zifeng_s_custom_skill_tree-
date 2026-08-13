@@ -48,20 +48,20 @@ public record SetSkillToggleC2SPacket(String skillId, boolean enabled) implement
                 data.setDirty();
                 // 重挂属性使开关生效
                 SkillEffects.applyAll(player, record);
-                // 开关提示（光环技能显示对应图标）
-                if (Skills.getType(packet.skillId()) == Skills.SkillType.AURA) {
-                    String name = Skills.getDisplayName(packet.skillId());
-                    String icon = switch (packet.skillId()) {
-                        case Skills.AURA_MAGNET -> "🧲";
-                        case Skills.AURA_TIME -> "⏰";
-                        case Skills.AURA_WEATHER -> "☀";
-                        case Skills.AURA_LOCK -> "🛡";
-                        default -> "⚔";
-                    };
-                    player.sendSystemMessage(Component.literal(packet.enabled()
-                            ? icon + " " + name + "已开启"
-                            : icon + " " + name + "已关闭"));
-                }
+                // 开关提示（2026-08-13 需求：所有技能快捷键切换开关时都有提示，带图标）
+                String name = Skills.getDisplayName(packet.skillId());
+                String icon = switch (packet.skillId()) {
+                    case Skills.AURA_MAGNET -> "🧲";
+                    case Skills.AURA_TIME -> "⏰";
+                    case Skills.AURA_WEATHER -> "☀";
+                    case Skills.AURA_LOCK -> "🛡";
+                    case Skills.AUTO_SMELT -> "🔥";
+                    case Skills.MACHINE_AUTO_SMELT -> "🔥";
+                    default -> "⚙";
+                };
+                player.sendSystemMessage(Component.literal(packet.enabled()
+                        ? icon + " " + name + "已开启"
+                        : icon + " " + name + "已关闭"));
                 // 回发最新状态
                 PacketDistributor.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));

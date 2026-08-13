@@ -119,10 +119,13 @@ public class UltimateEvents {
     @SubscribeEvent
     public static void onPlayerTick(net.neoforged.neoforge.event.tick.PlayerTickEvent.Pre event) {
         if (event.getEntity() instanceof ServerPlayer player) {
+            // ⚠️ 性能优化（2026-08-13）：PlayerSkillSavedData 已静态缓存（getRecord 零分配），
+            // 这里只取一次 record 供本 tick 所有判断复用。
             PlayerSkillRecord record = getRecord(player);
-            double regen = SkillEffects.getRegenPerSecond(record);
-            if (regen > 0 && player.getHealth() < player.getMaxHealth()) {
-                if (player.tickCount % 20 == 0) { // 每秒结算
+            // 再生体魄：每秒结算（regen 计算移入 %20 内，避免每 tick 调用 getRegenPerSecond）
+            if (player.tickCount % 20 == 0) {
+                double regen = SkillEffects.getRegenPerSecond(record);
+                if (regen > 0 && player.getHealth() < player.getMaxHealth()) {
                     player.heal((float) regen);
                 }
             }
@@ -342,6 +345,90 @@ public class UltimateEvents {
                     && attacker.getRandom().nextFloat() < org.zifeng.skilltree.Config.REAPER_CHANCE.get().floatValue()) {
                 event.setNewDamage(org.zifeng.skilltree.Config.REAPER_DAMAGE.get().floatValue()); // 巨额伤害直接处决（护甲减伤后仍足以秒杀）
             }
+        }
+    }
+
+    // ============ 横扫范围（ULT_SWEEP，2026-08-13）：参考龙之研究武器攻击范围升级（AOE） ============
+    // 龙研 IModularMelee.dealAOEDamage 核心机制（学习后重写，自写实现）：
+    //  ① 以【主目标为中心】的包围盒：水平 aoe 格、垂直仅 0.25 格（近战横扫是水平扇面）
+    //  ② 【100° 扇形】角度过滤：只打玩家面朝方向 ±50° 内的敌人（非 360° 全向）
+    //  ③ 排除：自己、主目标、友方（isAlliedTo）、距离过近（<1）
+    //  ④ 命中：playerAttack 伤害源 + 击退 0.4 + 伤害指示粒子
+    //  ⑤ 蓄力门槛：攻击强度 > 0.9 才触发（满蓄力横扫）
+    // 用 LivingIncomingDamageEvent（1.21.1 无 LivingAttackEvent）；AOE 用 hurt 直伤 + SWEEP_SOURCE 防递归。
+    private static final java.util.Set<UUID> SWEEP_SOURCE = new java.util.HashSet<>();
+
+    @SubscribeEvent
+    public static void onSweepAttack(net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent event) {
+        // 横扫由主目标受击触发：攻击者必须是玩家（直接攻击）
+        if (!(event.getSource().getDirectEntity() instanceof ServerPlayer attacker)) {
+            return;
+        }
+        // 横扫造成的 hurt 直伤（SWEEP_SOURCE 标记）不再递归触发
+        if (SWEEP_SOURCE.contains(attacker.getUUID())) {
+            return;
+        }
+        if (!(event.getEntity() instanceof LivingEntity target)) {
+            return;
+        }
+        PlayerSkillRecord record = getRecord(attacker);
+        int sweepLevel = record.isEnabled(Skills.ULT_SWEEP) ? record.getActiveLevel(Skills.ULT_SWEEP) : 0;
+        if (sweepLevel <= 0) {
+            return;
+        }
+        // 仅直接伤害（近战；远程箭/魔法等 isDirect=false 不横扫）
+        if (!event.getSource().isDirect()) {
+            return;
+        }
+        // 龙研门槛：攻击蓄力 > 0.9（满蓄力才横扫，防止连点快速横扫）
+        if (attacker.getAttackStrengthScale(0.5F) < 0.9F) {
+            return;
+        }
+        // 横扫半径 = 技能等级（每级 +1 格攻击范围）；垂直仅 0.25 格（水平扇面）
+        double aoe = sweepLevel;
+        float damage = event.getAmount();
+        if (damage <= 0) {
+            return;
+        }
+        // ① 主目标为中心的水平包围盒
+        List<LivingEntity> entities = attacker.level().getEntitiesOfClass(LivingEntity.class,
+                target.getBoundingBox().inflate(aoe, 0.25D, aoe));
+        // ② 100° 扇形：玩家面朝方向（yaw）为中心
+        double aoeAngle = 100;
+        double yaw = attacker.getYRot() - 180;
+        var damageSource = attacker.damageSources().playerAttack(attacker);
+        // 击退方向：玩家面朝方向
+        double kx = Math.sin(Math.toRadians(attacker.getYRot()));
+        double kz = -Math.cos(Math.toRadians(attacker.getYRot()));
+        // ⚠️ 先加递归标记再 hurt（否则 AOE 直伤会再次触发本事件无限递归）
+        SWEEP_SOURCE.add(attacker.getUUID());
+        try {
+            for (LivingEntity entity : entities) {
+                // ③ 排除：自己、主目标、友方、距离<1、超出横扫半径
+                if (entity == attacker || entity == target || entity.isRemoved() || !entity.isAlive()
+                        || attacker.isAlliedTo(entity) || attacker.distanceTo(entity) < 1.0
+                        || entity.distanceTo(target) > aoe) {
+                    continue;
+                }
+                // ② 角度过滤：实体相对玩家的角度是否落在面朝 ±50° 内
+                double angle = Math.toDegrees(Math.atan2(attacker.getX() - entity.getX(), attacker.getZ() - entity.getZ()));
+                double relativeAngle = Math.abs((angle + yaw) % 360);
+                if (relativeAngle > aoeAngle / 2 && relativeAngle <= 360 - (aoeAngle / 2)) {
+                    continue;
+                }
+                // ④ 命中：playerAttack 伤害源（吃护甲/减伤）+ 击退
+                if (entity.hurt(damageSource, damage)) {
+                    entity.knockback(0.4F, kx, kz);
+                    // 伤害指示粒子（龙研同款）
+                    if (attacker.level() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+                        serverLevel.sendParticles(net.minecraft.core.particles.ParticleTypes.DAMAGE_INDICATOR,
+                                entity.getX(), entity.getY(0.5D), entity.getZ(),
+                                Math.max(1, (int) (damage * 0.5D)), 0.1D, 0.0D, 0.1D, 0.2D);
+                    }
+                }
+            }
+        } finally {
+            SWEEP_SOURCE.remove(attacker.getUUID());
         }
     }
 
@@ -703,6 +790,21 @@ public class UltimateEvents {
     public static void onBlockDrops(net.neoforged.neoforge.event.level.BlockDropsEvent event) {
         if (event.getBreaker() instanceof ServerPlayer sp) {
             PlayerSkillRecord record = getRecord(sp);
+            // 万物挖掘（ULT_BREAK_ALL）：不可破坏方块（基岩/屏障等，原版掉落表为空）挖掘后掉落对应方块。
+            // 判断依据 getDestroySpeed < 0（基岩 -1.0F，原版"不可破坏"标准，不受 BlockStateMixin 影响）
+            // ⚠️ 不能用 getDestroyProgress <= 0：Mixin 已把它改成黑曜石进度（>0），条件恒不成立！
+            if (canBreakUnbreakable(sp)) {
+                net.minecraft.world.level.block.state.BlockState state = event.getState();
+                if (state.getDestroySpeed(event.getLevel(), event.getPos()) < 0
+                        && event.getDrops().isEmpty()) {
+                    Item blockItem = state.getBlock().asItem();
+                    if (blockItem != null && blockItem != net.minecraft.world.item.Items.AIR) {
+                        event.getDrops().add(new ItemEntity(sp.level(),
+                                event.getPos().getX() + 0.5, event.getPos().getY() + 0.5, event.getPos().getZ() + 0.5,
+                                new ItemStack(blockItem, 1)));
+                    }
+                }
+            }
             // 自动熔炼（终极节点）：判断顺序【先判断熔炉 → 再时运 → 再技能增幅】
             //  1.【先判断熔炉】熔炉配方判断：把可熔炼的掉落物先换成成品（铁矿石×N → 铁锭×N）
             //  2.【再时运】时运额外掉落已含在掉落列表中（原版掉落阶段生效），熔炼保持数量一起烧
@@ -750,7 +852,11 @@ public class UltimateEvents {
                 continue;
             }
             net.minecraft.world.item.ItemStack stack = drop.getItem();
-            // 【先判断熔炉】熔炉配方匹配：不可熔炼直接跳过
+            // ⚠️ 黑名单最先判定：黑名单中的物品（矿石/粗矿等）不做熔炼判定，当正常方块掉落
+            if (isAutoSmeltBlacklisted(record, stack.getItem(), smeltMap)) {
+                continue;
+            }
+            // 【再判断熔炉】熔炉配方匹配：不可熔炼直接跳过
             ItemStack result = smeltMap.get(stack.getItem());
             if (result == null || result.isEmpty()) {
                 continue;
@@ -766,6 +872,42 @@ public class UltimateEvents {
     /** 熔炼配方缓存：物品 → 熔炼产物（懒构建；跟随配方管理器版本，/reload 后自动重建） */
     private static java.util.Map<Item, ItemStack> SMELT_CACHE = null;
     private static long SMELT_CACHE_TICK = -1;
+
+    /**
+     * 判断物品是否在自动熔炼黑名单中（2026-08-13 普适版）：黑名单中的掉落物不做熔炼判定，当正常方块处理。
+     * 匹配规则：
+     *  1. 精确匹配：黑名单项 == 掉落物（如添加 coal_ore 拦 coal_ore）
+     *  2. 熔炼产物关联：黑名单矿石与掉落物熔炼出【同一种产物】→ 视为同类矿石（普适，不写死映射表）。
+     *     例：添加 gold_ore，挖矿掉落 raw_gold（1.17+ 粗矿机制），两者都熔炼成 gold_ingot → 命中拦截。
+     *     铁/铜同理；任何模组矿石（能熔炼成同种锭的）也自然生效。
+     */
+    public static boolean isAutoSmeltBlacklisted(PlayerSkillRecord record, Item item,
+                                                 java.util.Map<Item, ItemStack> smeltMap) {
+        var blacklist = record.getAutoSmeltBlacklist();
+        // 1. 精确匹配
+        if (blacklist.contains(item)) {
+            return true;
+        }
+        // 2. 熔炼产物关联：掉落物需有熔炼产物（不可熔炼的直接不算同类）
+        ItemStack dropResult = smeltMap.get(item);
+        if (dropResult == null || dropResult.isEmpty()) {
+            return false;
+        }
+        for (Item blackItem : blacklist) {
+            if (blackItem == item) {
+                continue;
+            }
+            ItemStack blackResult = smeltMap.get(blackItem);
+            if (blackResult != null && !blackResult.isEmpty() && blackResult.is(dropResult.getItem())) {
+                return true;
+            }
+        }
+        return false;
+    }
+    /** 供其他模块复用熔炼配方表 */
+    public static java.util.Map<Item, ItemStack> getSmeltMapPublic(net.minecraft.server.level.ServerLevel level) {
+        return getSmeltMap(level);
+    }
 
     /** 构建/复用熔炼配方表（物品→产物）；用【熔炉配方 SmeltingRecipe】判断能否单次熔炼 */
     private static java.util.Map<Item, ItemStack> getSmeltMap(net.minecraft.server.level.ServerLevel level) {
@@ -799,6 +941,15 @@ public class UltimateEvents {
                     .lookupOrThrow(Registries.ENCHANTMENT).getOrThrow(Enchantments.FORTUNE);
             return hasEnchantedBonus(table, fortune, true);
         });
+    }
+
+    /** 是否为"矿石"方块（掉落表含时运加成；供自动熔炼判定普通方块/矿石，2026-08-13） */
+    public static boolean isOreBlock(net.minecraft.world.level.block.state.BlockState state, net.minecraft.server.level.ServerLevel level) {
+        net.minecraft.resources.ResourceKey<LootTable> key = state.getBlock().getLootTable();
+        if (key == null) {
+            return false;
+        }
+        return supportsFortune(key, level);
     }
 
     /** 生物掉落表是否含抢夺加成（附魔=LOOTING 的概率条件） */
@@ -940,6 +1091,56 @@ public class UltimateEvents {
     }
 
     // ============ 工具耐久减免（采掘熟稔，Mixin 实现于 ItemStackMixin） ============
+
+    /**
+     * 不毁词条（终极节点 ULT_UNBREAK_TAG，2026-08-13 需求）：激活后在铁砧中
+     * 放入两个相同的物品，可合成出带有【无法破坏】词条的工具（Unbreakable 组件，原版机制）。
+     */
+    @SubscribeEvent
+    public static void onAnvilUpdate(net.neoforged.neoforge.event.AnvilUpdateEvent event) {
+        // 铁砧预览更新：左右槽都是相同物品
+        ItemStack left = event.getLeft();
+        ItemStack right = event.getRight();
+        if (left.isEmpty() || right.isEmpty() || left.getItem() != right.getItem()) {
+            return;
+        }
+        Player player = event.getPlayer();
+        if (!(player instanceof ServerPlayer sp)) {
+            return;
+        }
+        PlayerSkillRecord record = getRecord(sp);
+        if (record.getLearnedPoints(Skills.ULT_UNBREAK_TAG) <= 0 || !record.isEnabled(Skills.ULT_UNBREAK_TAG)) {
+            return;
+        }
+        // 输出：左槽物品副本 + 无法破坏组件（原版 Unbreakable，工具不再消耗耐久）
+        ItemStack out = left.copy();
+        out.set(net.minecraft.core.component.DataComponents.UNBREAKABLE,
+                new net.minecraft.world.item.component.Unbreakable(true));
+        event.setOutput(out);
+        event.setCost(1); // 仅 1 级经验成本（合成费用低）
+        event.setMaterialCost(1); // 消耗右槽 1 个
+    }
+
+    /**
+     * 万物挖掘（终极节点 ULT_BREAK_ALL，2026-08-13）：判断玩家是否能用镐子挖掘
+     * 基岩等原版不可破坏方块。服务端查真实记录；客户端用本地缓存（S2CPacket 校准）。
+     * 必须手持镐子（PickaxeItem）才生效。
+     */
+    public static boolean canBreakUnbreakable(Player player) {
+        if (player == null) {
+            return false;
+        }
+        // 必须手持镐子
+        if (!(player.getMainHandItem().getItem() instanceof net.minecraft.world.item.PickaxeItem)) {
+            return false;
+        }
+        if (player instanceof ServerPlayer sp) {
+            PlayerSkillRecord record = getRecord(sp);
+            return record.getLearnedPoints(Skills.ULT_BREAK_ALL) > 0 && record.isEnabled(Skills.ULT_BREAK_ALL);
+        }
+        // 客户端：本地缓存（服务端 SkillTreeDataS2CPacket 校准；懒加载安全，服务端不执行此分支）
+        return org.zifeng.skilltree.client.ModKeyBindingEvents.isSkillEnabledClient(Skills.ULT_BREAK_ALL);
+    }
 
     private static PlayerSkillRecord getRecord(ServerPlayer player) {
         // 防御：登出瞬间 serverLevel 可能为 null（多模组环境下事件时序不可控）

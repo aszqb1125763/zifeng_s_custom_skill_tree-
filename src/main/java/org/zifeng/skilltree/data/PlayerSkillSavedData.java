@@ -45,10 +45,23 @@ public class PlayerSkillSavedData extends SavedData {
         setDirty();
     }
 
+    /** 静态缓存（2026-08-13 性能优化）：SavedData 实例在服务器生命周期内不变，缓存避免
+     *  每 tick 每个玩家 getRecord 时重复 new Factory + computeIfAbsent（原实现每 tick 3+ 次垃圾分配）。 */
+    private static volatile net.minecraft.server.MinecraftServer cachedServer;
+    private static volatile PlayerSkillSavedData cachedData;
+
     public static PlayerSkillSavedData get(ServerLevel level) {
-        ServerLevel overworld = level.getServer().overworld();
-        return overworld.getDataStorage()
+        net.minecraft.server.MinecraftServer server = level.getServer();
+        PlayerSkillSavedData cached = cachedData;
+        if (cached != null && cachedServer == server) {
+            return cached;
+        }
+        ServerLevel overworld = server.overworld();
+        PlayerSkillSavedData data = overworld.getDataStorage()
                 .computeIfAbsent(new SavedData.Factory<>(PlayerSkillSavedData::new, PlayerSkillSavedData::load), DATA_NAME);
+        cachedServer = server;
+        cachedData = data;
+        return data;
     }
 
     public static PlayerSkillSavedData load(CompoundTag tag, HolderLookup.Provider registries) {

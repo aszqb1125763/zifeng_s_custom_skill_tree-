@@ -6,7 +6,6 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -26,7 +25,7 @@ import java.util.UUID;
  * 磁力光环（自写实现，由 SkillTreeMod 手动注册）：
  * <ul>
  *   <li>光环技能（AURA_MAGNET，一次性解锁），开启后自动吸取范围内的经验球和掉落物</li>
- *   <li>掉落物：优先【直接放入玩家背包】（成功即消失）；背包放不下时【传送到玩家脚下】自然掉落</li>
+ *   <li>掉落物：传送到玩家脚下自然掉落（由原版拾取机制进背包，背包满则留在地上）</li>
  *   <li>经验球：直接模拟拾取（尊重其他模组取消）</li>
  *   <li>潜行时自动暂停（防止偷取时误吸）</li>
  *   <li>性能优化：每 10 tick 全半径扫描，其余 tick 只扫 5 格</li>
@@ -59,7 +58,7 @@ public class MagnetEvents {
         attractXp(player, fullScan ? xpRadius : Math.min(5.0, xpRadius));
     }
 
-    /** 吸取掉落物：优先直接进背包，放不下则传送到玩家脚下自然掉落 */
+    /** 吸取掉落物：传送到玩家脚下自然掉落（由原版拾取机制自动进背包，背包满则留在地上） */
     private static void attractItems(ServerPlayer player, double radius) {
         Level level = player.level();
         AABB box = player.getBoundingBox().inflate(radius);
@@ -79,23 +78,11 @@ public class MagnetEvents {
             if (owner != null && !owner.getUUID().equals(player.getUUID()) && item.hasPickUpDelay()) {
                 continue;
             }
-            // 尝试直接放入背包（player.addItem：成功返回 true 且 stack 清空；失败剩余留在 stack）
-            ItemStack stack = item.getItem();
-            boolean allAdded = player.addItem(stack);
-            if (allAdded) {
-                // 全部进入背包 → 移除掉落物实体
-                item.discard();
-                any = true;
-            } else {
-                // 放不下：更新剩余数量（可能部分已进背包），传送到玩家脚下自然掉落
-                if (stack.getCount() != item.getItem().getCount()) {
-                    item.setItem(stack); // 同步剩余部分
-                    any = true;
-                }
-                item.teleportTo(player.getX(), player.getY() + 0.5, player.getZ());
-                item.setPickUpDelay(0);
-                item.setDeltaMovement(0, 0, 0);
-            }
+            // 传送到玩家脚下自然掉落（原版拾取判定由游戏处理：进背包或背包满留在地上）
+            item.teleportTo(player.getX(), player.getY() + 0.5, player.getZ());
+            item.setPickUpDelay(0);
+            item.setDeltaMovement(0, 0, 0);
+            any = true;
         }
         if (any) {
             level.playSound(null, player.getX(), player.getY(), player.getZ(),

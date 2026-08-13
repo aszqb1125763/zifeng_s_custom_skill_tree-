@@ -35,10 +35,10 @@ public final class Skills {
     public static final double AMPLIFY_POINT_COST = 2.0;
     /** 终极节点前置：两个指定技能各需投入点数（默认值，可被 Config 覆盖） */
     public static final int ULTIMATE_REQUIRE_POINTS = 500;
-    /** 宇宙的青睐：一次性消耗技能点数（默认值，可被 Config 覆盖） */
-    public static final int ULT_FAVOR_COST = 1000;
+    /** 宇宙的青睐：一次性消耗技能点（默认值，可被 Config 覆盖） */
+    public static final long ULT_FAVOR_COST = 1000;
     /** 杀戮光环基础消耗（每级，默认值，可被 Config 覆盖） */
-    public static final int AURA_BASE_COST = 1000;
+    public static final long AURA_BASE_COST = 1000;
     /** 杀戮光环每级消耗递增倍率（默认值，可被 Config 覆盖） */
     public static final double AURA_COST_MULTIPLIER = 1.05;
 
@@ -56,35 +56,37 @@ public final class Skills {
         return Config.ULTIMATE_REQUIRE_POINTS.get();
     }
 
-    public static int ultFavorCost() {
+    public static long ultFavorCost() {
         return Config.ULT_FAVOR_COST.get();
     }
 
     /** 夜视/饱食一次性消耗（Config 可调） */
-    public static int minorUltCost() {
+    public static long minorUltCost() {
         return Config.MINOR_ULT_COST.get();
     }
 
-    public static int auraBaseCost() {
+    public static long auraBaseCost() {
         return Config.AURA_BASE_COST.get();
     }
 
     /**
      * 基础属性：第 n 级消耗（线性增长，下一级在上一级基础上 +1）。
      * 第 1 级 = 1 点，第 2 级 = 2 点，第 3 级 = 3 点...
+     * ⚠️ 64 位返回（2026-08-12 统一）：所有技能消耗一律 long/double，防高等级 int 溢出。
      * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
      */
-    public static int getBaseCostAtLevel(int currentLevel) {
-        return currentLevel + 1;
+    public static long getBaseCostAtLevel(int currentLevel) {
+        return (long) currentLevel + 1;
     }
 
     /**
      * 特殊增幅：第 n 级消耗（线性增长，下一级在上一级基础上 +2）。
      * 第 1 级 = 2 点，第 2 级 = 4 点，第 3 级 = 6 点...
+     * ⚠️ 64 位返回（2026-08-12 统一）：所有技能消耗一律 long/double，防高等级 int 溢出。
      * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
      */
-    public static int getAmplifyCostAtLevel(int currentLevel) {
-        return (currentLevel + 1) * 2;
+    public static long getAmplifyCostAtLevel(int currentLevel) {
+        return (long) (currentLevel + 1) * 2;
     }
 
     public static double auraCostMultiplier() {
@@ -94,15 +96,17 @@ public final class Skills {
     /**
      * 终极节点一次性消耗技能点（用户指定，可被 Config 覆盖）：
      * 浴血奋战/不坏金身/凤凰涅槃 = 500，死神凝视 = 1000，全能精通 = 5000，其余普通终极 = 1
+     * ⚠️ 64 位返回（2026-08-12 统一）：所有技能消耗一律 long/double，防高等级 int 溢出。
      */
-    public static int ultimateCost(String skillId) {
+    public static long ultimateCost(String skillId) {
         return switch (skillId) {
             case ULT_BLOOD, ULT_GOLDEN, ULT_REVIVE -> Config.ULT_BASE_COST.get();
             case ULT_REAPER -> Config.ULT_REAPER_COST.get();
             case ULT_MASTER -> Config.ULT_MASTER_COST.get();
-            case ULT_VOID_BODY -> (int) Math.round(Config.VOID_BODY_COST.get());
-            case AUTO_SMELT -> 30; // 自动熔炼：一次性 30 点
-            default -> 1; // 普通终极 1 点
+            case ULT_VOID_BODY -> Math.round(Config.VOID_BODY_COST.get());
+            case AUTO_SMELT -> 30L; // 自动熔炼：一次性 30 点
+            case ULT_BREAK_ALL, ULT_UNBREAK_TAG -> 100L; // 万物挖掘/不毁词条：一次性 100 点
+            default -> 1L; // 普通终极 1 点
         };
     }
 
@@ -178,13 +182,17 @@ public final class Skills {
     public static final String ULT_REAPER = "ult_reaper";   // 死神凝视（处决低血目标）
     public static final String ULT_VOID_BODY = "ult_void_body"; // 虚空之躯（三层无敌防御）
     public static final String AUTO_SMELT = "auto_smelt";   // 自动熔炼（挖掘自动熔炼矿物，1级，消耗30）
+    public static final String ULT_BREAK_ALL = "ult_break_all"; // 万物挖掘（可挖任何方块含基岩，1级，消耗100）
+    public static final String ULT_UNBREAK_TAG = "ult_unbreak_tag"; // 不毁词条（铁砧合成Unbreakable工具，1级，消耗100）
+    public static final String ULT_SWEEP = "ult_sweep";       // 横扫范围（每级+1格攻击范围，上限10，线性2）
+    public static final String ULT_KB_RESIST = "ult_kb_resist"; // 击退抗性（每级+10%，满10级免疫击退，线性2）
 
     // ============ 杀戮光环（AURA，独立系统） ============
     public static final String AURA_DAMAGE = "aura_damage";   // 杀戮光环·伤害
     public static final String AURA_SPEED = "aura_speed";     // 杀戮光环·速度
     public static final String AURA_HEAL = "aura_heal";       // 治愈光环（群体治疗）
     public static final String AURA_MAGNET = "aura_magnet";   // 磁力光环（吸取经验/掉落物）
-    public static final String AURA_TIME = "aura_time";       // 时之环·永恒正午（锁定世界时间）
+    public static final String AURA_TIME = "aura_time";       // 时之环·时间停止（锁定开启时的时间）
     public static final String AURA_WEATHER = "aura_weather"; // 晴空环·永恒晴天（锁定天气）
     public static final String AURA_LOCK = "aura_lock";       // 光环锁定（免疫TP/击退）
     public static final String AURA_EMPOWER = "aura_empower"; // 杀戮光环·强化（混沌/Boss伤害，拆自光环，虚空之矛上方）
@@ -227,7 +235,7 @@ public final class Skills {
             AMP_REGEN, AMP_LUCK, AMP_JUMP, AMP_FLY, AMP_SWIM,
             AMP_CRIT, AMP_LIFESTEAL, AMP_THORNS, AMP_ARMOR_PEN);
     /** 所有终极节点（纵列3） */
-    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY, VILLAGE_HERO, REACH, GLOW, LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN, MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT);
+    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY, VILLAGE_HERO, REACH, GLOW, LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN, MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT, ULT_BREAK_ALL, ULT_UNBREAK_TAG, ULT_SWEEP, ULT_KB_RESIST);
     /** 所有杀戮光环（纵列4）：杀戮光环·强化 在 虚空之矛 上方 */
     public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_LOCK, AURA_EMPOWER, AURA_VOID);
     /** 所有魔法增幅（纵列0）：其余模组兼容技能（新生魔艺/铁魔法等），不作为任何前置 */
@@ -255,6 +263,7 @@ public final class Skills {
 
     public static SkillType getType(String skillId) {
         if (MAGIC_SKILLS.contains(skillId)) return SkillType.MAGIC;
+        if (MACHINE_SKILLS.contains(skillId)) return SkillType.MACHINE;
         if (MACHINE_SKILLS.contains(skillId)) return SkillType.MACHINE;
         if (BASE_SKILLS.contains(skillId)) return SkillType.BASE;
         if (AMPLIFY_SKILLS.contains(skillId)) return SkillType.AMPLIFY;
@@ -298,9 +307,10 @@ public final class Skills {
 
     /**
      * 机械共鸣一次性消耗技能点：机械之星 1000，其余共鸣技能 5000（Config 可调）。
+     * ⚠️ 64 位返回（2026-08-12 统一）：所有技能消耗一律 long/double，防高等级 int 溢出。
      * @param skillId 机械共鸣技能 ID
      */
-    public static int getMachineCost(String skillId) {
+    public static long getMachineCost(String skillId) {
         if (MACHINE_STAR.equals(skillId)) {
             return Config.MACHINE_STAR_COST.get();
         }
@@ -322,13 +332,14 @@ public final class Skills {
      * 魔法增幅：第 n 级消耗（线性增长，下一级在上一级基础上 +2）。
      * 第 1 级 = 2 点，第 2 级 = 4 点，第 3 级 = 6 点...
      * 吟唱/冷却缩减特殊：基础 5 点，线性 +5/级（5,10,15...）
+     * ⚠️ 64 位返回（2026-08-12 统一）：所有技能消耗一律 long/double，防高等级 int 溢出。
      * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
      */
-    public static int getMagicCostAtLevel(String skillId, int currentLevel) {
+    public static long getMagicCostAtLevel(String skillId, int currentLevel) {
         if (IRON_CAST_TIME.equals(skillId) || IRON_COOLDOWN.equals(skillId)) {
-            return (currentLevel + 1) * 5;
+            return (long) (currentLevel + 1) * 5;
         }
-        return (currentLevel + 1) * 2;
+        return (long) (currentLevel + 1) * 2;
     }
 
     /**
@@ -339,6 +350,7 @@ public final class Skills {
         return switch (skillId) {
             case VILLAGE_HERO -> 10;
             case REACH -> 50;
+            case ULT_SWEEP, ULT_KB_RESIST -> 10; // 横扫范围/击退抗性：上限 10 级
             case GLOW -> 1;
             case LOOT_BOMB -> 100;
             case UNBREAKABLE -> 5;
@@ -355,6 +367,10 @@ public final class Skills {
      * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
      */
     public static double getUltimateLevelCost(String skillId, int currentLevel) {
+        // 横扫范围/击退抗性：线性消耗（每级 2 点，下一级 +2：2,4,6,8...）
+        if (ULT_SWEEP.equals(skillId) || ULT_KB_RESIST.equals(skillId)) {
+            return (double) (currentLevel + 1) * 2.0;
+        }
         double base = switch (skillId) {
             case VILLAGE_HERO, LOOT_BOMB -> 10.0;
             case REACH, GLOW -> 1.0;
@@ -377,9 +393,18 @@ public final class Skills {
         return getUltimateMaxPoints(skillId) > 1;
     }
 
-    /** 杀戮光环：下一级消耗 = 1000 × 1.05^当前等级（数值均走 Config） */
-    public static int getAuraCost(String skillId, int currentLevel) {
-        return (int) Math.round(auraBaseCost() * Math.pow(auraCostMultiplier(), currentLevel));
+    /**
+     * 杀戮光环：下一级消耗 = 1000 × 1.05^当前等级（数值均走 Config）。
+     * ⚠️ 64 位返回（2026-08-12 修复）：原 int 在约 295 级后 1.05^等级 超过 Integer.MAX_VALUE（21.4 亿）
+     *    溢出成负数 → 扣点变加点（技能点越点越多）。现返回 long，double 计算 + clamp 到 Long.MAX_VALUE，
+     *    技能点本身是 double（无 64 位上限问题）。
+     */
+    public static long getAuraCost(String skillId, int currentLevel) {
+        double raw = auraBaseCost() * Math.pow(auraCostMultiplier(), currentLevel);
+        if (raw >= Long.MAX_VALUE) {
+            return Long.MAX_VALUE; // 极端高等级 clamp，防溢出
+        }
+        return Math.round(raw);
     }
 
     public static String getDisplayName(String skillId) {
@@ -461,11 +486,15 @@ public final class Skills {
             case ULT_REAPER -> "死神凝视";
             case ULT_VOID_BODY -> "虚空之躯";
             case AUTO_SMELT -> "自动熔炼";
+            case ULT_BREAK_ALL -> "万物挖掘";
+            case ULT_UNBREAK_TAG -> "不毁词条";
+            case ULT_SWEEP -> "横扫范围";
+            case ULT_KB_RESIST -> "击退抗性";
             case AURA_DAMAGE -> "杀戮光环·伤害";
             case AURA_SPEED -> "杀戮光环·速度";
             case AURA_HEAL -> "治愈光环";
             case AURA_MAGNET -> "磁力光环";
-            case AURA_TIME -> "时之环·永恒正午";
+            case AURA_TIME -> "时之环·时间停止";
             case AURA_WEATHER -> "晴空环·永恒晴天";
             case AURA_LOCK -> "光环锁定";
             case AURA_VOID -> "杀戮光环·虚空之矛";
@@ -542,7 +571,11 @@ public final class Skills {
             case ULT_REVIVE -> "凤凰涅槃：消耗 500 技能点，\n死亡原地复活一次，回复50%生命\n并清除负面效果，冷却1分钟\n前置：生命汲取500 + 暴击精通500";
             case ULT_REAPER -> "死神凝视：消耗 1000 技能点，\n攻击生命<15%的非玩家生物时\n30%概率直接处决\n前置：破甲精通500 + 锋刃精通500";
             case ULT_VOID_BODY -> "虚空之躯：消耗 5000 技能点，\n三层无敌：免伤/免死/血量只增不减\n抗击退/免摔落/免火焰/清负面\n前置：全能精通";
-            case AUTO_SMELT -> "自动熔炼：消耗 30 技能点\n挖掘方块时自动熔炼掉落物\n（铁矿石→铁锭、金矿石→金锭等）\n按熔炉配方判断能否熔炼\n判断顺序：先熔炉、再时运、再技能增幅\n一次性点亮，1 级";
+            case AUTO_SMELT -> "自动熔炼：消耗 30 技能点\n挖掘方块时自动熔炼掉落物\n（铁矿石→铁锭、金矿石→金锭等）\n按熔炉配方判断能否熔炼\n判断顺序：先熔炉、再时运、再技能增幅\n一次性点亮，1 级\n\n⚠ 黑名单：\n手持对应矿石的粗矿\n（如挖铁矿石得到的生铁 raw_iron）\n输入 /hmd 加入黑名单\n黑名单中的物品不参与熔炼判定\n输入 /delhmd 可查看并移除";
+            case ULT_BREAK_ALL -> "万物挖掘：消耗 100 技能点\n一次性点亮，激活后可以挖掘任何方块\n包括基岩这类无法破坏的方块\n挖掘后会掉落对应方块\n（左键点击即可挖掘，无需等待）";
+            case ULT_UNBREAK_TAG -> "不毁词条：消耗 100 技能点\n一次性点亮，激活后\n在铁砧中放入两个相同的物品\n可以合成出带有【无法破坏】词条的工具\n（工具不再消耗耐久）";
+            case ULT_SWEEP -> "横扫范围：每级 +1 格攻击范围\n（近战攻击命中时，目标周围\nN 格内其他敌人同受伤害）\n仿龙之研究武器攻击范围升级\n10级 = 横扫半径 10 格\n每级消耗 2 技能点（线性 +2/级）";
+            case ULT_KB_RESIST -> "击退抗性：每级 +10% 击退抗性\n10级 = 100%，玩家不会被击退\n每级消耗 2 技能点（线性 +2/级）";
             case MACHINE_STAR -> "机械之星：消耗 " + Config.MACHINE_STAR_COST.get() + " 技能点\n一次性点亮，机械共鸣的核心\n学习后才能学习其他共鸣技能\n（共鸣技能让模拟玩家机器\n如数字采矿机继承对应效果）";
             case MACHINE_LOOT_BOMB -> "战利品爆炸·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器（假玩家）击杀生物\n才能继承战利品爆炸效果\n关闭/重置后立即失效\n前置：机械之星 + 战利品爆炸";
             case MACHINE_UNBREAKABLE -> "工具不毁·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器使用工具时\n才能继承工具不毁（耐久减免）效果\n关闭/重置后立即失效\n前置：机械之星 + 工具不毁";
@@ -556,7 +589,7 @@ public final class Skills {
             case AURA_SPEED -> "杀戮光环·速度：提高光环攻击频率\n（每级攻击间隔×0.9，20级=每秒约1.2次）\n上限20级\n前置：锋刃精通100 + 疾攻术100";
             case AURA_HEAL -> "治愈光环：每级给周围10格内\n友方单位对应等级的生命回复效果\n（50级 = 生命回复50级）\n上限50级，消耗随等级递增";
             case AURA_MAGNET -> "磁力光环：一次性解锁（消耗 " + String.format("%.0f", org.zifeng.skilltree.Config.MAGNET_COST.get()) + " 技能点）\n按 H 键开关，自动吸取经验与掉落物\n（潜行时暂停）";
-            case AURA_TIME -> "时之环·永恒正午：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定世界时间\n为正午，不被睡觉/时间命令影响\n关闭后立即恢复正常时间流动";
+            case AURA_TIME -> "时之环·时间停止：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定世界时间\n为开启瞬间的时间（不再强制正午）\n不被睡觉/时间命令影响\n关闭后立即恢复正常时间流动";
             case AURA_WEATHER -> "晴空环·永恒晴天：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定晴天\n不被下雨/天气命令影响\n关闭后立即恢复正常天气";
             case AURA_LOCK -> "光环锁定：消耗 1000 技能点\n一次性点亮，开启后免疫 TP 与击退\n（传送/瞬移/击退均无效）\n只有自己移动/飞行才能真正移动";
             case AURA_VOID -> "杀戮光环·虚空之矛：消耗 5000 技能点\n一次性点亮，杀戮光环获得虚空之矛力量\n（绝对秒杀+范围扩大至50格，K键控制）\n（磁铁范围扩至55格，H键控制）\n前置：杀戮光环·伤害 100 级";
@@ -667,6 +700,10 @@ public final class Skills {
             case ULT_REAPER -> Items.WITHER_SKELETON_SKULL;    // 死神凝视：凋灵骷髅头
             case ULT_VOID_BODY -> Items.DIAMOND_CHESTPLATE;    // 虚空之躯：原版钻石甲（金边=伤害吸收）
             case AUTO_SMELT -> Items.FURNACE;                  // 自动熔炼：熔炉（熔炼主题）
+            case ULT_BREAK_ALL -> Items.BEDROCK;               // 万物挖掘：基岩（挖穿一切）
+            case ULT_UNBREAK_TAG -> Items.DIAMOND_PICKAXE;     // 不毁词条：钻石镐（永不损坏）
+            case ULT_SWEEP -> Items.IRON_SWORD;                // 横扫范围：铁剑（横扫攻击）
+            case ULT_KB_RESIST -> Items.SHIELD;                // 击退抗性：盾牌（防御不动）
             case UNBREAKABLE -> Items.ANVIL;                   // 工具不毁：铁砧（永不损坏）
             case MOB_DROP -> Items.ROTTEN_FLESH;               // 生物掉落：腐肉（战利品）
             case BLOCK_DROP -> Items.DIAMOND_ORE;              // 方块掉落：钻石矿（矿物）

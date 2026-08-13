@@ -6,7 +6,8 @@
   "mixins": [
     "RangedAttributeMixin",
     "ItemStackMixin",
-    "PlayerRendererMixin"
+    "PlayerRendererMixin",
+    "BlockStateMixin"
   ],
   "injectors": {
     "defaultRequire": 0

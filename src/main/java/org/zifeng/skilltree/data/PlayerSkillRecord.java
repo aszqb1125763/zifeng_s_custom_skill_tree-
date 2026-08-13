@@ -4,11 +4,14 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.world.item.Item;
 import org.zifeng.skilltree.skill.Skills;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -36,6 +39,22 @@ public class PlayerSkillRecord {
     private boolean auraEnabled = true;
     /** 玩家整体累计转换的技能点数（原始整数，技能点转换机阶梯消耗按此计算，跨机器共享） */
     private long totalConvertedPoints;
+    /** 自动熔炼黑名单（2026-08-13 恢复）：黑名单中的掉落物不参与熔炼判定，当正常方块处理（Item 注册名集合） */
+    private final Set<Item> autoSmeltBlacklist = new HashSet<>();
+
+    public Set<Item> getAutoSmeltBlacklist() {
+        return Collections.unmodifiableSet(autoSmeltBlacklist);
+    }
+
+    /** 添加黑名单物品（返回是否新增） */
+    public boolean addAutoSmeltBlacklist(Item item) {
+        return autoSmeltBlacklist.add(item);
+    }
+
+    /** 移除黑名单物品（返回是否移除） */
+    public boolean removeAutoSmeltBlacklist(Item item) {
+        return autoSmeltBlacklist.remove(item);
+    }
 
     public PlayerSkillRecord(UUID owner) {
         this.owner = owner;
@@ -290,28 +309,28 @@ public class PlayerSkillRecord {
             return Skills.minorUltCost();
         }
         return switch (Skills.getType(skillId)) {
-            case BASE -> { // 线性消耗累加：1+2+3+...+n = n(n+1)/2
-                long total = 0;
+            case BASE -> { // 线性消耗累加：1+2+3+...+n（double 防 64 位溢出，2026-08-12 统一）
+                double total = 0;
                 for (int i = 0; i < points; i++) {
                     total += Skills.getBaseCostAtLevel(i);
                 }
                 yield total;
             }
-            case AMPLIFY -> { // 线性消耗累加：2+4+6+...+2n = n(n+1)
-                long total = 0;
+            case AMPLIFY -> { // 线性消耗累加：2+4+6+...+2n（double 防 64 位溢出）
+                double total = 0;
                 for (int i = 0; i < points; i++) {
                     total += Skills.getAmplifyCostAtLevel(i);
                 }
                 yield total;
             }
-            case MAGIC -> { // 线性消耗累加（默认 +2/级；吟唱缩减 +5/级）
-                long total = 0;
+            case MAGIC -> { // 线性消耗累加（默认 +2/级；吟唱缩减 +5/级，double 防 64 位溢出）
+                double total = 0;
                 for (int i = 0; i < points; i++) {
                     total += Skills.getMagicCostAtLevel(skillId, i);
                 }
                 yield total;
             }
-            case MACHINE -> (long) Skills.getMachineCost(skillId) * points; // 机械共鸣：一次性固定消耗（单级）
+            case MACHINE -> (double) Skills.getMachineCost(skillId) * points; // 机械共鸣：一次性固定消耗（单级）
             case ULTIMATE -> { // 单次解锁或节点类阶梯递增（逐级累加 double，与学习时实际扣除一致；不再 ceil 防多返）
                 double total = 0;
                 for (int i = 0; i < points; i++) {
@@ -319,8 +338,8 @@ public class PlayerSkillRecord {
                 }
                 yield total;
             }
-            case AURA -> {
-                long total = 0;
+            case AURA -> { // 64 位累加（double 防 long 溢出：1.05^1000 远超 Long.MAX）
+                double total = 0;
                 for (int i = 0; i < points; i++) {
                     total += Skills.getAuraCost(skillId, i);
                 }
@@ -360,6 +379,13 @@ public class PlayerSkillRecord {
             activeList.add(activeTag);
         }
         tag.put("ActiveLevels", activeList);
+        // 自动熔炼黑名单（存 Item 注册名）
+        ListTag blacklist = new ListTag();
+        for (Item item : autoSmeltBlacklist) {
+            net.minecraft.core.registries.BuiltInRegistries.ITEM.getResourceKey(item)
+                    .ifPresent(key -> blacklist.add(StringTag.valueOf(key.location().toString())));
+        }
+        tag.put("AutoSmeltBlacklist", blacklist);
         return tag;
     }
 
@@ -401,6 +427,23 @@ public class PlayerSkillRecord {
                 String id = activeTag.getString("Id");
                 if (!id.isBlank()) {
                     record.activeLevels.put(id, activeTag.getInt("Level"));
+                }
+            }
+        }
+        // 自动熔炼黑名单（旧存档无此字段默认空）
+        if (tag.contains("AutoSmeltBlacklist", Tag.TAG_LIST)) {
+            ListTag blacklist = tag.getList("AutoSmeltBlacklist", Tag.TAG_STRING);
+            for (int i = 0; i < blacklist.size(); i++) {
+                String name = blacklist.getString(i);
+                if (name.isBlank()) {
+                    continue;
+                }
+                net.minecraft.resources.ResourceLocation loc = net.minecraft.resources.ResourceLocation.tryParse(name);
+                if (loc != null) {
+                    Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(loc);
+                    if (item != net.minecraft.world.item.Items.AIR) {
+                        record.autoSmeltBlacklist.add(item);
+                    }
                 }
             }
         }

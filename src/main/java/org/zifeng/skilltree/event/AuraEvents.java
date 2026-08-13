@@ -31,8 +31,8 @@ import java.util.UUID;
  *   <li>视觉：客户端纯渲染淡红圆环（AuraRingRenderer，零实体零剑模型）</li>
  *   <li>范围伤害：360° 球形范围（玩家为中心）内全部有效目标逐个造成伤害（参考 ProjectE attackAOE + Draconic dealAOEDamage）</li>
  *   <li>治愈光环：每级每秒治疗周围友好生物</li>
- *   <li>时之环：锁定世界时间为正午——用原版 gamerule doDaylightCycle=false 停止时间流动（性能最优，平时零开销），
- *       仅在被睡觉//time 命令破坏时纠正回正午；全部玩家关闭/登出后恢复 doDaylightCycle=true</li>
+ *   <li>时之环·时间停止：锁定开启时的世界时间——用原版 gamerule doDaylightCycle=false 停止时间流动（性能最优，平时零开销），
+ *       仅在被睡觉//time 命令破坏时纠正回锁定值；全部玩家关闭/登出后恢复 doDaylightCycle=true</li>
  *   <li>晴空环：锁定天气为晴天——用原版 gamerule doWeatherCycle=false 停止天气循环，
  *       仅在被 /weather 命令破坏时纠正回晴天；全部玩家关闭/登出后恢复 doWeatherCycle=true</li>
  * </ul>
@@ -49,6 +49,8 @@ public class AuraEvents {
     private static final Map<UUID, Boolean> timeLockState = new HashMap<>();
     /** 当前开启时之环的玩家数（最后一个关闭时恢复 gamerule） */
     private static int timeLockCount = 0;
+    /** 锁定的世界时间（一天内 0~23999；第一个开启时记录，-1 = 未锁定） */
+    private static long lockedDayTime = -1;
     /** 玩家 UUID → 当前是否开启晴空环（状态 diff 用） */
     private static final Map<UUID, Boolean> weatherLockState = new HashMap<>();
     /** 当前开启晴空环的玩家数（最后一个关闭时恢复 gamerule） */
@@ -99,7 +101,7 @@ public class AuraEvents {
         }
     }
 
-    // ============ 时之环：锁定世界时间正午（原版 doDaylightCycle=false 机制） ============
+    // ============ 时之环：锁定世界时间为开启瞬间的值（原版 doDaylightCycle=false 机制） ============
 
     /** 状态 diff：计数开启玩家数；最后一个关闭时恢复 doDaylightCycle=true */
     private static void updateTimeLock(ServerPlayer player, boolean on) {
@@ -108,16 +110,21 @@ public class AuraEvents {
             return; // 状态未变，零开销
         }
         if (on) {
+            if (timeLockCount == 0 && player.serverLevel() != null) {
+                // 第一个开启：记录当前世界时间（锁定开启时的时间，之后保持不变）
+                lockedDayTime = Math.floorMod(player.serverLevel().getDayTime(), 24000L);
+            }
             timeLockCount++;
         } else {
             timeLockCount = Math.max(0, timeLockCount - 1);
             if (timeLockCount == 0) {
+                lockedDayTime = -1;
                 restoreTimeLock(player); // 全部关闭：恢复时间自然流动
             }
         }
     }
 
-    /** 锁定期间每 tick 确保：doDaylightCycle=false + 时间=正午6000（仅被睡觉//time 破坏时才纠正，平时只读零开销） */
+    /** 锁定期间每 tick 确保：doDaylightCycle=false + 时间=锁定值（仅被睡觉//time 破坏时才纠正，平时只读零开销） */
     private static void enforceTimeLock(ServerPlayer player) {
         MinecraftServer server = player.serverLevel() != null ? player.serverLevel().getServer() : null;
         if (server == null) {
@@ -129,11 +136,14 @@ public class AuraEvents {
         if (rule.get()) {
             rule.set(false, server);
         }
-        // 时间校正到正午（保持天数不变；睡觉跳天//time 命令破坏后才纠正，平时比较一次就过）
+        // 时间校正到锁定值（保持天数不变；睡觉跳天//time 命令破坏后才纠正，平时比较一次就过）
+        if (lockedDayTime < 0) {
+            return; // 未锁定（理论上不会到这，防御）
+        }
         long dayTime = overworld.getDayTime();
         long inDay = Math.floorMod(dayTime, 24000L);
-        if (inDay != 6000) {
-            overworld.setDayTime(dayTime + (6000 - inDay));
+        if (inDay != lockedDayTime) {
+            overworld.setDayTime(dayTime + (lockedDayTime - inDay));
         }
     }
 
@@ -192,6 +202,10 @@ public class AuraEvents {
 
     // ============ 自动攻击 ============
 
+    /** 攻击间隔缓存（2026-08-13 性能优化）：speedLevel 不变时 interval 不变，避免每 tick Math.pow */
+    private static int cachedIntervalSpeed = -1;
+    private static int cachedInterval = 200;
+
     private static void auraAttack(ServerPlayer player, PlayerSkillRecord record) {
         int damageLevel = record.getLearnedPoints(Skills.AURA_DAMAGE);
         // 虚空之矛：杀戮光环升级（已学即提供升级效果）。伤害生效只跟随杀戮光环开关（K 键）：
@@ -212,8 +226,13 @@ public class AuraEvents {
         // ⚠️ 性能优化：不再与攻速属性挂钩（原先每 tick 攻击太耗性能），改为低频间隔触发。
         int baseInterval = org.zifeng.skilltree.Config.AURA_BASE_INTERVAL_TICKS.get();
         int speedLevel = record.isEnabled(Skills.AURA_SPEED) ? record.getActiveLevel(Skills.AURA_SPEED) : 0;
-        double reduction = org.zifeng.skilltree.Config.AURA_SPEED_INTERVAL_REDUCTION.get();
-        int interval = Math.max(10, (int) Math.round(baseInterval * Math.pow(1 - reduction, speedLevel)));
+        // 间隔缓存：speedLevel 不变直接复用（避免每 tick Math.pow）
+        if (cachedIntervalSpeed != speedLevel) {
+            double reduction = org.zifeng.skilltree.Config.AURA_SPEED_INTERVAL_REDUCTION.get();
+            cachedInterval = Math.max(10, (int) Math.round(baseInterval * Math.pow(1 - reduction, speedLevel)));
+            cachedIntervalSpeed = speedLevel;
+        }
+        int interval = cachedInterval;
         if (player.level().getGameTime() % interval != 0) {
             return;
         }

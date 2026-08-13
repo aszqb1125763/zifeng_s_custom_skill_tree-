@@ -51,13 +51,13 @@ public class Config {
     public static final ModConfigSpec.IntValue ULTIMATE_REQUIRE_POINTS;
 
     /** 宇宙的青睐：一次性消耗技能点数 */
-    public static final ModConfigSpec.IntValue ULT_FAVOR_COST;
+    public static final ModConfigSpec.LongValue ULT_FAVOR_COST;
 
     /** 夜视/饱食：一次性消耗技能点数 */
-    public static final ModConfigSpec.IntValue MINOR_ULT_COST;
+    public static final ModConfigSpec.LongValue MINOR_ULT_COST;
 
     /** 杀戮光环基础消耗（每级） */
-    public static final ModConfigSpec.IntValue AURA_BASE_COST;
+    public static final ModConfigSpec.LongValue AURA_BASE_COST;
 
     /** 杀戮光环每级消耗递增倍率 */
     public static final ModConfigSpec.DoubleValue AURA_COST_MULTIPLIER;
@@ -112,13 +112,13 @@ public class Config {
     // ============ 终极节点（可热重载） ============
 
     /** 浴血奋战/不坏金身/凤凰涅槃：一次性消耗（默认 500） */
-    public static final ModConfigSpec.IntValue ULT_BASE_COST;
+    public static final ModConfigSpec.LongValue ULT_BASE_COST;
 
     /** 死神凝视：一次性消耗（默认 1000） */
-    public static final ModConfigSpec.IntValue ULT_REAPER_COST;
+    public static final ModConfigSpec.LongValue ULT_REAPER_COST;
 
     /** 全能精通：一次性消耗（默认 5000） */
-    public static final ModConfigSpec.IntValue ULT_MASTER_COST;
+    public static final ModConfigSpec.LongValue ULT_MASTER_COST;
 
     /** 终极节点（节点类多级）：每级消耗阶梯递增比率（0.1 = +10%） */
     public static final ModConfigSpec.DoubleValue ULTIMATE_STEP_RATE;
@@ -198,10 +198,10 @@ public class Config {
     public static final ModConfigSpec.DoubleValue RESET_REFUND_RATE;
 
     /** 机械之星：一次性消耗技能点（默认 1000） */
-    public static final ModConfigSpec.IntValue MACHINE_STAR_COST;
+    public static final ModConfigSpec.LongValue MACHINE_STAR_COST;
 
     /** 机械共鸣技能：一次性消耗技能点（默认 5000） */
-    public static final ModConfigSpec.IntValue MACHINE_RESONANCE_COST;
+    public static final ModConfigSpec.LongValue MACHINE_RESONANCE_COST;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -256,13 +256,13 @@ public class Config {
                 .defineInRange("ultimateRequirePoints", Skills.ULTIMATE_REQUIRE_POINTS, 1, 10000);
         ULT_FAVOR_COST = builder
                 .comment("宇宙的青睐：一次性消耗技能点（默认 1000）")
-                .defineInRange("ultFavorCost", Skills.ULT_FAVOR_COST, 1, 1000000);
+                .defineInRange("ultFavorCost", Skills.ULT_FAVOR_COST, 1L, Long.MAX_VALUE);
         MINOR_ULT_COST = builder
                 .comment("夜视/饱食：一次性消耗技能点（默认 100）")
-                .defineInRange("minorUltCost", 100, 1, 1000000);
+                .defineInRange("minorUltCost", 100L, 1L, Long.MAX_VALUE);
         AURA_BASE_COST = builder
                 .comment("杀戮光环基础消耗（每级，默认 1000）")
-                .defineInRange("auraBaseCost", Skills.AURA_BASE_COST, 1, 10000000);
+                .defineInRange("auraBaseCost", Skills.AURA_BASE_COST, 1L, Long.MAX_VALUE);
         AURA_COST_MULTIPLIER = builder
                 .comment("杀戮光环每级消耗递增倍率（默认 1.05，下一级消耗 = 基础 × 倍率^当前等级）")
                 .defineInRange("auraCostMultiplier", Skills.AURA_COST_MULTIPLIER, 1.0, 10.0);
@@ -340,13 +340,13 @@ public class Config {
                 .defineInRange("masterUndyingHealth", 0.5, 0.05, 1.0);
         ULT_BASE_COST = builder
                 .comment("浴血奋战/不坏金身/凤凰涅槃：一次性消耗技能点（默认 500）")
-                .defineInRange("ultBaseCost", 500, 1, 1000000);
+                .defineInRange("ultBaseCost", 500L, 1L, Long.MAX_VALUE);
         ULT_REAPER_COST = builder
                 .comment("死神凝视：一次性消耗技能点（默认 1000）")
-                .defineInRange("ultReaperCost", 1000, 1, 1000000);
+                .defineInRange("ultReaperCost", 1000L, 1L, Long.MAX_VALUE);
         ULT_MASTER_COST = builder
                 .comment("全能精通：一次性消耗技能点（默认 5000）")
-                .defineInRange("ultMasterCost", 5000, 1, 10000000);
+                .defineInRange("ultMasterCost", 5000L, 1L, Long.MAX_VALUE);
         ULTIMATE_STEP_RATE = builder
                 .comment("终极节点（节点类多级）：每级消耗在上一级基础上增加的比率（小数，0.1 = +10%）")
                 .defineInRange("ultimateStepRate", 0.1, 0.0, 1.0);
@@ -410,10 +410,10 @@ public class Config {
                 .defineInRange("resetRefundRate", 1.0, 0.0, 1.0);
         MACHINE_STAR_COST = builder
                 .comment("机械共鸣·机械之星：一次性消耗技能点（默认 1000）")
-                .defineInRange("machineStarCost", 1000, 1, 10000000);
+                .defineInRange("machineStarCost", 1000L, 1L, Long.MAX_VALUE);
         MACHINE_RESONANCE_COST = builder
                 .comment("机械共鸣技能：一次性消耗技能点（默认 5000；学习并开启后模拟玩家机器才能继承对应技能）")
-                .defineInRange("machineResonanceCost", 5000, 1, 10000000);
+                .defineInRange("machineResonanceCost", 5000L, 1L, Long.MAX_VALUE);
         builder.pop();
 
         SPEC = builder.build();

@@ -47,6 +47,12 @@ public class SkillEvents {
     @SubscribeEvent
     public static void onPlayerJoin(EntityJoinLevelEvent event) {
         if (event.getEntity() instanceof ServerPlayer player && event.getLevel() instanceof ServerLevel level) {
+            // ⚠️ 血量保护（2026-08-13 修复）：记录进入时的生命值比例。属性重挂会先清空再恢复
+            // MAX_HEALTH（先降到基础值、血量被 clamp 下降，再升回上限但血量不跟随）→ 满血玩家会变残血。
+            // 重挂后按原比例恢复：满血保持满血，残血保持残血比例。
+            float joinHealth = player.getHealth();
+            float joinMax = Math.max(1.0F, player.getMaxHealth());
+            float joinRatio = Math.min(1.0F, joinHealth / joinMax);
             // 双保险：先清空所有可能残留的技能修饰符 + 重置飞行速度（不干预 mayfly，避免误关创造模式/其他模组飞行）
             SkillEffects.applyAll(player, new PlayerSkillRecord(player.getUUID()));
             UltimateEvents.resetFlyingSpeed(player);
@@ -54,6 +60,11 @@ public class SkillEvents {
             PlayerSkillSavedData data = PlayerSkillSavedData.get(level);
             PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
             SkillEffects.applyAll(player, record);
+            // 血量补偿：按进入时比例恢复（满血玩家重挂后依然满血）
+            player.setHealth(Math.max(0.5F, player.getMaxHealth() * joinRatio));
+            // 回发技能数据：客户端缓存（万物挖掘等技能状态判断）进世界即有，无需先打开技能树
+            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                    org.zifeng.skilltree.network.SkillTreeDataS2CPacket.from(record));
         }
     }
 
@@ -65,8 +76,16 @@ public class SkillEvents {
     @SubscribeEvent
     public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
+            // ⚠️ 血量保护（2026-08-13 修复）：清空 MAX_HEALTH 修饰符会把当前血量 clamp 下降，
+            // 然后原版把该残血值持久化到 player.dat → 下次进世界就是残血。登出前先把血量
+            // 按"清空后的上限"比例重新设置（满血玩家按 20/20 存，进世界再按技能恢复满血）。
+            float logoutHealth = player.getHealth();
+            float logoutMax = Math.max(1.0F, player.getMaxHealth());
+            float logoutRatio = Math.min(1.0F, logoutHealth / logoutMax);
             // 清空该玩家所有技能属性修饰符（空 record 等价于全部移除）
             SkillEffects.applyAll(player, new PlayerSkillRecord(player.getUUID()));
+            // 登出前按清空后的基础上限恢复血量比例，避免 player.dat 存档残血
+            player.setHealth(Math.max(0.5F, player.getMaxHealth() * logoutRatio));
             // 飞行权限不回收：宇宙的青睐点亮状态存在存档里，重进后 tick 自动重新授予，
             // 保留 mayfly=true 让原版 player.dat 持久化，进出存档飞行不丢（只有关闭技能时才回收）
             // UltimateEvents.clearPlayerFlight(player);

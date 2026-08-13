@@ -40,6 +40,10 @@ public class SkillTreeMod {
         modEventBus.addListener(ModCapabilities::registerCapabilities);
         modEventBus.addListener(SkillEvents::registerPlayerAttributes);
 
+        // 自动熔炼黑名单指令（/hmd 添加、/delhmd 删除，2026-08-13 恢复）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.RegisterCommandsEvent event) ->
+                org.zifeng.skilltree.command.ModCommands.register(event.getDispatcher()));
+
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
 
         NeoForge.EVENT_BUS.register(SkillEvents.class);

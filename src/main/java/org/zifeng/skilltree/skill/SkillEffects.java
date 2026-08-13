@@ -86,9 +86,13 @@ public final class SkillEffects {
 
     // ============ 多级终极（节点类）属性技能：技能ID → [属性, 单点固定值] ============
     // 接触距离：每级 +1 格触摸距离（方块交互）+ 攻击距离（实体交互），走 ADD_VALUE 直接叠加上限 50
+    // 击退抗性：每级 +10% 击退抗性（KNOCKBACK_RESISTANCE，原版上限 1.0 = 100% 免疫击退），上限 10
+    // ⚠️ 横扫范围（ULT_SWEEP）：改为 AOE 横扫（主目标周围 N 格敌人同受伤害，参考龙之研究武器范围升级），
+    //    不走属性（属性加的是"攻击距离"，与接触距离重复，用户明确要求加的是"攻击范围"）
     private static final List<BaseSkill> MULTI_ULTIMATE_ATTRS = List.of(
             new BaseSkill(Skills.REACH, Attributes.ENTITY_INTERACTION_RANGE, 1.0),
-            new BaseSkill(Skills.REACH, Attributes.BLOCK_INTERACTION_RANGE, 1.0)
+            new BaseSkill(Skills.REACH, Attributes.BLOCK_INTERACTION_RANGE, 1.0),
+            new BaseSkill(Skills.ULT_KB_RESIST, Attributes.KNOCKBACK_RESISTANCE, 0.1)
     );
 
     // ============ 增幅技能：技能ID → [属性, 单点百分比(小数)]（与基础技能一一对应） ============
