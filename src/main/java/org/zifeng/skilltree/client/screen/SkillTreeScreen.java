@@ -37,6 +37,8 @@ public class SkillTreeScreen extends Screen {
     private static final int VERTICAL_SPACING = 2;
     /** 按键框宽度（2026-08-13 内联按键框：位于技能按钮右侧，显示/设置该技能开关快捷键） */
     private static final int KEY_BOX_WIDTH = 44;
+    /** 第二列按键框宽度（2026-08-13：等级/目标循环快捷键，位于第一框右侧） */
+    private static final int KEY2_BOX_WIDTH = 44;
     /** 按键框与按钮间隙 */
     private static final int KEY_BOX_GAP = 3;
     private static final int HORIZONTAL_SPACING = 30;
@@ -50,7 +52,8 @@ public class SkillTreeScreen extends Screen {
     private final Map<String, Boolean> toggles = new HashMap<>();
     private final Map<String, Integer> activeLevels = new HashMap<>();
     private boolean auraEnabled = true;
-    private int auraTargetMode;
+    /** 各光环目标模式（2026-08-13：每个光环独立，技能ID → 0敌对/1友好/2所有） */
+    private final Map<String, Integer> auraTargetModes = new HashMap<>();
     private final List<SkillButton> buttons = new ArrayList<>();
 
     private double scale = 1.0;
@@ -65,20 +68,42 @@ public class SkillTreeScreen extends Screen {
     private String keyBindSkillId = null;
     /** 按键设置窗口：是否正在监听按键输入（点击"设置"后为 true） */
     private boolean keyBindListening = false;
+    /** 第二列按键框（等级/目标循环）监听状态：当前正在设置的技能（null = 无） */
+    private String levelKeyBindSkillId = null;
+    private boolean levelKeyBindListening = false;
+
+    /** 是否可设置等级/目标循环快捷键（2026-08-13 优化）：
+     *  光环仅 伤害/速度/治愈 使用目标模式（敌我过滤）；时之环/晴空环/磁力/锁定/强化/虚空之矛 无目标模式不显示。
+     *  其余技能：可调等级（上限>1）可循环生效等级。 */
+    private boolean isLevelBindable(String skillId) {
+        if (Skills.AURA_SKILLS.contains(skillId)) {
+            return Skills.AURA_DAMAGE.equals(skillId) || Skills.AURA_SPEED.equals(skillId) || Skills.AURA_HEAL.equals(skillId);
+        }
+        return Skills.getMaxPoints(skillId) > 1; // 可调等级技能（基础/增幅/多级终极/魔法/多级光环）
+    }
+
+    /** 指定光环技能的目标模式文字（0 敌对 / 1 友好 / 2 所有） */
+    private String modeTextOf(String skillId) {
+        return switch (auraTargetModes.getOrDefault(skillId, 0)) {
+            case 1 -> "友好";
+            case 2 -> "所有";
+            default -> "敌对";
+        };
+    }
 
     public SkillTreeScreen(int skillPoints, Map<String, Integer> learnedSkills, Map<String, Boolean> toggles,
-                           Map<String, Integer> activeLevels, boolean auraEnabled, int auraTargetMode) {
+                           Map<String, Integer> activeLevels, boolean auraEnabled, Map<String, Integer> auraTargetModes) {
         super(Component.literal("技能树"));
         // 恢复上次退出时的位置/缩放（2026-08-13 需求：上次什么位置退出下次就什么位置）
         org.zifeng.skilltree.client.SkillKeyBinds.load();
         this.panX = org.zifeng.skilltree.client.SkillKeyBinds.getLastPanX();
         this.panY = org.zifeng.skilltree.client.SkillKeyBinds.getLastPanY();
         this.scale = org.zifeng.skilltree.client.SkillKeyBinds.getLastScale();
-        updateData(skillPoints, learnedSkills, toggles, activeLevels, auraEnabled, auraTargetMode);
+        updateData(skillPoints, learnedSkills, toggles, activeLevels, auraEnabled, auraTargetModes);
     }
 
     public void updateData(double skillPoints, Map<String, Integer> learnedSkills, Map<String, Boolean> toggles,
-                           Map<String, Integer> activeLevels, boolean auraEnabled, int auraTargetMode) {
+                           Map<String, Integer> activeLevels, boolean auraEnabled, Map<String, Integer> auraTargetModes) {
         this.skillPoints = skillPoints;
         this.learnedSkills.clear();
         this.learnedSkills.putAll(learnedSkills);
@@ -87,7 +112,10 @@ public class SkillTreeScreen extends Screen {
         this.activeLevels.clear();
         this.activeLevels.putAll(activeLevels);
         this.auraEnabled = auraEnabled;
-        this.auraTargetMode = auraTargetMode;
+        this.auraTargetModes.clear();
+        if (auraTargetModes != null) {
+            this.auraTargetModes.putAll(auraTargetModes);
+        }
         rebuildButtons();
     }
 
@@ -107,8 +135,8 @@ public class SkillTreeScreen extends Screen {
     /** 六纵列布局：六列顶部对齐（上方对齐），魔法增幅列在最左，机械共鸣列在最右 */
     private void rebuildButtons() {
         buttons.clear();
-        // 6 列中心 x：按钮 150 + 按键框 44 + 间隙 3 = 每列内容约 200 宽，列中心间隔 220
-        int[] colCenters = {-550, -330, -110, 110, 330, 550};
+        // 6 列中心 x：按钮 150 + 开关框 44 + 等级框 44 + 间隙 = 每列约 250 宽，列中心间隔 280（防第二框与下柱重叠）
+        int[] colCenters = {-700, -420, -140, 140, 420, 700};
         placeColumn(Skills.MAGIC_SKILLS, colCenters[0]);
         placeColumn(Skills.BASE_SKILLS, colCenters[1]);
         placeColumn(Skills.AMPLIFY_SKILLS, colCenters[2]);
@@ -194,7 +222,7 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.pose().scale((float) scale, (float) scale, 1.0F);
 
         // 列标题（大字号 + 类型色边框背景，跟随各列顶部；与按钮区保持间距）
-        int[] colCenters = {-550, -330, -110, 110, 330, 550};
+        int[] colCenters = {-700, -420, -140, 140, 420, 700};
         renderColumnTitle(guiGraphics, "魔法增幅", colCenters[0], 0xFF55FFAA);
         renderColumnTitle(guiGraphics, "基础属性", colCenters[1], 0xFF87CEEB);
         renderColumnTitle(guiGraphics, "特殊增幅", colCenters[2], 0xFFFFAA55);
@@ -202,9 +230,59 @@ public class SkillTreeScreen extends Screen {
         renderColumnTitle(guiGraphics, "光环", colCenters[4], 0xFFAA55FF);
         renderColumnTitle(guiGraphics, "机械共鸣", colCenters[5], 0xFFD7D7D7);
 
+        // 按键框列标题（2026-08-13 需求：按键框上方加标题，标明两列用途）
+        // 第一框（开关）：按钮右缘 + 3；第二框（等级/目标）：再右移 44+3
+        // 位置：按钮区顶部上方 24px（列标题下方），小字号 ×0.9
+        for (int i = 0; i < colCenters.length; i++) {
+            int btnRight = colCenters[i] + BUTTON_WIDTH / 2;
+            int k1x = btnRight + KEY_BOX_GAP;
+            int k2x = btnRight + KEY_BOX_GAP + KEY_BOX_WIDTH + KEY_BOX_GAP;
+            int titleY = COLUMN_TOP - 24;
+            renderKeyColumnTitle(guiGraphics, "开关", k1x, titleY, 0xFFFFD700, KEY_BOX_WIDTH);
+            // 该列是否有可绑定第二键的技能（光环 或 可调等级技能）
+            boolean hasLevelBindable = columnHasLevelBindable(i);
+            if (hasLevelBindable) {
+                boolean auraCol = (i == 4); // 光环列 → 目标循环
+                renderKeyColumnTitle(guiGraphics, auraCol ? "目标" : "等级", k2x, titleY,
+                        auraCol ? 0xFFBB77FF : 0xFF87CEEB, KEY2_BOX_WIDTH);
+            }
+        }
+
         for (SkillButton button : buttons) {
             renderSkillButton(guiGraphics, button);
         }
+        guiGraphics.pose().popPose();
+    }
+
+    /** 该列是否含可绑定第二键的技能（光环 或 上限>1 的可调等级技能） */
+    private boolean columnHasLevelBindable(int colIndex) {
+        List<String> col = switch (colIndex) {
+            case 0 -> Skills.MAGIC_SKILLS;
+            case 1 -> Skills.BASE_SKILLS;
+            case 2 -> Skills.AMPLIFY_SKILLS;
+            case 3 -> Skills.ULTIMATE_SKILLS;
+            case 4 -> Skills.AURA_SKILLS;
+            default -> Skills.MACHINE_SKILLS;
+        };
+        for (String skillId : col) {
+            if (isLevelBindable(skillId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 按键框列小标题（×0.9 字号 + 深色底 + 类型色文字，宽与按键框一致） */
+    private void renderKeyColumnTitle(GuiGraphics guiGraphics, String title, int x, int top, int color, int width) {
+        int h = 14;
+        var gui = net.minecraft.client.renderer.RenderType.gui();
+        fillRoundedRect(guiGraphics, x - 1, top - 1, x + width + 1, top + h + 1, 4, color, gui);
+        fillRoundedRect(guiGraphics, x, top, x + width, top + h, 4, 0xCC101018, gui);
+        float s = 0.9f;
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().translate(x + width / 2.0f, top + h / 2.0f - font.lineHeight * s / 2.0f, 0);
+        guiGraphics.pose().scale(s, s, 1);
+        guiGraphics.drawCenteredString(font, title, 0, 0, color);
         guiGraphics.pose().popPose();
     }
 
@@ -246,14 +324,78 @@ public class SkillTreeScreen extends Screen {
         // 按键框悬停提示（2026-08-13 修复）：必须在无变换的 L3 层用屏幕坐标绘制，
         // 否则 renderTooltip 在 L4 技能树变换内坐标错乱（提示偏离鼠标）
         for (SkillButton button : buttons) {
-            int kx = button.x() + BUTTON_WIDTH + KEY_BOX_GAP;
+            boolean togglable = Skills.isTogglable(button.skillId());
+            int kx = togglable ? button.x() + BUTTON_WIDTH + KEY_BOX_GAP
+                    : button.x() + BUTTON_WIDTH + KEY_BOX_GAP;
             int ky = button.y();
             double lx = toPanelX(mouseX);
             double ly = toPanelY(mouseY);
-            if (lx >= kx && lx <= kx + KEY_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
-                guiGraphics.renderTooltip(font, java.util.List.of(Component.literal("点击设置该技能开关快捷键")),
+            // 第一框悬停提示（仅可开关技能；显示开关状态 + 清空快捷键说明）
+            if (togglable && lx >= kx && lx <= kx + KEY_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
+                boolean enabled = toggles.getOrDefault(button.skillId(), Boolean.TRUE);
+                var bound = org.zifeng.skilltree.client.SkillKeyBinds.getKey(button.skillId());
+                String boundText = bound != null ? "已绑定: " + bound.getDisplayName().getString() : "未绑定";
+                guiGraphics.renderTooltip(font, java.util.List.of(
+                                Component.literal("⚡ " + Skills.getDisplayName(button.skillId()) + " · 开关键"),
+                                Component.literal("当前状态：" + (enabled ? "开启中" : "已关闭")),
+                                Component.literal(boundText),
+                                Component.literal("点击进入绑定，按任意键设置"),
+                                Component.literal("清空：绑定状态下按 退格键(Backspace) 或 删除键(Delete)")),
                         java.util.Optional.empty(), mouseX, mouseY + 12);
                 return;
+            }
+            // 第二列按键框悬停提示（2026-08-13：每个技能独立描述 + 清空快捷键说明）
+            if (isLevelBindable(button.skillId())) {
+                int k2x = kx + KEY_BOX_WIDTH + KEY_BOX_GAP;
+                if (lx >= k2x && lx <= k2x + KEY2_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
+                    String skillId = button.skillId();
+                    var bound = org.zifeng.skilltree.client.SkillKeyBinds.getLevelKey(skillId);
+                    String boundText = bound != null ? "已绑定: " + bound.getDisplayName().getString() : "未绑定";
+                    // 按技能独立描述（每个技能文案不同）
+                    java.util.List<Component> lines;
+                    if (Skills.AURA_DAMAGE.equals(skillId)) {
+                        String modeText = modeTextOf(skillId);
+                        lines = java.util.List.of(
+                                Component.literal("🎯 杀戮光环·伤害 · 目标循环键"),
+                                Component.literal("决定光环攻击打到谁：当前【" + modeText + "】"),
+                                Component.literal("敌对：只打怪物 ／ 友好：只打动物 ／ 所有：全打"),
+                                Component.literal(boundText),
+                                Component.literal("点击进入绑定，按任意键设置"),
+                                Component.literal("清空：退格键 或 删除键"));
+                    } else if (Skills.AURA_SPEED.equals(skillId)) {
+                        String modeText = modeTextOf(skillId);
+                        lines = java.util.List.of(
+                                Component.literal("🎯 杀戮光环·速度 · 目标循环键"),
+                                Component.literal("本光环独立目标：当前【" + modeText + "】"),
+                                Component.literal("只影响光环攻击频率，与伤害光环互不干扰"),
+                                Component.literal(boundText),
+                                Component.literal("点击进入绑定，按任意键设置"),
+                                Component.literal("清空：退格键 或 删除键"));
+                    } else if (Skills.AURA_HEAL.equals(skillId)) {
+                        String modeText = modeTextOf(skillId);
+                        lines = java.util.List.of(
+                                Component.literal("🎯 治愈光环 · 目标循环键"),
+                                Component.literal("决定光环治疗谁：当前【" + modeText + "】"),
+                                Component.literal("友好：只奶动物 ／ 所有：连敌对也奶（离谱但可行）"),
+                                Component.literal(boundText),
+                                Component.literal("点击进入绑定，按任意键设置"),
+                                Component.literal("清空：退格键 或 删除键"));
+                    } else {
+                        // 可调等级技能：显示当前生效/已学 + 操作说明（Shift=10级 Ctrl+Shift=100级 Alt反向）
+                        int learned = learnedSkills.getOrDefault(skillId, 0);
+                        int active = activeLevels.getOrDefault(skillId, learned);
+                        lines = java.util.List.of(
+                                Component.literal("📶 " + Skills.getDisplayName(skillId) + " · 等级循环键"),
+                                Component.literal("当前生效：" + active + " / 已学：" + learned),
+                                Component.literal(boundText),
+                                Component.literal("按键：+1级  Shift：+10级  Ctrl+Shift：+100级"),
+                                Component.literal("按住Alt：反向调整 ／ 到上限后回 0 循环"),
+                                Component.literal("点击进入绑定，按任意键设置"),
+                                Component.literal("清空：退格键 或 删除键"));
+                    }
+                    guiGraphics.renderTooltip(font, lines, java.util.Optional.empty(), mouseX, mouseY + 12);
+                    return;
+                }
             }
         }
         for (SkillButton button : buttons) {
@@ -287,11 +429,8 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.pose().translate(width / 2.0, 10.0, 0);
         guiGraphics.pose().scale(0.8f, 0.8f, 1.0f);
         String title = "子枫 · 技能树";
-        String modeText = switch (auraTargetMode) {
-            case 1 -> "友好";
-            case 2 -> "所有";
-            default -> "敌对";
-        };
+        // 顶部状态行：显示伤害光环的目标模式（各光环独立后以伤害光环为代表）
+        String modeText = modeTextOf(Skills.AURA_DAMAGE);
         // 第一行：状态信息（黄字，简短）
         String statusLine = "技能点：" + String.format("%.1f", Math.max(0, skillPoints))
                 + "   ·   光环:" + (auraEnabled ? "开" : "关")
@@ -738,8 +877,11 @@ public class SkillTreeScreen extends Screen {
             guiGraphics.fill(button.x() + 3, button.y() + 3, button.x() + 19, button.y() + 19, 0x88000000);
         }
         // ============ 内联按键框（2026-08-13 需求：按钮右侧直接显示/设置该技能开关快捷键，仿原版按键设置） ============
+        // ⚠️ 无需开关的技能（时之环/晴空环常驻被动）不显示开关键；第二框 x 位置相应左移到按钮旁
+        boolean togglable = Skills.isTogglable(button.skillId());
         int keyShift = 0;
-        int kx = button.x() + BUTTON_WIDTH + KEY_BOX_GAP + keyShift;
+        int kx = togglable ? button.x() + BUTTON_WIDTH + KEY_BOX_GAP + keyShift
+                : button.x() + BUTTON_WIDTH + KEY_BOX_GAP; // 无开关键时第二框从按钮右缘起
         int ky = button.y();
         int kw = KEY_BOX_WIDTH, kh = BUTTON_HEIGHT;
         // ⚠️ 屏幕坐标 → 技能树局部坐标再比较（lastMouseX 是屏幕坐标，kx/ky 是局部坐标）
@@ -748,35 +890,79 @@ public class SkillTreeScreen extends Screen {
                 && toPanelY(lastMouseY) >= ky && toPanelY(lastMouseY) <= ky + kh;
         boolean listening = button.skillId().equals(keyBindSkillId) && keyBindListening;
         var key = org.zifeng.skilltree.client.SkillKeyBinds.getKey(button.skillId());
-        // 背景（监听=高亮橙，有绑定=暗金，悬停提亮，默认=深灰）
-        int kbg = listening ? 0xFF7A4A00
-                : keyHovered ? (key != null ? 0xFF6E5A00 : 0xFF3A3A4A)
-                : key != null ? 0xFF4A4200 : 0xFF2A2A3A;
-        guiGraphics.fill(kx, ky, kx + kw, ky + kh, kbg);
-        // 边框（监听=橙，有绑定=金，默认=暗蓝灰）
-        int kbord = listening ? 0xFFFFAA55 : (key != null ? 0xFFFFD700 : 0xFF555566);
-        guiGraphics.fill(kx, ky, kx + kw, ky + 1, kbord);
-        guiGraphics.fill(kx, ky + kh - 1, kx + kw, ky + kh, kbord);
-        guiGraphics.fill(kx, ky, kx + 1, ky + kh, kbord);
-        guiGraphics.fill(kx + kw - 1, ky, kx + kw, ky + kh, kbord);
-        // 按键文字（监听态显示原版 "> 键名 <" 样式；否则显示绑定键名/未绑定）
-        String keyText;
-        int keyColor;
-        if (listening) {
-            keyText = "> " + (key != null ? key.getDisplayName().getString() : "?") + " <";
-            keyColor = 0xFFFFFF55;
-        } else if (key != null) {
-            keyText = key.getDisplayName().getString();
-            keyColor = 0xFFFFFFFF;
-        } else {
-            keyText = "未绑定";
-            keyColor = 0xFF888888;
+        // 第一框（开关键）：仅可开关技能渲染；不可开关技能跳过（第二框左移到按钮旁）
+        if (togglable) {
+            // 背景（监听=高亮橙，有绑定=暗金，悬停提亮，默认=深灰）
+            int kbg = listening ? 0xFF7A4A00
+                    : keyHovered ? (key != null ? 0xFF6E5A00 : 0xFF3A3A4A)
+                    : key != null ? 0xFF4A4200 : 0xFF2A2A3A;
+            guiGraphics.fill(kx, ky, kx + kw, ky + kh, kbg);
+            // 边框（监听=橙，有绑定=金，默认=暗蓝灰）
+            int kbord = listening ? 0xFFFFAA55 : (key != null ? 0xFFFFD700 : 0xFF555566);
+            guiGraphics.fill(kx, ky, kx + kw, ky + 1, kbord);
+            guiGraphics.fill(kx, ky + kh - 1, kx + kw, ky + kh, kbord);
+            guiGraphics.fill(kx, ky, kx + 1, ky + kh, kbord);
+            guiGraphics.fill(kx + kw - 1, ky, kx + kw, ky + kh, kbord);
+            // 按键文字（监听态显示原版 "> 键名 <" 样式；否则显示绑定键名/未绑定）
+            String keyText;
+            int keyColor;
+            if (listening) {
+                keyText = "> " + (key != null ? key.getDisplayName().getString() : "?") + " <";
+                keyColor = 0xFFFFFF55;
+            } else if (key != null) {
+                keyText = key.getDisplayName().getString();
+                keyColor = 0xFFFFFFFF;
+            } else {
+                keyText = "未绑定";
+                keyColor = 0xFF888888;
+            }
+            // 过长截断
+            while (!keyText.isEmpty() && font.width(keyText) > kw - 6) {
+                keyText = keyText.substring(0, keyText.length() - 1);
+            }
+            guiGraphics.drawCenteredString(font, keyText, kx + kw / 2, ky + (kh - font.lineHeight) / 2, keyColor);
         }
-        // 过长截断
-        while (!keyText.isEmpty() && font.width(keyText) > kw - 6) {
-            keyText = keyText.substring(0, keyText.length() - 1);
+
+        // ============ 第二列按键框（2026-08-13 需求：光环=目标循环键，可调等级技能=等级循环键） ============
+        if (isLevelBindable(button.skillId())) {
+            // 位置：紧跟第一框右侧（无开关键时第一框 x 即按钮右缘 → 自动对齐）
+            int k2x = kx + kw + KEY_BOX_GAP;
+            int k2w = KEY2_BOX_WIDTH, k2h = BUTTON_HEIGHT;
+            boolean k2Hovered = lastMouseX >= 0 && lastMouseY >= 0
+                    && toPanelX(lastMouseX) >= k2x && toPanelX(lastMouseX) <= k2x + k2w
+                    && toPanelY(lastMouseY) >= ky && toPanelY(lastMouseY) <= ky + k2h;
+            boolean k2Listening = button.skillId().equals(levelKeyBindSkillId) && levelKeyBindListening;
+            var k2key = org.zifeng.skilltree.client.SkillKeyBinds.getLevelKey(button.skillId());
+            // 背景/边框（与第一框同风格；光环用紫调区分目标模式）
+            boolean isAura = Skills.AURA_SKILLS.contains(button.skillId());
+            int k2bg = k2Listening ? (isAura ? 0xFF5A2A6A : 0xFF7A4A00)
+                    : k2Hovered ? (k2key != null ? (isAura ? 0xFF5A3A6A : 0xFF6E5A00) : 0xFF3A3A4A)
+                    : k2key != null ? (isAura ? 0xFF3A2A4A : 0xFF4A4200) : 0xFF2A2A3A;
+            guiGraphics.fill(k2x, ky, k2x + k2w, ky + k2h, k2bg);
+            int k2bord = k2Listening ? (isAura ? 0xFFCC88FF : 0xFFFFAA55)
+                    : (k2key != null ? (isAura ? 0xFFBB77FF : 0xFFFFD700) : 0xFF555566);
+            guiGraphics.fill(k2x, ky, k2x + k2w, ky + 1, k2bord);
+            guiGraphics.fill(k2x, ky + k2h - 1, k2x + k2w, ky + k2h, k2bord);
+            guiGraphics.fill(k2x, ky, k2x + 1, ky + k2h, k2bord);
+            guiGraphics.fill(k2x + k2w - 1, ky, k2x + k2w, ky + k2h, k2bord);
+            // 文字：监听态显示 "> 键名 <"；已绑定显示键名；未绑定显示"未绑定"
+            String k2Text;
+            int k2Color;
+            if (k2Listening) {
+                k2Text = "> " + (k2key != null ? k2key.getDisplayName().getString() : "?") + " <";
+                k2Color = 0xFFFFFF55;
+            } else if (k2key != null) {
+                k2Text = k2key.getDisplayName().getString();
+                k2Color = 0xFFFFFFFF;
+            } else {
+                k2Text = "未绑定";
+                k2Color = 0xFF888888;
+            }
+            while (font.width(k2Text) > k2w - 6) {
+                k2Text = k2Text.substring(0, k2Text.length() - 1);
+            }
+            guiGraphics.drawCenteredString(font, k2Text, k2x + k2w / 2, ky + (k2h - font.lineHeight) / 2, k2Color);
         }
-        guiGraphics.drawCenteredString(font, keyText, kx + kw / 2, ky + (kh - font.lineHeight) / 2, keyColor);
     }
 
     /** 估算下一级消耗（客户端显示用） */
@@ -874,11 +1060,7 @@ public class SkillTreeScreen extends Screen {
     /** 顶部信息区包围盒 [left, top, right, bottom]（屏幕坐标，与 renderHeaderInfo 绘制一致） */
     private int[] headerBounds() {
         String title = "子枫 · 技能树";
-        String modeText = switch (auraTargetMode) {
-            case 1 -> "友好";
-            case 2 -> "所有";
-            default -> "敌对";
-        };
+        String modeText = modeTextOf(Skills.AURA_DAMAGE);
         String statusLine = "技能点：" + String.format("%.1f", Math.max(0, skillPoints))
                 + "   ·   光环:" + (auraEnabled ? "开" : "关")
                 + "   ·   目标:" + modeText;
@@ -1306,10 +1488,11 @@ public class SkillTreeScreen extends Screen {
             for (SkillButton skillButton : buttons) {
                 double lx = toPanelX(mouseX);
                 double ly = toPanelY(mouseY);
-                // 按键框优先：点击该技能的右侧按键框 → 进入/退出监听态（仿原版按键设置：点击即监听，按任意键绑定）
+                boolean togglable = Skills.isTogglable(skillButton.skillId());
                 int kx = skillButton.x() + BUTTON_WIDTH + KEY_BOX_GAP;
                 int ky = skillButton.y();
-                if (lx >= kx && lx <= kx + KEY_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
+                // 第一框（开关键）：仅可开关技能可点击
+                if (togglable && lx >= kx && lx <= kx + KEY_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
                     if (keyBindSkillId != null && keyBindSkillId.equals(skillButton.skillId()) && keyBindListening) {
                         // 再次点击同一按键框 → 退出监听（不改变绑定）
                         keyBindListening = false;
@@ -1319,6 +1502,19 @@ public class SkillTreeScreen extends Screen {
                         keyBindListening = true;
                     }
                     return true;
+                }
+                // 第二列按键框（2026-08-13：光环=目标循环键，可调等级技能=等级循环键）
+                if (isLevelBindable(skillButton.skillId())) {
+                    int k2x = kx + KEY_BOX_WIDTH + KEY_BOX_GAP;
+                    if (lx >= k2x && lx <= k2x + KEY2_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
+                        if (levelKeyBindSkillId != null && levelKeyBindSkillId.equals(skillButton.skillId()) && levelKeyBindListening) {
+                            levelKeyBindListening = false;
+                        } else {
+                            levelKeyBindSkillId = skillButton.skillId();
+                            levelKeyBindListening = true;
+                        }
+                        return true;
+                    }
                 }
                 if (skillButton.isHovered(mouseX, mouseY, this)) {
                     if (canLearn(skillButton.skillId())) {
@@ -1373,10 +1569,11 @@ public class SkillTreeScreen extends Screen {
                 if (skillButton.isHovered(mouseX, mouseY, this)) {
                     String skillId = skillButton.skillId();
                     if (Skills.getType(skillId) == Skills.SkillType.AURA && isShiftHeld()) {
-                        // 切换目标模式（本地乐观更新，重进时由服务端回发校准）
-                        int mode = (auraTargetMode + 1) % 3;
-                        auraTargetMode = mode;
-                        PacketDistributor.sendToServer(new AuraTargetC2SPacket(mode));
+                        // 切换该光环自己的目标模式（本地乐观更新，重进时由服务端回发校准）
+                        int cur = auraTargetModes.getOrDefault(skillId, 0);
+                        int mode = (cur + 1) % 3;
+                        auraTargetModes.put(skillId, mode);
+                        PacketDistributor.sendToServer(new AuraTargetC2SPacket(skillId, mode));
                     } else {
                         boolean now = !toggles.getOrDefault(skillId, Boolean.TRUE);
                         toggles.put(skillId, now);
@@ -1403,6 +1600,20 @@ public class SkillTreeScreen extends Screen {
                 var key = com.mojang.blaze3d.platform.InputConstants.getKey(keyCode, scanCode);
                 org.zifeng.skilltree.client.SkillKeyBinds.setKey(keyBindSkillId, key);
                 keyBindListening = false;
+            }
+            return true;
+        }
+        // 第二列按键框监听（2026-08-13：等级/目标循环键）
+        if (levelKeyBindSkillId != null && levelKeyBindListening) {
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+                levelKeyBindListening = false;
+            } else if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_BACKSPACE || keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_DELETE) {
+                org.zifeng.skilltree.client.SkillKeyBinds.clearLevelKey(levelKeyBindSkillId);
+                levelKeyBindListening = false;
+            } else {
+                var key = com.mojang.blaze3d.platform.InputConstants.getKey(keyCode, scanCode);
+                org.zifeng.skilltree.client.SkillKeyBinds.setLevelKey(levelKeyBindSkillId, key);
+                levelKeyBindListening = false;
             }
             return true;
         }

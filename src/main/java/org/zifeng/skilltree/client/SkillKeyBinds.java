@@ -14,17 +14,19 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 技能独立开关快捷键绑定 + 技能树界面位置/缩放持久化（客户端本地，存 config 目录 JSON）。
+ * 技能独立开关快捷键绑定 + 等级/目标循环快捷键 + 技能树界面位置/缩放持久化（客户端本地，存 config 目录 JSON）。
  * <ul>
- *   <li>每个技能可单独绑定一个开关快捷键（默认空键，在技能树界面点击技能后的 🔑 按钮设置）</li>
+ *   <li>每个技能可绑定两个键：① 开关快捷键（默认空键）；② 等级/目标循环快捷键（光环=循环目标模式，可调等级技能=循环生效等级）</li>
  *   <li>技能树界面退出时记录 panX/panY/scale，下次打开恢复到上次位置（2026-08-13 需求）</li>
  *   <li>存储文件：config/zifeng_s_custom_skill_tree_client.json</li>
  * </ul>
  */
 public class SkillKeyBinds {
 
-    /** 技能ID → 按键（KEYSYM，未绑定则无条目） */
+    /** 技能ID → 开关按键（KEYSYM，未绑定则无条目） */
     private static final Map<String, InputConstants.Key> BINDS = new HashMap<>();
+    /** 技能ID → 等级/目标循环按键（2026-08-13 新增第二快捷键：光环循环目标模式，可调等级技能循环生效等级） */
+    private static final Map<String, InputConstants.Key> LEVEL_BINDS = new HashMap<>();
     /** 技能树界面 panX / panY / scale（上次退出时的状态） */
     private static double lastPanX = 0;
     private static double lastPanY = 0;
@@ -32,7 +34,7 @@ public class SkillKeyBinds {
 
     private static boolean loaded = false;
 
-    // ============ 存取 ============
+    // ============ 开关键存取 ============
 
     public static InputConstants.Key getKey(String skillId) {
         return BINDS.get(skillId);
@@ -58,8 +60,35 @@ public class SkillKeyBinds {
         save();
     }
 
+    // ============ 等级/目标循环键存取（2026-08-13 新增） ============
+
+    public static InputConstants.Key getLevelKey(String skillId) {
+        return LEVEL_BINDS.get(skillId);
+    }
+
+    public static boolean hasLevelKey(String skillId) {
+        return LEVEL_BINDS.containsKey(skillId);
+    }
+
+    /** 设置等级/目标循环键（key 为 null/UNKNOWN 视为清除） */
+    public static void setLevelKey(String skillId, InputConstants.Key key) {
+        if (key == null || key == InputConstants.UNKNOWN) {
+            LEVEL_BINDS.remove(skillId);
+        } else {
+            LEVEL_BINDS.put(skillId, key);
+        }
+        save();
+    }
+
+    public static void clearLevelKey(String skillId) {
+        LEVEL_BINDS.remove(skillId);
+        save();
+    }
+
     /** 上次 tick 各键按下状态（边沿检测：按下瞬间返回 true 一次） */
     private static final java.util.Set<String> lastPressed = new java.util.HashSet<>();
+    /** 等级键上次 tick 按下状态（独立，避免与开关键状态混淆） */
+    private static final java.util.Set<String> lastLevelPressed = new java.util.HashSet<>();
 
     /** 边沿检测：该技能绑定键本 tick 是否刚按下（自动更新状态） */
     public static boolean consumeClick(String skillId) {
@@ -80,6 +109,25 @@ public class SkillKeyBinds {
         return false;
     }
 
+    /** 等级/目标循环键边沿检测（2026-08-13 新增） */
+    public static boolean consumeLevelClick(String skillId) {
+        InputConstants.Key key = LEVEL_BINDS.get(skillId);
+        if (key == null || key.getValue() < 0) {
+            return false;
+        }
+        boolean down = com.mojang.blaze3d.platform.InputConstants.isKeyDown(
+                Minecraft.getInstance().getWindow().getWindow(), key.getValue());
+        boolean prev = lastLevelPressed.contains(skillId);
+        if (down && !prev) {
+            lastLevelPressed.add(skillId);
+            return true;
+        }
+        if (!down) {
+            lastLevelPressed.remove(skillId);
+        }
+        return false;
+    }
+
     /** 按住检测：返回该技能绑定键当前是否被按住 */
     public static boolean isKeyDown(String skillId) {
         InputConstants.Key key = BINDS.get(skillId);
@@ -92,6 +140,10 @@ public class SkillKeyBinds {
 
     public static Map<String, InputConstants.Key> allBinds() {
         return Map.copyOf(BINDS);
+    }
+
+    public static Map<String, InputConstants.Key> allLevelBinds() {
+        return Map.copyOf(LEVEL_BINDS);
     }
 
     public static double getLastPanX() {
@@ -144,6 +196,15 @@ public class SkillKeyBinds {
                     }
                 }
             }
+            LEVEL_BINDS.clear();
+            if (data.levelBinds != null) {
+                for (Map.Entry<String, String> e : data.levelBinds.entrySet()) {
+                    InputConstants.Key key = InputConstants.getKey(e.getValue());
+                    if (key != null && key != InputConstants.UNKNOWN) {
+                        LEVEL_BINDS.put(e.getKey(), key);
+                    }
+                }
+            }
             lastPanX = data.panX;
             lastPanY = data.panY;
             lastScale = data.scale > 0 ? data.scale : 1.0;
@@ -163,6 +224,10 @@ public class SkillKeyBinds {
             for (Map.Entry<String, InputConstants.Key> e : BINDS.entrySet()) {
                 data.binds.put(e.getKey(), e.getValue().getName());
             }
+            data.levelBinds = new HashMap<>();
+            for (Map.Entry<String, InputConstants.Key> e : LEVEL_BINDS.entrySet()) {
+                data.levelBinds.put(e.getKey(), e.getValue().getName());
+            }
             data.panX = lastPanX;
             data.panY = lastPanY;
             data.scale = lastScale;
@@ -176,6 +241,7 @@ public class SkillKeyBinds {
     /** JSON 数据结构（Gson 映射） */
     private static class Data {
         Map<String, String> binds;
+        Map<String, String> levelBinds;
         double panX;
         double panY;
         double scale = 1.0;

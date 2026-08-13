@@ -33,8 +33,8 @@ public class PlayerSkillRecord {
     private final Map<String, Boolean> toggles = new HashMap<>();
     /** 生效等级：技能ID -> 启用的等级数（<=已学等级） */
     private final Map<String, Integer> activeLevels = new HashMap<>();
-    /** 杀戮光环目标模式：0=敌对 1=友好 2=所有 */
-    private int auraTargetMode;
+    /** 杀戮光环目标模式（2026-08-13 需求：每个光环独立）：技能ID -> 0=敌对 1=友好 2=所有 */
+    private final Map<String, Integer> auraTargetModes = new HashMap<>();
     /** 杀戮光环总开关（默认开启） */
     private boolean auraEnabled = true;
     /** 玩家整体累计转换的技能点数（原始整数，技能点转换机阶梯消耗按此计算，跨机器共享） */
@@ -125,12 +125,19 @@ public class PlayerSkillRecord {
 
     // ============ 杀戮光环目标模式与总开关 ============
 
-    public int getAuraTargetMode() {
-        return auraTargetMode;
+    /** 指定光环技能的目标模式（0 敌对 / 1 友好 / 2 所有）；未设置默认敌对 */
+    public int getAuraTargetMode(String skillId) {
+        return auraTargetModes.getOrDefault(skillId, 0);
     }
 
-    public void setAuraTargetMode(int auraTargetMode) {
-        this.auraTargetMode = Math.max(0, Math.min(2, auraTargetMode));
+    /** 设置指定光环技能的目标模式 */
+    public void setAuraTargetMode(String skillId, int mode) {
+        auraTargetModes.put(skillId, Math.max(0, Math.min(2, mode)));
+    }
+
+    /** 全部光环目标模式（供网络同步） */
+    public Map<String, Integer> getAuraTargetModes() {
+        return Collections.unmodifiableMap(auraTargetModes);
     }
 
     /** 杀戮光环总开关 */
@@ -260,7 +267,7 @@ public class PlayerSkillRecord {
         learnedSkills.clear();
         toggles.clear();
         activeLevels.clear();
-        auraTargetMode = 0;
+        auraTargetModes.clear();
         auraEnabled = true;
         return refund;
     }
@@ -368,7 +375,17 @@ public class PlayerSkillRecord {
             togglesList.add(toggleTag);
         }
         tag.put("Toggles", togglesList);
-        tag.putInt("AuraTargetMode", auraTargetMode);
+        // 光环目标模式（2026-08-13：每个光环独立）
+        ListTag modeList = new ListTag();
+        for (Map.Entry<String, Integer> entry : auraTargetModes.entrySet()) {
+            CompoundTag modeTag = new CompoundTag();
+            modeTag.putString("Id", entry.getKey());
+            modeTag.putInt("Mode", entry.getValue());
+            modeList.add(modeTag);
+        }
+        tag.put("AuraTargetModes", modeList);
+        // 旧字段兼容（旧存档读取用）
+        tag.putInt("AuraTargetMode", auraTargetModes.getOrDefault(Skills.AURA_DAMAGE, 0));
         tag.putBoolean("AuraEnabled", auraEnabled);
         tag.putLong("TotalConvertedPoints", totalConvertedPoints);
         ListTag activeList = new ListTag();
@@ -417,7 +434,19 @@ public class PlayerSkillRecord {
                 }
             }
         }
-        record.auraTargetMode = tag.getInt("AuraTargetMode");
+        // 光环目标模式（旧字段 AuraTargetMode 兼容：迁移到 AURA_DAMAGE）
+        if (tag.contains("AuraTargetModes", Tag.TAG_LIST)) {
+            ListTag modeList = tag.getList("AuraTargetModes", Tag.TAG_COMPOUND);
+            for (int i = 0; i < modeList.size(); i++) {
+                CompoundTag modeTag = modeList.getCompound(i);
+                String id = modeTag.getString("Id");
+                if (!id.isBlank()) {
+                    record.auraTargetModes.put(id, modeTag.getInt("Mode"));
+                }
+            }
+        } else if (tag.contains("AuraTargetMode", Tag.TAG_INT)) {
+            record.auraTargetModes.put(Skills.AURA_DAMAGE, tag.getInt("AuraTargetMode"));
+        }
         record.auraEnabled = !tag.contains("AuraEnabled") || tag.getBoolean("AuraEnabled");
         record.totalConvertedPoints = tag.getLong("TotalConvertedPoints"); // 旧存档无此字段默认 0
         if (tag.contains("ActiveLevels", Tag.TAG_LIST)) {

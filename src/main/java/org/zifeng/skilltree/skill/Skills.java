@@ -272,6 +272,14 @@ public final class Skills {
         return SkillType.BASE;
     }
 
+    /**
+     * 技能是否需要开关（2026-08-13 需求）：全部技能都可开关（含时之环/晴空环，
+     * 用户要求保留开关快捷键——关闭即停止锁定时间/天气）。
+     */
+    public static boolean isTogglable(String skillId) {
+        return true;
+    }
+
     /** 杀戮光环：每项上限 */
     public static int getAuraMaxPoints(String skillId) {
         return switch (skillId) {

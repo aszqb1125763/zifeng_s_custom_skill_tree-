@@ -40,6 +40,12 @@ public record SetSkillLevelC2SPacket(String skillId, int level) implements Custo
                 record.setActiveLevel(packet.skillId(), packet.level());
                 data.setDirty();
                 SkillEffects.applyAll(player, record);
+                // 聊天提示（2026-08-13 需求：等级循环快捷键调整时显示当前生效等级）
+                String name = Skills.getDisplayName(packet.skillId());
+                int learned = record.getLearnedPoints(packet.skillId());
+                int active = packet.level();
+                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                        "📶 " + name + " 生效等级：" + active + (learned > 0 ? " / " + learned + " 级" : "")));
                 PacketDistributor.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
             }

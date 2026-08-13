@@ -238,7 +238,8 @@ public class AuraEvents {
         }
         // 伤害 = 玩家实际攻击伤害属性值（基础1 + 光环伤害每级+5%乘算 + 锋刃 + 增幅/全能精通百分比加成）
         float damage = (float) player.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE);
-        int mode = record.getAuraTargetMode();
+        // 2026-08-13 需求：每个光环独立目标模式（伤害光环用伤害自己的模式）
+        int mode = record.getAuraTargetMode(Skills.AURA_DAMAGE);
         // 光环速度升级额外获得【无视每帧伤害】：学了速度光环且开启 → 每次攻击无视目标受击无敌帧（原版生物受伤后 1 秒内免疫，限制高频攻击）
         boolean ignoreIFrames = record.getLearnedPoints(Skills.AURA_SPEED) > 0 && record.isEnabled(Skills.AURA_SPEED);
 
@@ -537,14 +538,21 @@ public class AuraEvents {
             return;
         }
         double radius = SkillEffects.getAuraHealRadius();
+        // 2026-08-13 需求：治愈光环用自己独立的目标模式（0 敌对 / 1 友好 / 2 所有）
+        int healMode = record.getAuraTargetMode(Skills.AURA_HEAL);
         // xyz 三轴全 10 格（立方体范围，不压缩 Y）
         List<LivingEntity> allies = player.level().getEntitiesOfClass(LivingEntity.class,
                 player.getBoundingBox().inflate(radius, radius, radius),
                 target -> {
-                    // 治疗对象：非敌对（Enemy 接口，覆盖面比 Monster 更广）且非玩家自身
-                    return target.isAlive() && target != player
-                            && !(target instanceof Enemy)
-                            && target.getHealth() < target.getMaxHealth();
+                    if (!target.isAlive() || target == player || target.getHealth() >= target.getMaxHealth()) {
+                        return false;
+                    }
+                    boolean hostile = target instanceof Enemy;
+                    return switch (healMode) {
+                        case 1 -> !hostile;      // 友好：只奶非敌对
+                        case 2 -> true;          // 所有：全奶
+                        default -> !hostile;     // 敌对模式（默认）：非敌对（治愈默认奶友好）
+                    };
                 });
         // 生命回复效果：amplifier = level - 1（1 级 = 生命回复I，50 级 = 生命回复50）
         var regen = new net.minecraft.world.effect.MobEffectInstance(

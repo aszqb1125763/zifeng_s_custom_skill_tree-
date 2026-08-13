@@ -10,13 +10,16 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.zifeng.skilltree.SkillTreeMod;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
+import org.zifeng.skilltree.skill.Skills;
 
 /**
  * 杀戮光环目标模式切换（客户端 → 服务端）：0=敌对 1=友好 2=所有。
+ * 2026-08-13 需求：每个光环独立目标模式（skillId 指定）。
  */
-public record AuraTargetC2SPacket(int mode) implements CustomPacketPayload {
+public record AuraTargetC2SPacket(String skillId, int mode) implements CustomPacketPayload {
     public static final Type<AuraTargetC2SPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "aura_target"));
     public static final StreamCodec<FriendlyByteBuf, AuraTargetC2SPacket> STREAM_CODEC = StreamCodec.composite(
+            ByteBufCodecs.STRING_UTF8, AuraTargetC2SPacket::skillId,
             ByteBufCodecs.VAR_INT, AuraTargetC2SPacket::mode,
             AuraTargetC2SPacket::new);
 
@@ -28,9 +31,12 @@ public record AuraTargetC2SPacket(int mode) implements CustomPacketPayload {
     public static void handle(AuraTargetC2SPacket packet, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (ctx.flow().isServerbound() && ctx.player() instanceof ServerPlayer player) {
+                if (!Skills.AURA_SKILLS.contains(packet.skillId())) {
+                    return;
+                }
                 PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
                 PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
-                record.setAuraTargetMode(packet.mode());
+                record.setAuraTargetMode(packet.skillId(), packet.mode());
                 data.setDirty();
                 // 聊天提示（图标区分模式，与目标类型强相关：敌对💀 / 友好🐑 / 所有🌍）
                 String[] icons = {"💀", "🐑", "🌍"};
@@ -41,7 +47,7 @@ public record AuraTargetC2SPacket(int mode) implements CustomPacketPayload {
                 };
                 String icon = icons[Math.max(0, Math.min(2, packet.mode()))];
                 player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                        icon + " 杀戮光环目标：" + modeText));
+                        icon + " " + Skills.getDisplayName(packet.skillId()) + "目标：" + modeText));
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
             }

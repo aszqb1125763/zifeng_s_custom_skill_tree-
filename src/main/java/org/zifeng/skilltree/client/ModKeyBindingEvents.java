@@ -38,8 +38,24 @@ public class ModKeyBindingEvents {
     /** 所有技能已学缓存（2026-08-13：任意技能可绑定独立开关快捷键，用全部技能已学状态判断） */
     private static final Map<String, Boolean> allSkillsLearnedCache = new HashMap<>();
 
+    /** 所有技能已学等级缓存（2026-08-13 第二快捷键循环等级用：技能ID → 已学等级） */
+    private static final Map<String, Integer> allSkillsLevelsCache = new HashMap<>();
+
     /** 所有技能开关缓存（2026-08-13：全技能开关状态，供快捷键与渲染辅助） */
     private static final Map<String, Boolean> allTogglesCache = new HashMap<>();
+
+    /** 所有技能生效等级缓存（2026-08-13 第二快捷键循环等级用：技能ID → 当前生效等级） */
+    private static final Map<String, Integer> allActiveLevelsCache = new HashMap<>();
+
+    /** 辅助：已学等级 */
+    private static int learnedPointsOf(String skillId) {
+        return allSkillsLevelsCache.getOrDefault(skillId, 0);
+    }
+
+    /** 辅助：当前生效等级 */
+    private static int activeLevelOf(String skillId) {
+        return allActiveLevelsCache.getOrDefault(skillId, 0);
+    }
 
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Pre event) {
@@ -49,6 +65,10 @@ public class ModKeyBindingEvents {
         if (Minecraft.getInstance().screen == null) { // 界面打开时不触发（避免与设置窗口/技能树交互冲突）
             for (String skillId : org.zifeng.skilltree.client.SkillKeyBinds.allBinds().keySet()) {
                 if (org.zifeng.skilltree.client.SkillKeyBinds.consumeClick(skillId)) {
+                    // 无需开关的技能（时之环/晴空环常驻被动）不响应开关
+                    if (!Skills.isTogglable(skillId)) {
+                        continue;
+                    }
                     // 已学才触发（光环技能走 auraLearnedCache，其余技能走 allSkillsLearnedCache）
                     boolean learned = auraLearnedCache.getOrDefault(skillId, Boolean.FALSE)
                             || allSkillsLearnedCache.getOrDefault(skillId, Boolean.FALSE);
@@ -59,12 +79,55 @@ public class ModKeyBindingEvents {
                     }
                 }
             }
+            // 第二快捷键（2026-08-13 需求）：光环技能=循环目标模式；可调等级技能=循环生效等级（0→已学等级）
+            for (String skillId : org.zifeng.skilltree.client.SkillKeyBinds.allLevelBinds().keySet()) {
+                if (org.zifeng.skilltree.client.SkillKeyBinds.consumeLevelClick(skillId)) {
+                    boolean learned = auraLearnedCache.getOrDefault(skillId, Boolean.FALSE)
+                            || allSkillsLearnedCache.getOrDefault(skillId, Boolean.FALSE);
+                    if (!learned) {
+                        continue;
+                    }
+                    // 光环技能：循环该光环自己的目标模式（0 敌对 → 1 友好 → 2 所有 → 0）
+                    if (Skills.AURA_SKILLS.contains(skillId)) {
+                        int cur = auraTargetModes.getOrDefault(skillId, 0);
+                        int next = (cur + 1) % 3;
+                        auraTargetModes.put(skillId, next);
+                        PacketDistributor.sendToServer(new org.zifeng.skilltree.network.AuraTargetC2SPacket(skillId, next));
+                        continue;
+                    }
+                    // 可调等级技能：生效等级循环（2026-08-13 需求：支持步进 + Alt 反向）
+                    //  按键：+1 级；Shift：+10；Ctrl+Shift：+100；Alt：反向（-1/-10/-100）；到界回 0
+                    int learnedPoints = learnedPointsOf(skillId);
+                    if (learnedPoints <= 0) {
+                        continue;
+                    }
+                    boolean altDown = net.minecraft.client.gui.screens.Screen.hasAltDown();
+                    int step;
+                    if (net.minecraft.client.gui.screens.Screen.hasShiftDown() && net.minecraft.client.gui.screens.Screen.hasControlDown()) {
+                        step = 100;
+                    } else if (net.minecraft.client.gui.screens.Screen.hasShiftDown()) {
+                        step = 10;
+                    } else {
+                        step = 1;
+                    }
+                    int current = activeLevelOf(skillId);
+                    int nextLevel;
+                    if (altDown) {
+                        // Alt：反向（递减；到 0 回到已学上限）
+                        nextLevel = current <= 0 ? learnedPoints : Math.max(0, current - step);
+                    } else {
+                        // 正向（递增；到已学上限回 0）
+                        nextLevel = current >= learnedPoints ? 0 : Math.min(learnedPoints, current + step);
+                    }
+                    PacketDistributor.sendToServer(new org.zifeng.skilltree.network.SetSkillLevelC2SPacket(skillId, nextLevel));
+                }
+            }
         }
         while (ModKeyBindings.OPEN_SKILL_TREE.consumeClick()) {
             // 客户端乐观打开技能树界面（空数据），服务端回发数据包后 updateData 填充
             Minecraft mc = Minecraft.getInstance();
             if (!(mc.screen instanceof SkillTreeScreen)) {
-                mc.setScreen(new SkillTreeScreen(0, Map.of(), Map.of(), Map.of(), true, 0));
+                mc.setScreen(new SkillTreeScreen(0, Map.of(), Map.of(), Map.of(), true, Map.of()));
             }
             PacketDistributor.sendToServer(new OpenSkillTreeC2SPacket());
         }
@@ -73,11 +136,16 @@ public class ModKeyBindingEvents {
         // 统一改由技能树界面内为每个技能绑定独立开关快捷键（SkillKeyBinds，见上方循环）。
     }
 
-    private static int lastMode = 0;
+    /** 各光环目标模式客户端缓存（2026-08-13 需求：每个光环独立，技能ID → 0/1/2） */
+    private static final Map<String, Integer> auraTargetModes = new HashMap<>();
 
-    /** 由服务端回发的技能数据校准本地目标模式（防 L 键循环从错误状态开始） */
-    public static void setLastMode(int mode) {
-        lastMode = Math.max(0, Math.min(2, mode));
+    /** 由服务端回发的技能数据校准各光环目标模式 */
+    public static void setAuraTargetModes(Map<String, Integer> modes) {
+        if (modes == null) {
+            return;
+        }
+        auraTargetModes.clear();
+        auraTargetModes.putAll(modes);
     }
     /** 由服务端回发的技能数据校准光环总开关（供圆环渲染器使用） */
     public static void setAuraEnabledClient(boolean auraEnabled) {
@@ -130,9 +198,21 @@ public class ModKeyBindingEvents {
         }
         // 全技能已学缓存（2026-08-13：任意技能可绑定独立开关快捷键）
         allSkillsLearnedCache.clear();
+        allSkillsLevelsCache.clear();
         for (String skillId : Skills.ALL_SKILLS) {
-            allSkillsLearnedCache.put(skillId, learnedSkills.getOrDefault(skillId, 0) > 0);
+            int lv = learnedSkills.getOrDefault(skillId, 0);
+            allSkillsLearnedCache.put(skillId, lv > 0);
+            allSkillsLevelsCache.put(skillId, lv);
         }
+    }
+
+    /** 由服务端回发的技能数据校准生效等级缓存（2026-08-13 第二快捷键循环等级用） */
+    public static void updateActiveLevels(Map<String, Integer> activeLevels) {
+        if (activeLevels == null) {
+            return;
+        }
+        allActiveLevelsCache.clear();
+        allActiveLevelsCache.putAll(activeLevels);
     }
 
     /** 是否有光环快捷键未绑定（2026-08-13 起原版快捷键全部移除，技能开关统一在技能树界面绑定 → 恒 false 不再提示） */
