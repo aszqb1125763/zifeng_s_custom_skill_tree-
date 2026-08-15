@@ -48,14 +48,17 @@ public class MagnetEvents {
         if (record.getLearnedPoints(Skills.AURA_MAGNET) <= 0 || !record.isEnabled(Skills.AURA_MAGNET)) {
             return;
         }
+        // ⚠️ 性能优化（2026-08-15）：磁铁恢复原效果（全半径全量吸取），改为每 2 tick（0.1 秒）扫描一次——
+        //    比原版每 tick 更省开销，比 10 tick 更灵敏（吸取响应快，不卡顿）。
+        if (player.tickCount % 2 != 0) {
+            return;
+        }
         // 虚空之矛：已学即提供磁铁范围增幅（55 格，Config 可调，经验和掉落物都生效）
         boolean voidSpear = record.getLearnedPoints(Skills.AURA_VOID) > 0;
         double itemRadius = voidSpear ? Config.VOID_MAGNET_RADIUS.get() : Config.MAGNET_ITEM_RADIUS.get();
         double xpRadius = voidSpear ? Config.VOID_MAGNET_RADIUS.get() : Config.MAGNET_XP_RADIUS.get();
-        // 每 10 tick 全半径扫描，其余 tick 只扫 5 格（性能优化）
-        boolean fullScan = player.tickCount % 10 == 0;
-        attractItems(player, fullScan ? itemRadius : Math.min(5.0, itemRadius));
-        attractXp(player, fullScan ? xpRadius : Math.min(5.0, xpRadius));
+        attractItems(player, itemRadius);
+        attractXp(player, xpRadius);
     }
 
     /** 吸取掉落物：传送到玩家脚下自然掉落（由原版拾取机制自动进背包，背包满则留在地上） */
@@ -66,10 +69,19 @@ public class MagnetEvents {
         if (items.isEmpty()) {
             return;
         }
-        // 按距离从近到远排序（最近优先吸取）
-        items.sort(Comparator.comparingDouble(item -> item.distanceToSqr(player)));
+        // ⚠️ 性能优化（2026-08-15）：单 tick 处理上限——光环/战利品爆炸场景可能瞬间产生上千掉落物，
+        //    一次全部 teleportTo 会导致服务端卡死。限制每次最多处理 N 个（默认 64），其余下 tick 继续。
+        int maxPerTick = org.zifeng.skilltree.Config.MAGNET_MAX_PER_TICK.get();
+        int processed = 0;
+        // 按距离从近到远排序（最近优先吸取）——仅当数量超限时才需要排序（否则顺序遍历零开销）
+        if (items.size() > maxPerTick) {
+            items.sort(Comparator.comparingDouble(item -> item.distanceToSqr(player)));
+        }
         boolean any = false;
         for (ItemEntity item : items) {
+            if (processed >= maxPerTick) {
+                break;
+            }
             if (!item.isAlive() || item.getItem().isEmpty()) {
                 continue;
             }
@@ -83,6 +95,7 @@ public class MagnetEvents {
             item.setPickUpDelay(0);
             item.setDeltaMovement(0, 0, 0);
             any = true;
+            processed++;
         }
         if (any) {
             level.playSound(null, player.getX(), player.getY(), player.getZ(),
@@ -98,9 +111,17 @@ public class MagnetEvents {
         if (orbs.isEmpty()) {
             return;
         }
-        // 按距离从近到远排序
-        orbs.sort(Comparator.comparingDouble(orb -> orb.distanceToSqr(player)));
+        // ⚠️ 性能优化（2026-08-15）：单 tick 处理上限（与掉落物共享预算），防止上千经验球同时结算卡顿
+        int maxPerTick = org.zifeng.skilltree.Config.MAGNET_MAX_PER_TICK.get();
+        int processed = 0;
+        // 按距离从近到远排序——仅当数量超限时才需要排序
+        if (orbs.size() > maxPerTick) {
+            orbs.sort(Comparator.comparingDouble(orb -> orb.distanceToSqr(player)));
+        }
         for (ExperienceOrb orb : orbs) {
+            if (processed >= maxPerTick) {
+                break;
+            }
             if (!orb.isAlive()) {
                 continue;
             }
@@ -111,6 +132,7 @@ public class MagnetEvents {
             player.take(orb, 1);
             player.giveExperiencePoints(orb.value);
             orb.discard();
+            processed++;
         }
     }
 

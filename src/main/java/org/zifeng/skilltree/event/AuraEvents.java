@@ -1,6 +1,5 @@
 package org.zifeng.skilltree.event;
 
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -206,9 +205,8 @@ public class AuraEvents {
     private static int cachedIntervalSpeed = -1;
     private static int cachedInterval = 200;
 
-    /** 单轮光环攻击粒子预算（2026-08-15 性能优化）：刷怪塔海量目标时限制粒子总量，防掉帧 */
-    private static final int MAX_AURA_PARTICLES = 60;
-    private static int auraParticleBudget = 0;
+    /** 单轮光环攻击目标上限（2026-08-15 性能优化）：刷怪塔海量目标时每轮最多处理 N 个，防单轮全打卡顿 */
+    private static final int MAX_AURA_TARGETS = 64;
 
     private static void auraAttack(ServerPlayer player, PlayerSkillRecord record) {
         // ⚠️ 性能优化（2026-08-15）：间隔判断提到最前——大部分 tick 在此直接返回，
@@ -227,17 +225,18 @@ public class AuraEvents {
         }
         // —— 以下仅在触发 tick 执行 ——
         int damageLevel = record.getLearnedPoints(Skills.AURA_DAMAGE);
-        // 虚空之矛：杀戮光环升级（已学即提供升级效果）。伤害生效只跟随杀戮光环开关（K 键）：
-        // 伤害或速度光环任一【已学且开启】（K 键开启状态）→ 虚空之矛秒杀生效；否则虚空之矛伤害停
+        // 虚空之矛：杀戮光环升级（2026-08-15 需求：开关分离——只跟随伤害光环开关）
+        // 速度光环只加速攻击频率，不决定是否攻击；伤害光环关闭 → 光环完全停止（含虚空之矛）
         boolean voidSpear = record.getLearnedPoints(Skills.AURA_VOID) > 0
-                && ((record.getLearnedPoints(Skills.AURA_DAMAGE) > 0 && record.isEnabled(Skills.AURA_DAMAGE))
-                || (record.getLearnedPoints(Skills.AURA_SPEED) > 0 && record.isEnabled(Skills.AURA_SPEED)));
+                && record.getLearnedPoints(Skills.AURA_DAMAGE) > 0
+                && record.isEnabled(Skills.AURA_DAMAGE);
         // 杀戮光环·强化：学了才解锁混沌伤害/Boss混沌连击/破盾/守卫水晶特判（拆自光环本体的强化机制）
         boolean empower = record.getLearnedPoints(Skills.AURA_EMPOWER) > 0;
         if (damageLevel <= 0 && !voidSpear) {
             return;
         }
-        if (!record.isEnabled(Skills.AURA_DAMAGE) && !voidSpear) {
+        // ⚠️ 2026-08-15 需求：伤害光环开关独立控制攻击——伤害关闭则完全停止（不再被速度光环带动）
+        if (!record.isEnabled(Skills.AURA_DAMAGE)) {
             return;
         }
         // 伤害 = 玩家实际攻击伤害属性值（基础1 + 光环伤害每级+5%乘算 + 锋刃 + 增幅/全能精通百分比加成）
@@ -271,8 +270,11 @@ public class AuraEvents {
         if (serverLevel == null) {
             return;
         }
-        // 粒子预算重置（2026-08-15）：每轮攻击开始清零，伤害循环内按目标消耗
-        auraParticleBudget = 0;
+        // ⚠️ 性能优化（2026-08-15）：单轮目标上限——刷怪塔海量目标时，一轮全打上百目标（每个 hurt 全链路结算）
+        //    会卡死服务器。限制每轮最多处理 MAX_AURA_TARGETS 个，超出的下轮继续（视觉上仍是持续清怪）。
+        if (targets.size() > MAX_AURA_TARGETS) {
+            targets.subList(MAX_AURA_TARGETS, targets.size()).clear();
+        }
         // 手持武器（主手）：光环伤害附带该武器全部附魔（锋利/亡灵杀手/节肢杀手/火焰附加/冰霜之刃等，伤害与效果全部生效）
         ItemStack weapon = player.getMainHandItem();
         // 对范围内全部有效目标逐个造成伤害（Draconic/ProjectE 全打思路），每个目标独立命中判定
@@ -295,11 +297,7 @@ public class AuraEvents {
                             hit = true;
                         }
                     }
-                    if (hit) {
-                        serverLevel.sendParticles(ParticleTypes.DRAGON_BREATH,
-                                targetEntity.getX(), targetEntity.getY() + targetEntity.getBbHeight() * 0.5, targetEntity.getZ(),
-                                10, 0.3, 0.3, 0.3, 0.02);
-                    }
+                    // 粒子已删除（2026-08-15 测试：排查粒子是否导致卡顿）
                 }
                 continue; // 水晶不参与 LivingEntity 逻辑
             }
@@ -307,7 +305,9 @@ public class AuraEvents {
                 continue; // 其他非 LivingEntity 实体（如物品/箭）跳过
             }
             // 虚空之矛秒杀（参考虚空之矛 damageLoop + forceFinish）：对普通生物直接绝对秒杀（1 亿×循环+兜底强杀）
-            // ⚠️ Boss/DE 守卫仍走下方混沌连击逻辑：混沌守卫有护盾格挡，虚空秒杀会被格挡，混沌连击已验证有效
+            // 虚空之矛秒杀（2026-08-15 优化）：
+            //   · 普通怪：混沌伤害源秒杀（3 次 hurt + forceFinish），伤害挂 Boss 判定（chaotic 标签）
+            //   · Boss/DE 守卫：混沌秒杀优先（混沌伤害源可穿透 Boss 免疫），未击杀再走混沌连击削盾兜底
             if (voidSpear && !isBossEntity(target)) {
                 voidSpearKill(serverLevel, player, target);
                 continue;
@@ -321,34 +321,38 @@ public class AuraEvents {
             // 附魔加成：modifyDamage 把武器附魔的伤害增幅算入本次光环攻击（锋利/亡灵/节肢等）
             float finalDamage = weapon.isEmpty() ? damage
                     : EnchantmentHelper.modifyDamage(serverLevel, weapon, target, source, damage);
-            // Boss 混沌连击（光环·强化）：混沌伤害源可穿透 Boss 护盾/免疫机制（DE 混沌守卫、原版 Boss、其他模组 Boss 自动生效）
-            // 原理：DE 的 getDamageLevel() 识别带 draconicevolution:chaotic 标签的伤害为 CHAOTIC 级 → chaoticBypassCrystalShield 生效；
-            //      其他 Boss 则因混沌伤害 = 无视护甲的真实伤害 + 高倍率，能有效输出。
-            // ⚠️ 连击削盾：DE 守卫单次伤害上限 500 + hitCooldown（伤害 < 上次×1.1 忽略），
-            //    用多次递增伤害（×1.15）绕过保护，一次光环攻击累计打出大量伤害（约 60 万+）。
-            if (empower && isBossEntity(target)) {
+            // Boss 分支（2026-08-15 需求：虚空之矛伤害挂 Boss 判定）：
+            //   · 学了虚空之矛 → 先用混沌伤害源对 Boss 尝试虚空秒杀（混沌秒杀挂 Boss 判定，可穿透 Boss 护盾/免疫）
+            //   · 未学虚空之矛 或 混沌秒杀未击杀（DE 守卫水晶护盾格挡）→ 降级混沌连击削盾
+            if (isBossEntity(target)) {
                 DamageSource chaosSource = buildChaosSource(serverLevel, player);
                 if (chaosSource != null) {
-                    float base = Math.max(5000.0F, finalDamage * 400.0F);
-                    boolean hit = false;
-                    // 混沌连击削盾（正常伤害通道）
-                    for (int i = 0; i < 30; i++) {
-                        if (target.hurt(chaosSource, base * (float) Math.pow(1.15, i))) {
+                    if (voidSpear) {
+                        // 虚空之矛混沌秒杀 Boss：3 次混沌伤害（1 亿）→ 未死再 forceFinish
+                        voidSpearKill(serverLevel, player, target);
+                        if (!target.isAlive()) {
+                            continue; // 秒杀成功
+                        }
+                        // 未击杀（DE 守卫水晶护盾格挡）：继续走混沌连击
+                    }
+                    // 混沌连击削盾（正常伤害通道，empower 才触发；无 empower 不削盾）
+                    if (empower) {
+                        float base = Math.max(5000.0F, finalDamage * 400.0F);
+                        boolean hit = false;
+                        for (int i = 0; i < 30; i++) {
+                            if (target.hurt(chaosSource, base * (float) Math.pow(1.15, i))) {
+                                hit = true;
+                            }
+                        }
+                        // 无视水晶护盾直击：DE 混沌守卫在水晶存活时 hurt 会被 onGuardianAttacked 完全格挡，
+                        // 用反射调用 protected attackDragonFrom 绕过格挡直接扣血（不依赖 DE 编译，保留战斗节奏）
+                        if (isDraconicGuardian(target)) {
+                            attackDragonDirect(target, chaosSource, base * 2.0F);
                             hit = true;
                         }
+                        // 粒子已删除（2026-08-15 测试）
                     }
-                    // 无视水晶护盾直击：DE 混沌守卫在水晶存活时 hurt 会被 onGuardianAttacked 完全格挡，
-                    // 用反射调用 protected attackDragonFrom 绕过格挡直接扣血（不依赖 DE 编译，保留战斗节奏）
-                    if (isDraconicGuardian(target)) {
-                        attackDragonDirect(target, chaosSource, base * 2.0F);
-                        hit = true;
-                    }
-                    if (hit) {
-                        serverLevel.sendParticles(ParticleTypes.DRAGON_BREATH,
-                                target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
-                                10, 0.3, 0.3, 0.3, 0.02);
-                    }
-                    continue; // 混沌连击已生效，跳过普通伤害
+                    continue; // Boss 已用混沌伤害处理，跳过普通伤害
                 }
             }
             if (target.hurt(source, finalDamage)) {
@@ -363,26 +367,10 @@ public class AuraEvents {
                     float chaosDamage = Math.max(1.0F, finalDamage * (float) chaosRatio);
                     // 魔法伤害无视护甲（混沌武器的真实伤害特性）
                     target.hurt(player.damageSources().indirectMagic(player, player), chaosDamage);
-                    // 混沌能量粒子（紫色龙息，混沌主题）——受聚合上限限制（防止海量目标时粒子爆炸）
-                    if (auraParticleBudget < MAX_AURA_PARTICLES) {
-                        serverLevel.sendParticles(ParticleTypes.DRAGON_BREATH,
-                                target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
-                                5, 0.2, 0.2, 0.2, 0.02);
-                    }
+                    // 混沌能量粒子已删除（2026-08-15 测试）
                 }
-                // 伤害指示粒子数量随实际伤害缩放（Draconic dealAOEDamage 做法，打击感随伤害成长）
-                // ⚠️ 性能优化（2026-08-15）：聚合预算——整轮攻击总粒子数上限，海量目标时降为单个目标最少粒子，
-                //    避免刷怪塔场景上千粒子同时发送导致掉帧/卡顿。
+                // 伤害指示粒子已删除（2026-08-15 测试：排查粒子是否导致卡顿）
                 float damageDealt = healthBefore - target.getHealth();
-                if (auraParticleBudget < MAX_AURA_PARTICLES) {
-                    int particleCount = Math.max(1, Math.min(30, (int) (damageDealt * 0.5)));
-                    int remaining = MAX_AURA_PARTICLES - auraParticleBudget;
-                    particleCount = Math.min(particleCount, Math.max(1, remaining));
-                    auraParticleBudget += particleCount;
-                    serverLevel.sendParticles(ParticleTypes.DAMAGE_INDICATOR,
-                            target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
-                            particleCount, 0.15, 0.15, 0.15, 0.05);
-                }
             }
         }
     }
@@ -510,15 +498,30 @@ public class AuraEvents {
      * </ul>
      * 伤害源归属玩家（indirectMagic(player, player)）→ 击杀归功/掉落增幅/生命汲取全部生效。
      */
+    /**
+     * 虚空秒杀：对单个目标执行绝对击杀（参考虚空之矛，2026-08-15 性能优化）：
+     * <ul>
+     *   <li>① 秒杀：1 亿伤害 × 3 次（原 64 次，性能优化——刷怪塔场景 50 目标 × 64 = 3200 次 hurt 卡死服务器；
+     *       1 亿伤害第 1 次即秒杀绝大多数生物，3 次兜底无敌帧/免疫，forceFinish 处理极端免疫）</li>
+     *   <li>② 伤害源优先用混沌伤害（buildChaosSource，带 chaotic 标签）→ 挂 Boss 判定：DE 守卫/Boss 免疫
+     *       也能被秒杀命中；无混沌伤害源时降级魔法伤害</li>
+     *   <li>③ forceFinish 兜底：清吸收 + Float.MAX 强杀 + 血量归零 + die()，对伤害免疫实体也能强杀</li>
+     * </ul>
+     * 伤害源归属玩家（attacker=player）→ 击杀归功/掉落增幅/生命汲取全部生效。
+     */
     private static void voidSpearKill(ServerLevel level, ServerPlayer player, LivingEntity target) {
         if (target == null || !target.isAlive()) {
             return;
         }
-        // ① 秒杀循环：1 亿伤害 × 64 次，每次清零无敌帧（虚空之矛 damageLoop 思路）
-        //    indirectMagic：魔法伤害无视护甲/部分免疫，attacker=player → 击杀归功玩家
-        net.minecraft.world.damagesource.DamageSource voidSource = player.damageSources().indirectMagic(player, player);
+        // ① 混沌伤害源优先（Boss 判定挂载：chaotic 标签可穿透 DE 守卫护盾/Boss 免疫）；
+        //    无混沌源（未装 DE/无自定义伤害）时降级魔法伤害
+        net.minecraft.world.damagesource.DamageSource voidSource = buildChaosSource(level, player);
+        if (voidSource == null) {
+            voidSource = player.damageSources().indirectMagic(player, player);
+        }
         final float VOID_DAMAGE = 100_000_000.0F; // 1 亿
-        for (int i = 0; i < 64; i++) {
+        // ② 秒杀循环：3 次（原 64 次）——1 亿伤害第 1 次即秒杀，3 次兜底无敌帧/单次伤害上限
+        for (int i = 0; i < 3; i++) {
             if (!target.isAlive()) {
                 break;
             }
@@ -526,7 +529,7 @@ public class AuraEvents {
             target.hurtTime = 0;
             target.hurt(voidSource, VOID_DAMAGE);
         }
-        // ② forceFinish 兜底（参考虚空之矛）：清吸收 + 强杀 + 血量归零 + die，对伤害免疫实体也能击杀
+        // ③ forceFinish 兜底（参考虚空之矛）：清吸收 + 强杀 + 血量归零 + die，对伤害免疫实体也能击杀
         if (target.isAlive()) {
             target.setAbsorptionAmount(0);
             target.hurt(player.damageSources().magic(), Float.MAX_VALUE);
@@ -535,10 +538,7 @@ public class AuraEvents {
                 target.die(voidSource);
             }
         }
-        // 虚空传送门粒子（虚空主题，参考虚空之矛范围秒杀的粒子表现）
-        level.sendParticles(ParticleTypes.PORTAL,
-                target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
-                12, 0.3, 0.3, 0.3, 0.02);
+        // 虚空传送门粒子已删除（2026-08-15 测试）
     }
 
     // ============ 治愈光环：给周围友方单位施加生命回复效果（等级 = 技能等级） ============

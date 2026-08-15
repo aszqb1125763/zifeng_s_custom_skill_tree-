@@ -353,7 +353,7 @@ public class UltimateEvents {
     //  ① 以【主目标为中心】的包围盒：水平 aoe 格、垂直仅 0.25 格（近战横扫是水平扇面）
     //  ② 【100° 扇形】角度过滤：只打玩家面朝方向 ±50° 内的敌人（非 360° 全向）
     //  ③ 排除：自己、主目标、友方（isAlliedTo）、距离过近（<1）
-    //  ④ 命中：playerAttack 伤害源 + 击退 0.4 + 伤害指示粒子
+    //  ④ 命中：playerAttack 伤害源 + 击退 0.4（粒子已删：横扫高伤害 × 粒子数=伤害×0.5 会巨量红心卡顿）
     //  ⑤ 蓄力门槛：攻击强度 > 0.9 才触发（满蓄力横扫）
     // 用 LivingIncomingDamageEvent（1.21.1 无 LivingAttackEvent）；AOE 用 hurt 直伤 + SWEEP_SOURCE 防递归。
     private static final java.util.Set<UUID> SWEEP_SOURCE = new java.util.HashSet<>();
@@ -419,12 +419,7 @@ public class UltimateEvents {
                 // ④ 命中：playerAttack 伤害源（吃护甲/减伤）+ 击退
                 if (entity.hurt(damageSource, damage)) {
                     entity.knockback(0.4F, kx, kz);
-                    // 伤害指示粒子（龙研同款）
-                    if (attacker.level() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-                        serverLevel.sendParticles(net.minecraft.core.particles.ParticleTypes.DAMAGE_INDICATOR,
-                                entity.getX(), entity.getY(0.5D), entity.getZ(),
-                                Math.max(1, (int) (damage * 0.5D)), 0.1D, 0.0D, 0.1D, 0.2D);
-                    }
+                    // 粒子已删除（2026-08-15：横扫高伤害 × 粒子数=伤害×0.5 → 坚守者死亡时巨量红心卡顿）
                 }
             }
         } finally {
@@ -660,6 +655,10 @@ public class UltimateEvents {
             int maxMult = org.zifeng.skilltree.Config.LOOT_BOMB_MAX_MULTIPLIER.get();
             int bombMult = Math.min(maxMult, 1 + bombLevel);
             if (bombMult > 1) {
+                // 2026-08-15 优化：普通可堆叠物品按原倍率全量复制（恢复原效果，不设上限）；
+                // 装备类（不可堆叠，如盔甲/武器/工具）限制单件最多 20 份——装备无法堆叠，
+                //    复制 100 份会生成 100 个实体（卡顿+捡不完），20 份已足够。
+                int maxCopies = org.zifeng.skilltree.Config.LOOT_BOMB_MAX_COPIES_PER_KILL.get();
                 // 快照掉落物列表，避免遍历中修改
                 List<ItemEntity> snapshot = new java.util.ArrayList<>(event.getDrops());
                 for (ItemEntity item : snapshot) {
@@ -667,7 +666,14 @@ public class UltimateEvents {
                         continue;
                     }
                     // 复制 (bombMult-1) 份（item.copy() 独立栈）
-                    for (int i = 1; i < bombMult; i++) {
+                    // ⚠️ 装备类（不可堆叠）：单件上限 20 份（防 100 个装备实体卡顿+捡不完）；可堆叠物品按原倍率全量复制
+                    int copies;
+                    if (item.getItem().getMaxStackSize() <= 1 && maxCopies > 0) {
+                        copies = Math.min(bombMult - 1, maxCopies);
+                    } else {
+                        copies = bombMult - 1;
+                    }
+                    for (int i = 0; i < copies; i++) {
                         ItemEntity copy = new ItemEntity(sp.level(),
                                 item.getX(), item.getY(), item.getZ(),
                                 item.getItem().copy());

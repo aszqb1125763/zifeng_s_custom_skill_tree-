@@ -28,9 +28,8 @@ public class ModKeyBindingEvents {
     /** 磁力光环是否已学习（客户端缓存，服务端回发校准，圆环渲染判断用） */
     private static boolean magnetLearnedClient = false;
 
-    /** 杀戮光环·伤害/速度是否已学（客户端缓存，服务端回发校准；配合 toggles 判断光环真实状态） */
+    /** 杀戮光环·伤害 是否已学（客户端缓存，服务端回发校准；配合 toggles 判断光环真实状态） */
     private static boolean auraDamageLearned = false;
-    private static boolean auraSpeedLearned = false;
 
     /** 所有光环技能已学缓存（独立快捷键未学不触发用） */
     private static final Map<String, Boolean> auraLearnedCache = new HashMap<>();
@@ -157,10 +156,9 @@ public class ModKeyBindingEvents {
         return auraEnabledClient;
     }
 
-    /** 光环是否有攻击能力（伤害或速度技能【已学且开启】，渲染圆环用；isEnabled 默认 true，必须配合已学判断） */
+    /** 光环是否有攻击能力（2026-08-15 需求：只跟伤害光环，速度不决定是否攻击；渲染圆环用） */
     public static boolean isAuraAttackEnabled() {
-        return (auraDamageLearned && auraToggles.getOrDefault(Skills.AURA_DAMAGE, Boolean.TRUE))
-                || (auraSpeedLearned && auraToggles.getOrDefault(Skills.AURA_SPEED, Boolean.TRUE));
+        return auraDamageLearned && auraToggles.getOrDefault(Skills.AURA_DAMAGE, Boolean.TRUE);
     }
 
     /** 磁力光环是否开启（已学习且开关开启，渲染蓝色圆环用） */
@@ -192,7 +190,6 @@ public class ModKeyBindingEvents {
             return;
         }
         auraDamageLearned = learnedSkills.getOrDefault(Skills.AURA_DAMAGE, 0) > 0;
-        auraSpeedLearned = learnedSkills.getOrDefault(Skills.AURA_SPEED, 0) > 0;
         for (String skillId : Skills.AURA_SKILLS) {
             auraLearnedCache.put(skillId, learnedSkills.getOrDefault(skillId, 0) > 0);
         }

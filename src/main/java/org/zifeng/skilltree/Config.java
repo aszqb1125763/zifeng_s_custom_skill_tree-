@@ -126,6 +126,12 @@ public class Config {
     /** 战利品爆炸：掉落倍率封顶（1级=1倍，线性 1+等级；默认封顶 101） */
     public static final ModConfigSpec.IntValue LOOT_BOMB_MAX_MULTIPLIER;
 
+    /** 战利品爆炸：单次击杀最多生成的掉落副本数（2026-08-15 性能优化：光环一次杀大量怪物时防掉落物实体爆炸） */
+    public static final ModConfigSpec.IntValue LOOT_BOMB_MAX_COPIES_PER_KILL;
+
+    /** 磁力光环：单 tick 最多处理的掉落物/经验球数量（2026-08-15 性能优化：防止几千个同时瞬移卡顿） */
+    public static final ModConfigSpec.IntValue MAGNET_MAX_PER_TICK;
+
     /** 全能精通：所有基础属性额外增幅（小数） */
     public static final ModConfigSpec.DoubleValue MASTER_BONUS;
 
@@ -353,6 +359,12 @@ public class Config {
         LOOT_BOMB_MAX_MULTIPLIER = builder
                 .comment("战利品爆炸：掉落倍率封顶（1级=1倍，线性 1+等级，100级=101倍；默认 101）")
                 .defineInRange("lootBombMaxMultiplier", 101, 2, 1000000);
+        LOOT_BOMB_MAX_COPIES_PER_KILL = builder
+                .comment("战利品爆炸：单次击杀最多生成的掉落副本数（默认 20；光环/范围击杀大量怪物时防掉落物实体爆炸，0=不限制）")
+                .defineInRange("lootBombMaxCopiesPerKill", 20, 0, 1000000);
+        MAGNET_MAX_PER_TICK = builder
+                .comment("磁力光环：单 tick 最多处理的掉落物+经验球数量（默认 64；防止上千掉落物同时瞬移导致卡顿）")
+                .defineInRange("magnetMaxPerTick", 64, 1, 1000000);
         BLOOD_ATTACK_BONUS = builder
                 .comment("浴血奋战：常驻攻击力增幅（小数，0.5 = +50%）")
                 .defineInRange("bloodAttackBonus", 0.5, 0.0, 10.0);

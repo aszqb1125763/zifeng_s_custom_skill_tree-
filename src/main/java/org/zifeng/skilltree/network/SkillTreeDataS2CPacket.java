@@ -35,11 +35,9 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
 
     /** 从玩家技能记录构建数据包（统一便捷入口） */
     public static SkillTreeDataS2CPacket from(org.zifeng.skilltree.data.PlayerSkillRecord record) {
-        // 杀戮光环实际状态 = 伤害/速度【已学】且开启（K 键控制；isEnabled 默认 true，必须配合已学判断）
-        boolean auraOn = (record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.AURA_DAMAGE) > 0
-                && record.isEnabled(org.zifeng.skilltree.skill.Skills.AURA_DAMAGE))
-                || (record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.AURA_SPEED) > 0
-                && record.isEnabled(org.zifeng.skilltree.skill.Skills.AURA_SPEED));
+        // ⚠️ 2026-08-15 需求：光环状态只跟伤害光环（开关分离——速度只加速不决定是否攻击）
+        boolean auraOn = record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.AURA_DAMAGE) > 0
+                && record.isEnabled(org.zifeng.skilltree.skill.Skills.AURA_DAMAGE);
         return new SkillTreeDataS2CPacket(record.getSkillPoints(), record.getLearnedSkills(), record.getToggles(),
                 record.getActiveLevels(), auraOn, record.getAuraTargetModes());
     }
