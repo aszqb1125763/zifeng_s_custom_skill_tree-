@@ -206,7 +206,26 @@ public class AuraEvents {
     private static int cachedIntervalSpeed = -1;
     private static int cachedInterval = 200;
 
+    /** 单轮光环攻击粒子预算（2026-08-15 性能优化）：刷怪塔海量目标时限制粒子总量，防掉帧 */
+    private static final int MAX_AURA_PARTICLES = 60;
+    private static int auraParticleBudget = 0;
+
     private static void auraAttack(ServerPlayer player, PlayerSkillRecord record) {
+        // ⚠️ 性能优化（2026-08-15）：间隔判断提到最前——大部分 tick 在此直接返回，
+        //    后续所有开销（getLearnedPoints/isEnabled/扫描/伤害）只在触发 tick 执行。
+        int speedLevel = record.isEnabled(Skills.AURA_SPEED) ? record.getActiveLevel(Skills.AURA_SPEED) : 0;
+        // 间隔缓存：speedLevel 不变直接复用（避免每 tick Math.pow）
+        if (cachedIntervalSpeed != speedLevel) {
+            int baseInterval = org.zifeng.skilltree.Config.AURA_BASE_INTERVAL_TICKS.get();
+            double reduction = org.zifeng.skilltree.Config.AURA_SPEED_INTERVAL_REDUCTION.get();
+            cachedInterval = Math.max(10, (int) Math.round(baseInterval * Math.pow(1 - reduction, speedLevel)));
+            cachedIntervalSpeed = speedLevel;
+        }
+        int interval = cachedInterval;
+        if (player.level().getGameTime() % interval != 0) {
+            return;
+        }
+        // —— 以下仅在触发 tick 执行 ——
         int damageLevel = record.getLearnedPoints(Skills.AURA_DAMAGE);
         // 虚空之矛：杀戮光环升级（已学即提供升级效果）。伤害生效只跟随杀戮光环开关（K 键）：
         // 伤害或速度光环任一【已学且开启】（K 键开启状态）→ 虚空之矛秒杀生效；否则虚空之矛伤害停
@@ -219,21 +238,6 @@ public class AuraEvents {
             return;
         }
         if (!record.isEnabled(Skills.AURA_DAMAGE) && !voidSpear) {
-            return;
-        }
-        // 攻击间隔（tick）：基础 10 秒（200 tick），光环速度每级间隔×0.9（乘法递减）。
-        // 前10级 200→70 tick 变化明显，20级 ≈ 24 tick = 每秒约1.2次。
-        // ⚠️ 性能优化：不再与攻速属性挂钩（原先每 tick 攻击太耗性能），改为低频间隔触发。
-        int baseInterval = org.zifeng.skilltree.Config.AURA_BASE_INTERVAL_TICKS.get();
-        int speedLevel = record.isEnabled(Skills.AURA_SPEED) ? record.getActiveLevel(Skills.AURA_SPEED) : 0;
-        // 间隔缓存：speedLevel 不变直接复用（避免每 tick Math.pow）
-        if (cachedIntervalSpeed != speedLevel) {
-            double reduction = org.zifeng.skilltree.Config.AURA_SPEED_INTERVAL_REDUCTION.get();
-            cachedInterval = Math.max(10, (int) Math.round(baseInterval * Math.pow(1 - reduction, speedLevel)));
-            cachedIntervalSpeed = speedLevel;
-        }
-        int interval = cachedInterval;
-        if (player.level().getGameTime() % interval != 0) {
             return;
         }
         // 伤害 = 玩家实际攻击伤害属性值（基础1 + 光环伤害每级+5%乘算 + 锋刃 + 增幅/全能精通百分比加成）
@@ -267,6 +271,8 @@ public class AuraEvents {
         if (serverLevel == null) {
             return;
         }
+        // 粒子预算重置（2026-08-15）：每轮攻击开始清零，伤害循环内按目标消耗
+        auraParticleBudget = 0;
         // 手持武器（主手）：光环伤害附带该武器全部附魔（锋利/亡灵杀手/节肢杀手/火焰附加/冰霜之刃等，伤害与效果全部生效）
         ItemStack weapon = player.getMainHandItem();
         // 对范围内全部有效目标逐个造成伤害（Draconic/ProjectE 全打思路），每个目标独立命中判定
@@ -357,17 +363,26 @@ public class AuraEvents {
                     float chaosDamage = Math.max(1.0F, finalDamage * (float) chaosRatio);
                     // 魔法伤害无视护甲（混沌武器的真实伤害特性）
                     target.hurt(player.damageSources().indirectMagic(player, player), chaosDamage);
-                    // 混沌能量粒子（紫色龙息，混沌主题）
-                    serverLevel.sendParticles(ParticleTypes.DRAGON_BREATH,
-                            target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
-                            5, 0.2, 0.2, 0.2, 0.02);
+                    // 混沌能量粒子（紫色龙息，混沌主题）——受聚合上限限制（防止海量目标时粒子爆炸）
+                    if (auraParticleBudget < MAX_AURA_PARTICLES) {
+                        serverLevel.sendParticles(ParticleTypes.DRAGON_BREATH,
+                                target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
+                                5, 0.2, 0.2, 0.2, 0.02);
+                    }
                 }
                 // 伤害指示粒子数量随实际伤害缩放（Draconic dealAOEDamage 做法，打击感随伤害成长）
+                // ⚠️ 性能优化（2026-08-15）：聚合预算——整轮攻击总粒子数上限，海量目标时降为单个目标最少粒子，
+                //    避免刷怪塔场景上千粒子同时发送导致掉帧/卡顿。
                 float damageDealt = healthBefore - target.getHealth();
-                int particleCount = Math.max(1, Math.min(30, (int) (damageDealt * 0.5)));
-                serverLevel.sendParticles(ParticleTypes.DAMAGE_INDICATOR,
-                        target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
-                        particleCount, 0.15, 0.15, 0.15, 0.05);
+                if (auraParticleBudget < MAX_AURA_PARTICLES) {
+                    int particleCount = Math.max(1, Math.min(30, (int) (damageDealt * 0.5)));
+                    int remaining = MAX_AURA_PARTICLES - auraParticleBudget;
+                    particleCount = Math.min(particleCount, Math.max(1, remaining));
+                    auraParticleBudget += particleCount;
+                    serverLevel.sendParticles(ParticleTypes.DAMAGE_INDICATOR,
+                            target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
+                            particleCount, 0.15, 0.15, 0.15, 0.05);
+                }
             }
         }
     }
