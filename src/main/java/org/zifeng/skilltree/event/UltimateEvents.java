@@ -561,14 +561,21 @@ public class UltimateEvents {
                 }
             }
             // 1.5 荆棘反伤（受击时对攻击者反弹伤害；不反弹给自己，空手/物理攻击才反）
+            // ⚠️ 2026-08-16 修复：递归保护——荆棘伤害（minecraft:thorns）不再反弹。
+            //    否则两个都学荆棘的实体互相反弹 → onLivingIncomingDamage → hurt → ... 无限递归 StackOverflowError。
             double thorns = SkillEffects.getThornsDamage(record);
-            if (thorns > 0) {
+            if (thorns > 0 && !isThornsDamage(event.getSource())) {
                 var direct = event.getSource().getDirectEntity();
                 if (direct instanceof LivingEntity attacker && attacker != player) {
                     attacker.hurt(player.damageSources().thorns(player), (float) thorns);
                 }
             }
         }
+    }
+
+    /** 判断伤害源是否为荆棘反弹伤害（1.21.1 原版 DamageTypes.THORNS，防荆棘互弹递归） */
+    private static boolean isThornsDamage(net.minecraft.world.damagesource.DamageSource source) {
+        return source.is(net.minecraft.world.damagesource.DamageTypes.THORNS);
     }
 
     // ============ 全能精通：摔落免疫 + 击退免疫（参考 Re:Avaritia 无尽鞘翅/无尽盾） ============
