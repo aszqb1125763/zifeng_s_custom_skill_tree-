@@ -602,6 +602,8 @@ public class UltimateEvents {
     // ============ 掉落增幅：只对支持时运（方块）/抢夺（生物）的掉落表生效 ============
 
     // 反射访问 Minecraft loot 表内部结构（LootTable.pools → LootPool.entries → entry.conditions/functions）
+    // ⚠️ 2026-08-24 超大型整合包防御：字段允许为 null（反射失败时），不再 throw 导致类加载崩溃——
+    //    降级为"掉落增幅/时运抢夺判断返回 false"（功能禁用，其他技能不受影响）。
     private static final Field TABLE_POOLS;
     private static final Field POOL_ENTRIES;
     private static final Field ENTRY_CONDITIONS;
@@ -611,22 +613,37 @@ public class UltimateEvents {
     private static final Field ECI_ENCHANTMENT;
 
     static {
+        Field tablePools = null;
+        Field poolEntries = null;
+        Field entryConditions = null;
+        Field entryFunctions = null;
+        Field compositeChildren = null;
+        Field eciEnchantment = null;
         try {
-            TABLE_POOLS = LootTable.class.getDeclaredField("pools");
-            TABLE_POOLS.setAccessible(true);
-            POOL_ENTRIES = LootPool.class.getDeclaredField("entries");
-            POOL_ENTRIES.setAccessible(true);
-            ENTRY_CONDITIONS = LootPoolEntryContainer.class.getDeclaredField("conditions");
-            ENTRY_CONDITIONS.setAccessible(true);
-            ENTRY_FUNCTIONS = LootPoolSingletonContainer.class.getDeclaredField("functions");
-            ENTRY_FUNCTIONS.setAccessible(true);
-            COMPOSITE_CHILDREN = net.minecraft.world.level.storage.loot.entries.CompositeEntryBase.class.getDeclaredField("children");
-            COMPOSITE_CHILDREN.setAccessible(true);
-            ECI_ENCHANTMENT = EnchantedCountIncreaseFunction.class.getDeclaredField("enchantment");
-            ECI_ENCHANTMENT.setAccessible(true);
+            tablePools = LootTable.class.getDeclaredField("pools");
+            tablePools.setAccessible(true);
+            poolEntries = LootPool.class.getDeclaredField("entries");
+            poolEntries.setAccessible(true);
+            entryConditions = LootPoolEntryContainer.class.getDeclaredField("conditions");
+            entryConditions.setAccessible(true);
+            entryFunctions = LootPoolSingletonContainer.class.getDeclaredField("functions");
+            entryFunctions.setAccessible(true);
+            compositeChildren = net.minecraft.world.level.storage.loot.entries.CompositeEntryBase.class.getDeclaredField("children");
+            compositeChildren.setAccessible(true);
+            eciEnchantment = EnchantedCountIncreaseFunction.class.getDeclaredField("enchantment");
+            eciEnchantment.setAccessible(true);
         } catch (Exception e) {
-            throw new RuntimeException("zifeng: 无法初始化 loot 表反射字段", e);
+            // ⚠️ 2026-08-24：原 throw RuntimeException 会让整个 UltimateEvents 类加载失败 → 模组加载崩溃。
+            //    大型整合包中其他模组可能改 LootTable/LootPool 类结构 → 反射失败 → 这里降级为禁用掉落增幅。
+            org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger("zifeng_skilltree");
+            log.warn("[zifeng] 无法初始化掉落表反射字段，掉落增幅/时运判断功能将禁用（不影响其他技能）", e);
         }
+        TABLE_POOLS = tablePools;
+        POOL_ENTRIES = poolEntries;
+        ENTRY_CONDITIONS = entryConditions;
+        ENTRY_FUNCTIONS = entryFunctions;
+        COMPOSITE_CHILDREN = compositeChildren;
+        ECI_ENCHANTMENT = eciEnchantment;
     }
 
     // 缓存：掉落表 key -> 是否支持时运/抢夺（避免每次掉落都反射遍历）
@@ -705,15 +722,20 @@ public class UltimateEvents {
         // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 生物掉落·共鸣 才继承生物掉落倍率
         double mult = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_MOB_DROP)
                 ? SkillEffects.getMobDropMultiplier(record) : 1.0;
-        if (mult <= 1.0) {
-            return;
+        if (mult > 1.0) {
+            // 只对掉落表含"抢夺"条件的生物生效（如骷髅的骨头、僵尸的腐肉；猪肉/皮革不受抢夺影响不放大）
+            net.minecraft.resources.ResourceKey<LootTable> lootKey = event.getEntity().getLootTable();
+            if (lootKey != null && supportsLooting(lootKey, sp.serverLevel())) {
+                applyDropMultiplier(event.getDrops(), sp, mult);
+            }
         }
-        // 只对掉落表含"抢夺"条件的生物生效（如骷髅的骨头、僵尸的腐肉；猪肉/皮革不受抢夺影响不放大）
-        net.minecraft.resources.ResourceKey<LootTable> lootKey = event.getEntity().getLootTable();
-        if (lootKey == null || !supportsLooting(lootKey, sp.serverLevel())) {
-            return;
+        // ============ 凋落物挪移（光环技能，2026-08-24）：掉落物直传绑定容器，不生成实体（防卡顿）============
+        // ⚠️ 必须放在所有掉落技能【最后】执行：等战利品爆炸/刷怪蛋/头颅/生物掉落倍率全部结算完，
+        //    再把所有掉落物一起传送进容器——否则提前 return 会吞掉其他技能的掉落
+        // 全送完 → 取消掉落实体生成（无 ItemEntity，刷怪塔不卡）
+        if (LootVacuumEvents.tryVacuumDrops(sp, record, event.getDrops())) {
+            event.setCanceled(true);
         }
-        applyDropMultiplier(event.getDrops(), sp, mult);
     }
 
     /**
@@ -834,6 +856,12 @@ public class UltimateEvents {
                 if (lootKey != null && supportsFortune(lootKey, sp.serverLevel())) {
                     applyDropMultiplier(event.getDrops(), sp, mult);
                 }
+            }
+            // 凋落物挪移（光环技能，2026-08-24）：掉落物直传绑定容器，不生成实体（防卡顿）
+            // 放在最后：万物挖掘补掉落/自动熔炼/方块掉落倍率全部结算后再传送，收益最大化
+            // 全送完 → 清空掉落列表（getDrops 是 mutable list），实体不生成，经验照常掉落
+            if (LootVacuumEvents.tryVacuumDrops(sp, record, event.getDrops())) {
+                event.getDrops().clear();
             }
         }
     }
@@ -982,6 +1010,12 @@ public class UltimateEvents {
      * 时运/抢夺函数在 children 里，必须递归遍历（钻石矿 = alternatives → item 带 apply_bonus）。
      */
     private static boolean hasEnchantedBonus(LootTable table, Holder<Enchantment> target, boolean checkFortuneFunction) {
+        // ⚠️ 2026-08-24 防御：反射字段初始化失败时为 null（static 块已降级为 warn 不崩溃）→ 功能禁用
+        if (TABLE_POOLS == null || POOL_ENTRIES == null
+                || ENTRY_CONDITIONS == null || ENTRY_FUNCTIONS == null
+                || COMPOSITE_CHILDREN == null || ECI_ENCHANTMENT == null) {
+            return false;
+        }
         try {
             List<?> pools = (List<?>) TABLE_POOLS.get(table);
             if (pools == null) {

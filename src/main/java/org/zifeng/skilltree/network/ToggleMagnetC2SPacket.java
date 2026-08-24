@@ -38,25 +38,26 @@ public record ToggleMagnetC2SPacket() implements CustomPacketPayload {
                 if (record.getLearnedPoints(Skills.AURA_MAGNET) <= 0) {
                     // 未学习：消耗技能点学习并开启
                     double cost = Config.MAGNET_COST.get();
+                    String name = Skills.getDisplayName(Skills.AURA_MAGNET);
                     if (record.getSkillPoints() < cost - 1e-9) {
-                        player.sendSystemMessage(Component.literal("⚠ 技能点不足，学习磁力光环需要 " + String.format("%.0f", cost) + " 技能点"));
+                        player.sendSystemMessage(Component.literal("⚠ 技能点不足，学习" + name + "需要 " + String.format("%.0f", cost) + " 技能点"));
                         return;
                     }
                     if (!record.learnSkill(Skills.AURA_MAGNET)) {
-                        player.sendSystemMessage(Component.literal("⚠ 无法学习磁力光环"));
+                        player.sendSystemMessage(Component.literal("⚠ 无法学习" + name));
                         return;
                     }
                     record.setEnabled(Skills.AURA_MAGNET, true);
                     data.setDirty();
-                    player.sendSystemMessage(Component.literal("🧲 磁力光环已学习并开启（消耗 " + String.format("%.0f", cost) + " 技能点；潜行时暂停吸取）"));
+                    player.sendSystemMessage(Component.literal("🧲 " + name + "已学习并开启（消耗 " + String.format("%.0f", cost) + " 技能点；潜行时暂停吸取）"));
                 } else {
                     // 已学习：切换开关
                     boolean now = !record.isEnabled(Skills.AURA_MAGNET);
                     record.setEnabled(Skills.AURA_MAGNET, now);
                     data.setDirty();
                     player.sendSystemMessage(Component.literal(now
-                            ? "🧲 磁力光环已开启（潜行时暂停吸取）"
-                            : "🧲 磁力光环已关闭"));
+                            ? "🧲 " + Skills.getDisplayName(Skills.AURA_MAGNET) + "已开启（潜行时暂停吸取）"
+                            : "🧲 " + Skills.getDisplayName(Skills.AURA_MAGNET) + "已关闭"));
                 }
                 PacketDistributor.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
             }

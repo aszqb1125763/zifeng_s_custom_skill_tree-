@@ -93,7 +93,7 @@ public class SkillTreeScreen extends Screen {
 
     public SkillTreeScreen(int skillPoints, Map<String, Integer> learnedSkills, Map<String, Boolean> toggles,
                            Map<String, Integer> activeLevels, boolean auraEnabled, Map<String, Integer> auraTargetModes) {
-        super(Component.literal("技能树"));
+        super(Component.literal("子枫的百宝箱"));
         // 恢复上次退出时的位置/缩放（2026-08-13 需求：上次什么位置退出下次就什么位置）
         org.zifeng.skilltree.client.SkillKeyBinds.load();
         this.panX = org.zifeng.skilltree.client.SkillKeyBinds.getLastPanX();
@@ -356,7 +356,7 @@ public class SkillTreeScreen extends Screen {
                     if (Skills.AURA_DAMAGE.equals(skillId)) {
                         String modeText = modeTextOf(skillId);
                         lines = java.util.List.of(
-                                Component.literal("🎯 杀戮光环·伤害 · 目标循环键"),
+                                Component.literal("🎯 " + Skills.getDisplayName(skillId) + " · 目标循环键"),
                                 Component.literal("决定光环攻击打到谁：当前【" + modeText + "】"),
                                 Component.literal("敌对：只打怪物 ／ 友好：只打动物 ／ 所有：全打"),
                                 Component.literal(boundText),
@@ -365,7 +365,7 @@ public class SkillTreeScreen extends Screen {
                     } else if (Skills.AURA_SPEED.equals(skillId)) {
                         String modeText = modeTextOf(skillId);
                         lines = java.util.List.of(
-                                Component.literal("🎯 杀戮光环·速度 · 目标循环键"),
+                                Component.literal("🎯 " + Skills.getDisplayName(skillId) + " · 目标循环键"),
                                 Component.literal("本光环独立目标：当前【" + modeText + "】"),
                                 Component.literal("只影响光环攻击频率，与伤害光环互不干扰"),
                                 Component.literal(boundText),
@@ -374,7 +374,7 @@ public class SkillTreeScreen extends Screen {
                     } else if (Skills.AURA_HEAL.equals(skillId)) {
                         String modeText = modeTextOf(skillId);
                         lines = java.util.List.of(
-                                Component.literal("🎯 治愈光环 · 目标循环键"),
+                                Component.literal("🎯 " + Skills.getDisplayName(skillId) + " · 目标循环键"),
                                 Component.literal("决定光环治疗谁：当前【" + modeText + "】"),
                                 Component.literal("友好：只奶动物 ／ 所有：连敌对也奶（离谱但可行）"),
                                 Component.literal(boundText),
@@ -428,7 +428,7 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(width / 2.0, 10.0, 0);
         guiGraphics.pose().scale(0.8f, 0.8f, 1.0f);
-        String title = "子枫 · 技能树";
+        String title = "子枫的百宝箱";
         // 顶部状态行：显示伤害光环的目标模式（各光环独立后以伤害光环为代表）
         String modeText = modeTextOf(Skills.AURA_DAMAGE);
         // 第一行：状态信息（黄字，简短）
@@ -500,6 +500,15 @@ public class SkillTreeScreen extends Screen {
         // 2. 描述正文（白灰，正常字号）
         for (String line : Skills.getDescription(skillId).split("\\n")) {
             lines.add(new TooltipLine(line, 0xFFDDDDDD, 1.0F));
+        }
+        // 2.5 凋落物挪移：显示当前绑定容器（2026-08-24 需求：描述下方新增"绑定容器+坐标"）
+        if (Skills.AURA_LOOT_VACUUM.equals(skillId)) {
+            String bind = org.zifeng.skilltree.client.ModKeyBindingEvents.getLootVacuumBindClient();
+            if (bind == null) {
+                lines.add(new TooltipLine("§7未绑定容器", 0xFF888888, 1.0F));
+            } else {
+                lines.add(new TooltipLine("绑定容器：" + bind, 0xFF55FF55, 1.0F));
+            }
         }
 
         // 3. 消耗信息（金色，小一号）
@@ -1059,7 +1068,7 @@ public class SkillTreeScreen extends Screen {
 
     /** 顶部信息区包围盒 [left, top, right, bottom]（屏幕坐标，与 renderHeaderInfo 绘制一致） */
     private int[] headerBounds() {
-        String title = "子枫 · 技能树";
+        String title = "子枫的百宝箱";
         String modeText = modeTextOf(Skills.AURA_DAMAGE);
         String statusLine = "技能点：" + String.format("%.1f", Math.max(0, skillPoints))
                 + "   ·   光环:" + (auraEnabled ? "开" : "关")

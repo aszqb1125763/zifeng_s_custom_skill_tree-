@@ -38,25 +38,26 @@ public record ToggleLockC2SPacket() implements CustomPacketPayload {
                 if (record.getLearnedPoints(Skills.AURA_LOCK) <= 0) {
                     // 未学习：消耗技能点学习并开启
                     double cost = Config.LOCK_COST.get();
+                    String name = Skills.getDisplayName(Skills.AURA_LOCK);
                     if (record.getSkillPoints() < cost - 1e-9) {
-                        player.sendSystemMessage(Component.literal("⚠ 技能点不足，学习光环锁定需要 " + String.format("%.0f", cost) + " 技能点"));
+                        player.sendSystemMessage(Component.literal("⚠ 技能点不足，学习" + name + "需要 " + String.format("%.0f", cost) + " 技能点"));
                         return;
                     }
                     if (!record.learnSkill(Skills.AURA_LOCK)) {
-                        player.sendSystemMessage(Component.literal("⚠ 无法学习光环锁定"));
+                        player.sendSystemMessage(Component.literal("⚠ 无法学习" + name));
                         return;
                     }
                     record.setEnabled(Skills.AURA_LOCK, true);
                     data.setDirty();
-                    player.sendSystemMessage(Component.literal("🛡 光环锁定已学习并开启（消耗 " + String.format("%.0f", cost) + " 技能点；免疫 TP 与击退）"));
+                    player.sendSystemMessage(Component.literal("🛡 " + name + "已学习并开启（消耗 " + String.format("%.0f", cost) + " 技能点；免疫 TP 与击退）"));
                 } else {
                     // 已学习：切换开关
                     boolean now = !record.isEnabled(Skills.AURA_LOCK);
                     record.setEnabled(Skills.AURA_LOCK, now);
                     data.setDirty();
                     player.sendSystemMessage(Component.literal(now
-                            ? "🛡 光环锁定已开启（免疫 TP 与击退）"
-                            : "🛡 光环锁定已关闭"));
+                            ? "🛡 " + Skills.getDisplayName(Skills.AURA_LOCK) + "已开启（免疫 TP 与击退）"
+                            : "🛡 " + Skills.getDisplayName(Skills.AURA_LOCK) + "已关闭"));
                 }
                 PacketDistributor.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
             }

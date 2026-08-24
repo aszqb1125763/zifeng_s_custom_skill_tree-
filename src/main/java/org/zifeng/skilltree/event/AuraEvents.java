@@ -75,6 +75,9 @@ public class AuraEvents {
                 restoreWeatherLock(player);
             }
         }
+        // 清理光环攻击间隔 per-player 缓存（2026-08-24 多人修复：防 UUID 残留）
+        cachedIntervalByPlayer.remove(uuid);
+        cachedSpeedByPlayer.remove(uuid);
     }
 
     @SubscribeEvent
@@ -201,9 +204,13 @@ public class AuraEvents {
 
     // ============ 自动攻击 ============
 
-    /** 攻击间隔缓存（2026-08-13 性能优化）：speedLevel 不变时 interval 不变，避免每 tick Math.pow */
-    private static int cachedIntervalSpeed = -1;
-    private static int cachedInterval = 200;
+    /**
+     * 攻击间隔 per-player 缓存（2026-08-13 起缓存，2026-08-24 多人修复）：
+     * ⚠️ 原 static 单值缓存（cachedIntervalSpeed/cachedInterval）在多人服务器上不同玩家速度光环等级不同时
+     *    互相踢缓存（每 tick 交替失效重算 Math.pow）→ 等价于没缓存。改为按玩家 UUID 缓存，登出清理。
+     */
+    private static final Map<UUID, Integer> cachedSpeedByPlayer = new HashMap<>();
+    private static final Map<UUID, Integer> cachedIntervalByPlayer = new HashMap<>();
 
     /** 单轮光环攻击目标上限（2026-08-15 性能优化）：刷怪塔海量目标时每轮最多处理 N 个，防单轮全打卡顿 */
     private static final int MAX_AURA_TARGETS = 64;
@@ -212,14 +219,20 @@ public class AuraEvents {
         // ⚠️ 性能优化（2026-08-15）：间隔判断提到最前——大部分 tick 在此直接返回，
         //    后续所有开销（getLearnedPoints/isEnabled/扫描/伤害）只在触发 tick 执行。
         int speedLevel = record.isEnabled(Skills.AURA_SPEED) ? record.getActiveLevel(Skills.AURA_SPEED) : 0;
-        // 间隔缓存：speedLevel 不变直接复用（避免每 tick Math.pow）
-        if (cachedIntervalSpeed != speedLevel) {
+        // 间隔 per-player 缓存：speedLevel 不变直接复用（避免每 tick Math.pow）
+        UUID playerId = player.getUUID();
+        Integer cachedSpeed = cachedSpeedByPlayer.get(playerId);
+        Integer intervalObj = cachedIntervalByPlayer.get(playerId);
+        int interval;
+        if (cachedSpeed != null && cachedSpeed == speedLevel && intervalObj != null) {
+            interval = intervalObj;
+        } else {
             int baseInterval = org.zifeng.skilltree.Config.AURA_BASE_INTERVAL_TICKS.get();
             double reduction = org.zifeng.skilltree.Config.AURA_SPEED_INTERVAL_REDUCTION.get();
-            cachedInterval = Math.max(10, (int) Math.round(baseInterval * Math.pow(1 - reduction, speedLevel)));
-            cachedIntervalSpeed = speedLevel;
+            interval = Math.max(10, (int) Math.round(baseInterval * Math.pow(1 - reduction, speedLevel)));
+            cachedSpeedByPlayer.put(playerId, speedLevel);
+            cachedIntervalByPlayer.put(playerId, interval);
         }
-        int interval = cachedInterval;
         if (player.level().getGameTime() % interval != 0) {
             return;
         }

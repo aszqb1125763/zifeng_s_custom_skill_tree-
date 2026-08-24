@@ -51,6 +51,7 @@ public class SkillTreeMod {
         NeoForge.EVENT_BUS.register(AuraEvents.class);
         NeoForge.EVENT_BUS.register(MagnetEvents.class);
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.LockEvents.class);
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.LootVacuumEvents.class);
 
         if (FMLLoader.getDist().isClient()) {
             ClientRegistrar.register(modEventBus);

@@ -197,6 +197,7 @@ public final class Skills {
     public static final String AURA_LOCK = "aura_lock";       // 光环锁定（免疫TP/击退）
     public static final String AURA_EMPOWER = "aura_empower"; // 杀戮光环·强化（混沌/Boss伤害，拆自光环，虚空之矛上方）
     public static final String AURA_VOID = "aura_void";       // 杀戮光环·虚空之矛（虚空伤害/秒杀）
+    public static final String AURA_LOOT_VACUUM = "aura_loot_vacuum"; // 凋落物挪移（木棍绑定容器，掉落直传容器不生成实体）
 
     // ============ 魔法增幅（纵列0，其余模组兼容技能，不参与任何前置） ============
     public static final String MANA_AMP = "mana_amp";                 // 新生魔艺魔力增幅（每级+10%魔力，上限1000）
@@ -237,7 +238,7 @@ public final class Skills {
     /** 所有终极节点（纵列3） */
     public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY, VILLAGE_HERO, REACH, GLOW, LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN, MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT, ULT_BREAK_ALL, ULT_UNBREAK_TAG, ULT_SWEEP, ULT_KB_RESIST);
     /** 所有杀戮光环（纵列4）：杀戮光环·强化 在 虚空之矛 上方 */
-    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_LOCK, AURA_EMPOWER, AURA_VOID);
+    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM);
     /** 所有魔法增幅（纵列0）：其余模组兼容技能（新生魔艺/铁魔法等），不作为任何前置 */
     public static final List<String> MAGIC_SKILLS = List.of(
             // 新生魔艺
@@ -292,6 +293,7 @@ public final class Skills {
             case AURA_LOCK -> 1; // 一次性解锁（1000 技能点）
             case AURA_EMPOWER -> 1; // 一次性解锁（1000 技能点）
             case AURA_VOID -> 1; // 一次性解锁（5000 技能点）
+            case AURA_LOOT_VACUUM -> 1; // 一次性解锁（10 技能点）
             default -> 0;
         };
     }
@@ -408,6 +410,9 @@ public final class Skills {
      *    技能点本身是 double（无 64 位上限问题）。
      */
     public static long getAuraCost(String skillId, int currentLevel) {
+        if (AURA_LOOT_VACUUM.equals(skillId)) {
+            return 10L; // 凋落物挪移：固定 10 技能点一次性解锁（2026-08-24）
+        }
         double raw = auraBaseCost() * Math.pow(auraCostMultiplier(), currentLevel);
         if (raw >= Long.MAX_VALUE) {
             return Long.MAX_VALUE; // 极端高等级 clamp，防溢出
@@ -417,190 +422,198 @@ public final class Skills {
 
     public static String getDisplayName(String skillId) {
         return switch (skillId) {
-            case MANA_AMP -> "新生魔艺魔力增幅";
-            case ARS_MANA_REGEN -> "新生魔艺魔力恢复";
-            case IRON_MANA_AMP -> "铁魔法魔力增幅";
-            case IRON_MANA_REGEN -> "铁魔法魔力恢复";
-            case IRON_CAST_TIME -> "铁魔法吟唱缩减";
-            case IRON_COOLDOWN -> "铁魔法法术冷却缩减";
-            case IRON_FIRE -> "火焰法术强度";
-            case IRON_ICE -> "冰霜法术强度";
-            case IRON_LIGHTNING -> "雷电法术强度";
-            case IRON_HOLY -> "神圣法术强度";
-            case IRON_ENDER -> "末影法术强度";
-            case IRON_BLOOD -> "鲜血法术强度";
-            case IRON_EVOCATION -> "召唤法术强度";
-            case IRON_NATURE -> "自然法术强度";
-            case IRON_ELDRITCH -> "异界法术强度";
-            case BODY_HP -> "生命强化";
-            case BODY -> "体魄强化";
-            case TOUGH -> "坚韧之躯";
-            case BLADE -> "锋刃精通";
-            case ATTACK_SPEED -> "疾攻术";
-            case MINING -> "采掘熟稔";
-            case MOVE -> "疾行步法";
-            case REGEN -> "再生体魄";
-            case LUCK -> "幸运眷顾";
-            case JUMP -> "跃升体术";
-            case FLY -> "御空术";
-            case SWIM -> "潜游术";
-            case CRIT -> "暴击精通";
-            case LIFESTEAL -> "生命汲取";
-            case THORNS -> "荆棘反伤";
-            case ARMOR_PEN -> "破甲精通";
-            case VILLAGE_HERO -> "村庄英雄";
-            case REACH -> "接触距离";
-            case GLOW -> "发光";
-            case LOOT_BOMB -> "战利品爆炸";
-            case UNBREAKABLE -> "工具不毁";
-            case MOB_DROP -> "生物掉落倍率";
-            case BLOCK_DROP -> "方块掉落倍率";
-            case XP_GAIN -> "经验获取倍率";
-            case MOB_SPAWN_EGG -> "刷怪蛋掉落";
-            case MOB_HEAD -> "头颅掉落";
-            case AURA_EMPOWER -> "杀戮光环·强化";
-            case MACHINE_STAR -> "机械之星";
-            case MACHINE_LOOT_BOMB -> "战利品爆炸·共鸣";
-            case MACHINE_UNBREAKABLE -> "工具不毁·共鸣";
-            case MACHINE_MOB_DROP -> "生物掉落·共鸣";
-            case MACHINE_BLOCK_DROP -> "方块掉落·共鸣";
-            case MACHINE_XP_GAIN -> "经验获取·共鸣";
-            case MACHINE_SPAWN_EGG -> "刷怪蛋掉落·共鸣";
-            case MACHINE_MOB_HEAD -> "头颅掉落·共鸣";
-            case MACHINE_AUTO_SMELT -> "自动熔炼·共鸣";
-            case AMP_HP -> "生命增幅";
-            case AMP_DAMAGE -> "锋刃增幅";
-            case AMP_ATTACK_SPEED -> "疾攻增幅";
-            case AMP_MINING -> "采掘增幅";
-            case AMP_REGEN -> "再生增幅";
-            case AMP_ARMOR -> "防御强化";
-            case AMP_MOVE -> "疾行增幅";
-            case AMP_JUMP -> "跃升增幅";
-            case AMP_FLY -> "御空增幅";
-            case AMP_SWIM -> "潜游增幅";
-            case AMP_TOUGH -> "坚韧增幅";
-            case AMP_LUCK -> "幸运增幅";
-            case AMP_CRIT -> "暴击增幅";
-            case AMP_LIFESTEAL -> "吸血增幅";
-            case AMP_THORNS -> "荆棘增幅";
-            case AMP_ARMOR_PEN -> "破甲增幅";
-            case ULT_BLOOD -> "浴血奋战";
-            case ULT_GOLDEN -> "不坏金身";
-            case ULT_MASTER -> "全能精通";
-            case ULT_FAVOR -> "宇宙的青睐";
-            case NIGHT_VISION -> "星瞳·夜视";
-            case SATURATION -> "星食·饱腹";
-            case ULT_REVIVE -> "凤凰涅槃";
-            case ULT_REAPER -> "死神凝视";
-            case ULT_VOID_BODY -> "虚空之躯";
-            case AUTO_SMELT -> "自动熔炼";
-            case ULT_BREAK_ALL -> "万物挖掘";
-            case ULT_UNBREAK_TAG -> "不毁词条";
-            case ULT_SWEEP -> "横扫范围";
-            case ULT_KB_RESIST -> "击退抗性";
-            case AURA_DAMAGE -> "杀戮光环·伤害";
-            case AURA_SPEED -> "杀戮光环·速度";
-            case AURA_HEAL -> "治愈光环";
-            case AURA_MAGNET -> "磁力光环";
-            case AURA_TIME -> "时之环·时间停止";
-            case AURA_WEATHER -> "晴空环·永恒晴天";
-            case AURA_LOCK -> "光环锁定";
-            case AURA_VOID -> "杀戮光环·虚空之矛";
+            // ===== 魔法增幅（纵列0，法术流派，轻度中二） =====
+            case MANA_AMP -> "聚元心法";          // 新生魔艺魔力增幅
+            case ARS_MANA_REGEN -> "回灵吐纳";    // 新生魔艺魔力恢复
+            case IRON_MANA_AMP -> "铁元聚灵";     // 铁魔法魔力增幅
+            case IRON_MANA_REGEN -> "铁元回灵";   // 铁魔法魔力恢复
+            case IRON_CAST_TIME -> "疾咏之术";    // 铁魔法吟唱缩减
+            case IRON_COOLDOWN -> "法脉通达";     // 铁魔法法术冷却缩减
+            case IRON_FIRE -> "焚天烈焰";         // 火焰法术强度
+            case IRON_ICE -> "寒冰刺骨";          // 冰霜法术强度
+            case IRON_LIGHTNING -> "九霄雷动";    // 雷电法术强度
+            case IRON_HOLY -> "圣光降临";         // 神圣法术强度
+            case IRON_ENDER -> "虚空遁形";        // 末影法术强度
+            case IRON_BLOOD -> "血祭狂潮";        // 鲜血法术强度
+            case IRON_EVOCATION -> "百灵听令";    // 召唤法术强度
+            case IRON_NATURE -> "自然之息";       // 自然法术强度
+            case IRON_ELDRITCH -> "异界低语";     // 异界法术强度
+            // ===== 基础属性（纵列1，直白易懂 + 趣味） =====
+            case BODY_HP -> "血魄淬炼";           // 生命强化
+            case BODY -> "铁壁金身";              // 体魄强化
+            case TOUGH -> "磐石之躯";             // 坚韧之躯
+            case BLADE -> "剑心通明";             // 锋刃精通
+            case ATTACK_SPEED -> "疾风连击";      // 疾攻术
+            case MINING -> "破岩神工";            // 采掘熟稔
+            case MOVE -> "健步如飞";              // 疾行步法
+            case REGEN -> "生生不息";             // 再生体魄
+            case LUCK -> "鸿运当头";              // 幸运眷顾
+            case JUMP -> "一蹦三尺";              // 跃升体术
+            case FLY -> "御空翱翔";               // 御空术
+            case SWIM -> "如鱼得水";              // 潜游术
+            case CRIT -> "暴击要害";              // 暴击精通
+            case LIFESTEAL -> "噬血之刃";         // 生命汲取
+            case THORNS -> "荆棘护体";            // 荆棘反伤
+            case ARMOR_PEN -> "破甲利刃";         // 破甲精通
+            // ===== 特殊增幅（纵列2，真解系列，与基础对应） =====
+            case AMP_HP -> "血魄真解";
+            case AMP_DAMAGE -> "剑心真解";
+            case AMP_ATTACK_SPEED -> "疾风真解";
+            case AMP_MINING -> "破岩真解";
+            case AMP_REGEN -> "生生真解";
+            case AMP_ARMOR -> "金身真解";
+            case AMP_MOVE -> "健步真解";
+            case AMP_JUMP -> "蹦跳真解";
+            case AMP_FLY -> "御空真解";
+            case AMP_SWIM -> "游鱼真解";
+            case AMP_TOUGH -> "磐石真解";
+            case AMP_LUCK -> "鸿运真解";
+            case AMP_CRIT -> "暴击真解";
+            case AMP_LIFESTEAL -> "噬血真解";
+            case AMP_THORNS -> "荆棘真解";
+            case AMP_ARMOR_PEN -> "破甲真解";
+            // ===== 终极节点（纵列3，子枫招牌技） =====
+            case ULT_BLOOD -> "子枫的燃血狂战";    // 浴血奋战
+            case ULT_GOLDEN -> "子枫的金刚不坏";   // 不坏金身
+            case ULT_MASTER -> "子枫的全能精通";   // 全能精通
+            case ULT_FAVOR -> "子枫的苍穹之翼";    // 宇宙的青睐（飞行）
+            case NIGHT_VISION -> "星瞳夜视";      // 星瞳·夜视
+            case SATURATION -> "饱食无忧";        // 星食·饱腹
+            case ULT_REVIVE -> "子枫的浴火重生";   // 凤凰涅槃
+            case ULT_REAPER -> "死神凝视";        // 死神凝视
+            case ULT_VOID_BODY -> "子枫的虚空神体"; // 虚空之躯
+            case AUTO_SMELT -> "自动熔炼术";      // 自动熔炼
+            case ULT_BREAK_ALL -> "子枫的万物可掘"; // 万物挖掘
+            case ULT_UNBREAK_TAG -> "不朽铭文";   // 不毁词条
+            case ULT_SWEEP -> "横扫千军";         // 横扫范围
+            case ULT_KB_RESIST -> "稳如泰山";     // 击退抗性
+            case VILLAGE_HERO -> "万民敬仰";      // 村庄英雄
+            case REACH -> "长臂善舞";             // 接触距离
+            case GLOW -> "星光点缀";              // 发光
+            case LOOT_BOMB -> "财源滚滚";         // 战利品爆炸
+            case UNBREAKABLE -> "万载不磨";       // 工具不毁
+            case MOB_DROP -> "猎魂丰收";          // 生物掉落倍率
+            case BLOCK_DROP -> "点石成金";        // 方块掉落倍率
+            case XP_GAIN -> "经验飞涨";           // 经验获取倍率
+            case MOB_SPAWN_EGG -> "妖魂凝卵";     // 刷怪蛋掉落
+            case MOB_HEAD -> "斩首夺颅";          // 头颅掉落
+            case AURA_EMPOWER -> "子枫的修罗杀域"; // 杀戮光环·强化
+            // ===== 机械共鸣（纵列5） =====
+            case MACHINE_STAR -> "机关道祖";      // 机械之星
+            case MACHINE_LOOT_BOMB -> "财源滚滚·机关共鸣";   // 战利品爆炸·共鸣
+            case MACHINE_UNBREAKABLE -> "万载不磨·机关共鸣"; // 工具不毁·共鸣
+            case MACHINE_MOB_DROP -> "猎魂丰收·机关共鸣";    // 生物掉落·共鸣
+            case MACHINE_BLOCK_DROP -> "点石成金·机关共鸣";  // 方块掉落·共鸣
+            case MACHINE_XP_GAIN -> "经验飞涨·机关共鸣";     // 经验获取·共鸣
+            case MACHINE_SPAWN_EGG -> "妖魂凝卵·机关共鸣";   // 刷怪蛋掉落·共鸣
+            case MACHINE_MOB_HEAD -> "斩首夺颅·机关共鸣";    // 头颅掉落·共鸣
+            case MACHINE_AUTO_SMELT -> "自动熔炼·机关共鸣";  // 自动熔炼·共鸣
+            // ===== 光环（纵列4，领域神通风） =====
+            case AURA_DAMAGE -> "子枫的杀戮领域";   // 杀戮光环·伤害
+            case AURA_SPEED -> "疾攻之势";         // 杀戮光环·速度
+            case AURA_HEAL -> "回春妙手";          // 治愈光环
+            case AURA_MAGNET -> "吸星大法";        // 磁力光环
+            case AURA_TIME -> "时之环·刹那永恒";   // 时之环·时间停止
+            case AURA_WEATHER -> "晴空环·艳阳高照"; // 晴空环·永恒晴天
+            case AURA_LOCK -> "定身神域";          // 光环锁定
+            case AURA_VOID -> "子枫的虚空诛灭";     // 杀戮光环·虚空之矛
+            case AURA_LOOT_VACUUM -> "子枫挪移术"; // 凋落物挪移
             default -> "未知技能";
         };
     }
 
     public static String getDescription(String skillId) {
         return switch (skillId) {
-            case MANA_AMP -> "新生魔艺魔力增幅：\n增幅新生魔艺（Ars Nouveau）最大魔力\n每级 +10%，上限 1000 级\n（1000 级 = 最大魔力 ×101，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装新生魔艺，未安装时学习无效";
-            case ARS_MANA_REGEN -> "新生魔艺魔力恢复：\n增幅新生魔艺（Ars Nouveau）魔力恢复速度\n每级 +40%，上限 1000 级\n（1000 级 = 恢复 ×401，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装新生魔艺，未安装时学习无效";
-            case IRON_MANA_AMP -> "铁魔法魔力增幅：\n增幅铁魔法（Iron's Spells）最大魔力\n每级 +10%，上限 1000 级\n（1000 级 = 最大魔力 ×101，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_MANA_REGEN -> "铁魔法魔力恢复：\n增幅铁魔法（Iron's Spells）魔力恢复速度\n每级 +40%，上限 1000 级\n（1000 级 = 恢复 ×401，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_CAST_TIME -> "铁魔法吟唱缩减：\n减少铁魔法（Iron's Spells）法术吟唱时间\n每级 -10%，上限 100 级\n（100 级 = 吟唱时间大幅缩短）\n每级消耗 5 技能点（线性 +5/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_COOLDOWN -> "铁魔法法术冷却缩减：\n减少铁魔法（Iron's Spells）法术冷却时间\n每级 -10%，上限 100 级\n（100 级 = 冷却时间大幅缩短）\n每级消耗 5 技能点（线性 +5/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_FIRE -> "火焰法术强度：\n增幅铁魔法火焰（Fire）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 火焰法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_ICE -> "冰霜法术强度：\n增幅铁魔法冰霜（Ice）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 冰霜法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_LIGHTNING -> "雷电法术强度：\n增幅铁魔法雷电（Lightning）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 雷电法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_HOLY -> "神圣法术强度：\n增幅铁魔法神圣（Holy）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 神圣法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_ENDER -> "末影法术强度：\n增幅铁魔法末影（Ender）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 末影法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_BLOOD -> "鲜血法术强度：\n增幅铁魔法鲜血（Blood）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 鲜血法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_EVOCATION -> "召唤法术强度：\n增幅铁魔法召唤（Evocation）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 召唤法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_NATURE -> "自然法术强度：\n增幅铁魔法自然（Nature）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 自然法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case IRON_ELDRITCH -> "异界法术强度：\n增幅铁魔法异界（Eldritch）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 异界法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
-            case BODY_HP -> "生命强化：每点 +2 最大生命\n（拆分自原体魄强化，纯生命成长）";
-            case BODY -> "体魄强化：每点 +0.2 护甲、\n+0.05% 物理减伤（超原版 80% 护甲上限后继续成长）";
-            case TOUGH -> "坚韧之躯：每点 +0.3 护甲韧性、\n+0.1% 击退抗性";
-            case BLADE -> "锋刃精通：每点 +0.4 近战攻击伤害";
-            case ATTACK_SPEED -> "疾攻术：每点 +0.02 攻击速度";
-            case MINING -> "采掘熟稔：每点 +0.3 挖掘速度";
-            case MOVE -> "疾行步法：每点 +0.005 移动速度";
-            case REGEN -> "再生体魄：每点 +0.1/秒 生命恢复";
-            case LUCK -> "幸运眷顾：每点 +0.1 幸运值";
-            case JUMP -> "跃升体术：每点 +0.01 跳跃高度";
-            case FLY -> "御空术：每点 +0.005 飞行速度";
-            case SWIM -> "潜游术：每点 +0.005 游泳速度";
-            case CRIT -> "暴击精通：每点 +0.1% 暴击几率\n（上限 100%，暴击造成 1.5 倍伤害）";
-            case LIFESTEAL -> "生命汲取：每点 +0.1% 吸血\n（按造成的伤害回复生命）";
-            case THORNS -> "荆棘之体：每点 +0.05 反伤\n（受击时反弹伤害给攻击者）";
-            case ARMOR_PEN -> "破甲精通：每点 +0.15% 最终伤害\n（无视目标护甲）";
-            case VILLAGE_HERO -> "村庄英雄：每级 +4 级村庄英雄效果\n（10级满=村庄英雄40级，交易折扣极大）\n每级消耗 10 技能点";
-            case REACH -> "接触距离：每级 +1 格触摸距离\n和攻击距离（上限50级）\n每级消耗 1 技能点";
-            case GLOW -> "发光：给 35 格半径内所有生物\n施加发光效果（除玩家自身）\n一次性解锁，消耗 1 技能点";
-            case LOOT_BOMB -> "战利品爆炸：击杀所有生物含Boss\n100%触发战利品爆炸，掉落翻倍\n1级1倍，100级=100倍（线性增长）\n每级消耗阶梯递增（10%涨幅）";
-            case UNBREAKABLE -> "工具不毁：每级 +20% 工具耐久损耗减免\n（5级封顶=100%，工具不再消耗耐久）\n每级消耗 1 技能点（阶梯递增）";
-            case MOB_DROP -> "生物掉落倍率：每级 +1 倍生物掉落\n（1级=2倍，10级=11倍）\n仅对可受抢夺影响的生物生效\n每级消耗 50 技能点（阶梯递增）";
-            case BLOCK_DROP -> "方块掉落倍率：每级 +1 倍方块掉落\n（1级=2倍，10级=11倍）\n仅对可受时运影响的方块生效\n每级消耗 50 技能点（阶梯递增）";
-            case XP_GAIN -> "经验获取倍率：每级 +2 倍经验获取\n（1级=3倍，10级=21倍）\n杀怪/挖矿/烧炼经验都生效\n每级消耗 50 技能点（阶梯递增）";
-            case MOB_SPAWN_EGG -> "刷怪蛋掉落：击杀生物时每级 10% 概率\n掉落对应刷怪蛋（满5级=50%）\n对所有生物生效，固定掉 1 个\n不受任何技能增幅（不吃战利品爆炸/生物掉落倍率）\n每级消耗 20 技能点（阶梯递增）";
-            case MOB_HEAD -> "头颅掉落：击杀生物时每级 10% 概率\n掉落对应头颅（满5级=50%）\n僵尸/骷髅/凋灵骷髅/苦力怕/猪灵\n掉对应头颅\n击杀玩家掉对方皮肤的头颅\n无对应头颅的生物不掉\n不受任何技能增幅（不吃战利品爆炸/生物掉落倍率）\n每级消耗 10 技能点（阶梯递增）";
-            case AURA_EMPOWER -> "杀戮光环·强化：消耗 1000 技能点\n杀戮光环获得强化伤害：\n混沌伤害（无视护甲）/Boss混沌连击/\n破盾/守卫水晶特判\n前置：杀戮光环·伤害 50 级";
-            case AMP_HP -> "生命增幅：每点 +10% 最大生命倍率";
-            case AMP_DAMAGE -> "锋刃增幅：每点 +10% 近战伤害倍率";
-            case AMP_ATTACK_SPEED -> "疾攻增幅：每点 +8% 攻击速度倍率";
-            case AMP_MINING -> "采掘增幅：每点 +12% 挖掘速度倍率";
-            case AMP_REGEN -> "再生增幅：每点 +16% 生命恢复倍率";
-            case AMP_ARMOR -> "防御强化：每点 +0.5% 物理减伤\n（独立减伤层，护甲 80% 封顶后继续防护）";
-            case AMP_MOVE -> "疾行增幅：每点 +10% 移动速度倍率";
-            case AMP_JUMP -> "跃升增幅：每点 +10% 跳跃高度倍率";
-            case AMP_FLY -> "御空增幅：每点 +10% 飞行速度倍率";
-            case AMP_SWIM -> "潜游增幅：每点 +10% 游泳速度倍率";
-            case AMP_TOUGH -> "坚韧增幅：每点 +10% 护甲韧性与击退抗性倍率";
-            case AMP_LUCK -> "幸运增幅：每点 +10% 幸运值倍率";
-            case AMP_CRIT -> "暴击增幅：每点 +5% 暴击伤害倍率\n（在暴击 1.5 倍基础上叠加）";
-            case AMP_LIFESTEAL -> "吸血增幅：每点 +8% 吸血量倍率";
-            case AMP_THORNS -> "荆棘增幅：每点 +8% 反伤倍率";
-            case AMP_ARMOR_PEN -> "破甲增幅：每点 +8% 破甲增伤倍率";
-            case ULT_BLOOD -> "浴血奋战：消耗 500 技能点，\n常驻攻击力 +50%、最大生命 +50%\n（燃血强化）\n前置：体魄500 + 锋刃500";
-            case ULT_GOLDEN -> "不坏金身：消耗 500 技能点，\n常驻抗性提升10级、伤害吸收100级、\n抗火5级\n前置：坚韧之躯500 + 防御强化500";
-            case ULT_MASTER -> "全能精通：消耗 5000 技能点，\n全方位防御（全伤害减免/护盾/免死/\n负面免疫），保证玩家不死\n前置：需解锁浴血奋战/不坏金身/凤凰涅槃/死神凝视";
-            case ULT_FAVOR -> "宇宙的青睐：消耗 1000 技能点\n一次性点亮，解锁真正的创造飞行";
-            case NIGHT_VISION -> "星瞳·夜视：消耗 100 技能点\n一次性点亮，永久夜视（不闪烁）";
-            case SATURATION -> "星食·饱腹：消耗 100 技能点\n一次性点亮，饱食度永远满值";
-            case ULT_REVIVE -> "凤凰涅槃：消耗 500 技能点，\n死亡原地复活一次，回复50%生命\n并清除负面效果，冷却1分钟\n前置：生命汲取500 + 暴击精通500";
-            case ULT_REAPER -> "死神凝视：消耗 1000 技能点，\n攻击生命<15%的非玩家生物时\n30%概率直接处决\n前置：破甲精通500 + 锋刃精通500";
-            case ULT_VOID_BODY -> "虚空之躯：消耗 5000 技能点，\n三层无敌：免伤/免死/血量只增不减\n抗击退/免摔落/免火焰/清负面\n前置：全能精通";
-            case AUTO_SMELT -> "自动熔炼：消耗 30 技能点\n挖掘方块时自动熔炼掉落物\n（铁矿石→铁锭、金矿石→金锭等）\n按熔炉配方判断能否熔炼\n判断顺序：先熔炉、再时运、再技能增幅\n一次性点亮，1 级\n\n⚠ 黑名单：\n手持对应矿石的粗矿\n（如挖铁矿石得到的生铁 raw_iron）\n输入 /hmd 加入黑名单\n黑名单中的物品不参与熔炼判定\n输入 /delhmd 可查看并移除";
-            case ULT_BREAK_ALL -> "万物挖掘：消耗 100 技能点\n一次性点亮，激活后可以挖掘任何方块\n包括基岩这类无法破坏的方块\n挖掘后会掉落对应方块\n（左键点击即可挖掘，无需等待）";
-            case ULT_UNBREAK_TAG -> "不毁词条：消耗 100 技能点\n一次性点亮，激活后\n在铁砧中放入两个相同的物品\n可以合成出带有【无法破坏】词条的工具\n（工具不再消耗耐久）";
-            case ULT_SWEEP -> "横扫范围：每级 +1 格攻击范围\n（近战攻击命中时，目标周围\nN 格内其他敌人同受伤害）\n仿龙之研究武器攻击范围升级\n10级 = 横扫半径 10 格\n每级消耗 2 技能点（线性 +2/级）";
-            case ULT_KB_RESIST -> "击退抗性：每级 +10% 击退抗性\n10级 = 100%，玩家不会被击退\n每级消耗 2 技能点（线性 +2/级）";
-            case MACHINE_STAR -> "机械之星：消耗 " + Config.MACHINE_STAR_COST.get() + " 技能点\n一次性点亮，机械共鸣的核心\n学习后才能学习其他共鸣技能\n（共鸣技能让模拟玩家机器\n如数字采矿机继承对应效果）";
-            case MACHINE_LOOT_BOMB -> "战利品爆炸·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器（假玩家）击杀生物\n才能继承战利品爆炸效果\n关闭/重置后立即失效\n前置：机械之星 + 战利品爆炸";
-            case MACHINE_UNBREAKABLE -> "工具不毁·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器使用工具时\n才能继承工具不毁（耐久减免）效果\n关闭/重置后立即失效\n前置：机械之星 + 工具不毁";
-            case MACHINE_MOB_DROP -> "生物掉落·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承生物掉落倍率效果\n关闭/重置后立即失效\n前置：机械之星 + 生物掉落倍率";
-            case MACHINE_BLOCK_DROP -> "方块掉落·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器挖掘方块\n才能继承方块掉落倍率效果\n关闭/重置后立即失效\n前置：机械之星 + 方块掉落倍率";
-            case MACHINE_XP_GAIN -> "经验获取·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀/挖掘产生的经验\n才能继承经验获取倍率效果\n关闭/重置后立即失效\n前置：机械之星 + 经验获取倍率";
-            case MACHINE_SPAWN_EGG -> "刷怪蛋掉落·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承刷怪蛋掉落效果\n关闭/重置后立即失效\n前置：机械之星 + 刷怪蛋掉落";
-            case MACHINE_MOB_HEAD -> "头颅掉落·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承头颅掉落效果\n关闭/重置后立即失效\n前置：机械之星 + 头颅掉落";
-            case MACHINE_AUTO_SMELT -> "自动熔炼·共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器挖掘方块\n才能继承自动熔炼效果\n关闭/重置后立即失效\n前置：机械之星 + 自动熔炼";
-            case AURA_DAMAGE -> "杀戮光环·伤害：每级+10%伤害倍率，\n360°范围伤害，默认10秒攻击一次\n上限1000级\n前置：锋刃精通100 + 疾攻术100";
-            case AURA_SPEED -> "杀戮光环·速度：提高光环攻击频率\n（每级攻击间隔×0.9，20级=每秒约1.2次）\n上限20级\n前置：锋刃精通100 + 疾攻术100";
-            case AURA_HEAL -> "治愈光环：每级给周围10格内\n友方单位对应等级的生命回复效果\n（50级 = 生命回复50级）\n上限50级，消耗随等级递增";
-            case AURA_MAGNET -> "磁力光环：一次性解锁（消耗 " + String.format("%.0f", org.zifeng.skilltree.Config.MAGNET_COST.get()) + " 技能点）\n按 H 键开关，自动吸取经验与掉落物\n（潜行时暂停）";
-            case AURA_TIME -> "时之环·时间停止：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定世界时间\n为开启瞬间的时间（不再强制正午）\n不被睡觉/时间命令影响\n关闭后立即恢复正常时间流动";
-            case AURA_WEATHER -> "晴空环·永恒晴天：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定晴天\n不被下雨/天气命令影响\n关闭后立即恢复正常天气";
-            case AURA_LOCK -> "光环锁定：消耗 1000 技能点\n一次性点亮，开启后免疫 TP 与击退\n（传送/瞬移/击退均无效）\n只有自己移动/飞行才能真正移动";
-            case AURA_VOID -> "杀戮光环·虚空之矛：消耗 5000 技能点\n一次性点亮，杀戮光环获得虚空之矛力量\n（绝对秒杀+范围扩大至50格，K键控制）\n（磁铁范围扩至55格，H键控制）\n前置：杀戮光环·伤害 100 级";
+            case MANA_AMP -> "聚元心法：\n增幅新生魔艺（Ars Nouveau）最大魔力\n每级 +10%，上限 1000 级\n（1000 级 = 最大魔力 ×101，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装新生魔艺，未安装时学习无效";
+            case ARS_MANA_REGEN -> "回灵吐纳：\n增幅新生魔艺（Ars Nouveau）魔力恢复速度\n每级 +40%，上限 1000 级\n（1000 级 = 恢复 ×401，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装新生魔艺，未安装时学习无效";
+            case IRON_MANA_AMP -> "铁元聚灵：\n增幅铁魔法（Iron's Spells）最大魔力\n每级 +10%，上限 1000 级\n（1000 级 = 最大魔力 ×101，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_MANA_REGEN -> "铁元回灵：\n增幅铁魔法（Iron's Spells）魔力恢复速度\n每级 +40%，上限 1000 级\n（1000 级 = 恢复 ×401，受模组属性上限保护）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_CAST_TIME -> "疾咏之术：\n减少铁魔法（Iron's Spells）法术吟唱时间\n每级 -10%，上限 100 级\n（100 级 = 吟唱时间大幅缩短）\n每级消耗 5 技能点（线性 +5/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_COOLDOWN -> "法脉通达：\n减少铁魔法（Iron's Spells）法术冷却时间\n每级 -10%，上限 100 级\n（100 级 = 冷却时间大幅缩短）\n每级消耗 5 技能点（线性 +5/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_FIRE -> "焚天烈焰：\n增幅铁魔法火焰（Fire）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 火焰法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_ICE -> "寒冰刺骨：\n增幅铁魔法冰霜（Ice）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 冰霜法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_LIGHTNING -> "九霄雷动：\n增幅铁魔法雷电（Lightning）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 雷电法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_HOLY -> "圣光降临：\n增幅铁魔法神圣（Holy）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 神圣法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_ENDER -> "虚空遁形：\n增幅铁魔法末影（Ender）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 末影法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_BLOOD -> "血祭狂潮：\n增幅铁魔法鲜血（Blood）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 鲜血法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_EVOCATION -> "百灵听令：\n增幅铁魔法召唤（Evocation）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 召唤法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_NATURE -> "自然之息：\n增幅铁魔法自然（Nature）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 自然法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case IRON_ELDRITCH -> "异界低语：\n增幅铁魔法异界（Eldritch）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 异界法术强度 ×101）\n每级消耗 2 技能点（线性 +2/级）\n⚠ 需安装铁魔法，未安装时学习无效";
+            case BODY_HP -> "血魄淬炼：每点 +2 最大生命\n（拆分自原体魄强化，纯生命成长）";
+            case BODY -> "铁壁金身：每点 +0.2 护甲、\n+0.05% 物理减伤（超原版 80% 护甲上限后继续成长）";
+            case TOUGH -> "磐石之躯：每点 +0.3 护甲韧性、\n+0.1% 击退抗性";
+            case BLADE -> "剑心通明：每点 +0.4 近战攻击伤害";
+            case ATTACK_SPEED -> "疾风连击：每点 +0.02 攻击速度";
+            case MINING -> "破岩神工：每点 +0.3 挖掘速度";
+            case MOVE -> "健步如飞：每点 +0.005 移动速度";
+            case REGEN -> "生生不息：每点 +0.1/秒 生命恢复";
+            case LUCK -> "鸿运当头：每点 +0.1 幸运值";
+            case JUMP -> "一蹦三尺：每点 +0.01 跳跃高度";
+            case FLY -> "御空翱翔：每点 +0.005 飞行速度";
+            case SWIM -> "如鱼得水：每点 +0.005 游泳速度";
+            case CRIT -> "暴击要害：每点 +0.1% 暴击几率\n（上限 100%，暴击造成 1.5 倍伤害）";
+            case LIFESTEAL -> "噬血之刃：每点 +0.1% 吸血\n（按造成的伤害恢复生命）";
+            case THORNS -> "荆棘护体：每点 +0.05 反伤\n（受击时反弹伤害给攻击者）";
+            case ARMOR_PEN -> "破甲利刃：每点 +0.15% 最终伤害\n（无视目标护甲）";
+            case VILLAGE_HERO -> "万民敬仰：每级 +4 级村庄英雄效果\n（10级满=村庄英雄40级，交易折扣极大）\n每级消耗 10 技能点";
+            case REACH -> "长臂善舞：每级 +1 格触摸距离\n和攻击距离（上限50级）\n每级消耗 1 技能点";
+            case GLOW -> "星光点缀：给 35 格半径内所有生物\n施加发光效果（除玩家自身）\n一次性解锁，消耗 1 技能点";
+            case LOOT_BOMB -> "财源滚滚：击杀所有生物含Boss\n100%触发战利品爆炸，掉落翻倍\n1级1倍，100级=100倍（线性增长）\n每级消耗阶梯递增（10%涨幅）";
+            case UNBREAKABLE -> "万载不磨：每级 +20% 工具耐久损耗减免\n（5级封顶=100%，工具不再消耗耐久）\n每级消耗 1 技能点（阶梯递增）";
+            case MOB_DROP -> "猎魂丰收：每级 +1 倍生物掉落\n（1级=2倍，10级=11倍）\n仅对可受抢夺影响的生物生效\n每级消耗 50 技能点（阶梯递增）";
+            case BLOCK_DROP -> "点石成金：每级 +1 倍方块掉落\n（1级=2倍，10级=11倍）\n仅对可受时运影响的方块生效\n每级消耗 50 技能点（阶梯递增）";
+            case XP_GAIN -> "经验飞涨：每级 +2 倍经验获取\n（1级=3倍，10级=21倍）\n杀怪/挖矿/烧炼经验都生效\n每级消耗 50 技能点（阶梯递增）";
+            case MOB_SPAWN_EGG -> "妖魂凝卵：击杀生物时每级 10% 概率\n掉落对应刷怪蛋（满5级=50%）\n对所有生物生效，固定掉 1 个\n不受任何技能增幅（不吃战利品爆炸/生物掉落倍率）\n每级消耗 20 技能点（阶梯递增）";
+            case MOB_HEAD -> "斩首夺颅：击杀生物时每级 10% 概率\n掉落对应头颅（满5级=50%）\n僵尸/骷髅/凋灵骷髅/苦力怕/猪灵\n掉对应头颅\n击杀玩家掉对方皮肤的头颅\n无对应头颅的生物不掉\n不受任何技能增幅（不吃战利品爆炸/生物掉落倍率）\n每级消耗 10 技能点（阶梯递增）";
+            case AURA_EMPOWER -> "子枫的修罗杀域：消耗 1000 技能点\n杀戮光环获得强化伤害：\n混沌伤害（无视护甲）/Boss混沌连击/\n破盾/守卫水晶特判\n前置：子枫的杀戮领域 50 级";
+            case AMP_HP -> "血魄真解：每点 +10% 最大生命倍率";
+            case AMP_DAMAGE -> "剑心真解：每点 +10% 近战伤害倍率";
+            case AMP_ATTACK_SPEED -> "疾风真解：每点 +8% 攻击速度倍率";
+            case AMP_MINING -> "破岩真解：每点 +12% 挖掘速度倍率";
+            case AMP_REGEN -> "生生真解：每点 +16% 生命恢复倍率";
+            case AMP_ARMOR -> "金身真解：每点 +0.5% 物理减伤\n（独立减伤层，护甲 80% 封顶后继续防护）";
+            case AMP_MOVE -> "健步真解：每点 +10% 移动速度倍率";
+            case AMP_JUMP -> "蹦跳真解：每点 +10% 跳跃高度倍率";
+            case AMP_FLY -> "御空真解：每点 +10% 飞行速度倍率";
+            case AMP_SWIM -> "游鱼真解：每点 +10% 游泳速度倍率";
+            case AMP_TOUGH -> "磐石真解：每点 +10% 护甲韧性与击退抗性倍率";
+            case AMP_LUCK -> "鸿运真解：每点 +10% 幸运值倍率";
+            case AMP_CRIT -> "暴击真解：每点 +5% 暴击伤害倍率\n（在暴击 1.5 倍基础上叠加）";
+            case AMP_LIFESTEAL -> "噬血真解：每点 +8% 吸血量倍率";
+            case AMP_THORNS -> "荆棘真解：每点 +8% 反伤倍率";
+            case AMP_ARMOR_PEN -> "破甲真解：每点 +8% 破甲增伤倍率";
+            case ULT_BLOOD -> "子枫的燃血狂战：消耗 500 技能点，\n常驻攻击力 +50%、最大生命 +50%\n（燃血强化）\n前置：铁壁金身500 + 剑心通明500";
+            case ULT_GOLDEN -> "子枫的金刚不坏：消耗 500 技能点，\n常驻抗性提升10级、伤害吸收100级、\n抗火5级\n前置：磐石之躯500 + 金身真解500";
+            case ULT_MASTER -> "子枫的全能精通：消耗 5000 技能点，\n全方位防御（全伤害减免/护盾/免死/\n负面免疫），保证玩家不死\n前置：需解锁子枫的燃血狂战/子枫的金刚不坏/子枫的浴火重生/死神凝视";
+            case ULT_FAVOR -> "子枫的苍穹之翼：消耗 1000 技能点\n一次性点亮，解锁真正的创造飞行";
+            case NIGHT_VISION -> "星瞳夜视：消耗 100 技能点\n一次性点亮，永久夜视（不闪烁）";
+            case SATURATION -> "饱食无忧：消耗 100 技能点\n一次性点亮，饱食度永远满值";
+            case ULT_REVIVE -> "子枫的浴火重生：消耗 500 技能点，\n死亡原地复活一次，恢复50%生命\n并清除负面效果，冷却1分钟\n前置：噬血之刃500 + 暴击要害500";
+            case ULT_REAPER -> "死神凝视：消耗 1000 技能点，\n攻击生命<15%的非玩家生物时\n30%概率直接处决\n前置：破甲利刃500 + 剑心通明500";
+            case ULT_VOID_BODY -> "子枫的虚空神体：消耗 5000 技能点，\n三层无敌：免伤/免死/血量只增不减\n抗击退/免摔落/免火焰/清负面\n前置：子枫的全能精通";
+            case AUTO_SMELT -> "自动熔炼术：消耗 30 技能点\n挖掘方块时自动熔炼掉落物\n（铁矿石→铁锭、金矿石→金锭等）\n按熔炉配方判断能否熔炼\n判断顺序：先熔炉、再时运、再技能增幅\n一次性点亮，1 级\n\n⚠ 黑名单：\n手持对应矿石的粗矿\n（如挖铁矿石得到的生铁 raw_iron）\n输入 /hmd 加入黑名单\n黑名单中的物品不参与熔炼判定\n输入 /delhmd 可查看并移除";
+            case ULT_BREAK_ALL -> "子枫的万物可掘：消耗 100 技能点\n一次性点亮，激活后可以挖掘任何方块\n包括基岩这类无法破坏的方块\n挖掘后会掉落对应方块\n（左键点击即可挖掘，无需等待）";
+            case ULT_UNBREAK_TAG -> "不朽铭文：消耗 100 技能点\n一次性点亮，激活后\n在铁砧中放入两个相同的物品\n可以合成出带有【无法破坏】词条的工具\n（工具不再消耗耐久）";
+            case ULT_SWEEP -> "横扫千军：每级 +1 格攻击范围\n（近战攻击命中时，目标周围\nN 格内其他敌人同受伤害）\n仿龙之研究武器攻击范围升级\n10级 = 横扫半径 10 格\n每级消耗 2 技能点（线性 +2/级）";
+            case ULT_KB_RESIST -> "稳如泰山：每级 +10% 击退抗性\n10级 = 100%，玩家不会被击退\n每级消耗 2 技能点（线性 +2/级）";
+            case MACHINE_STAR -> "机关道祖：消耗 " + Config.MACHINE_STAR_COST.get() + " 技能点\n一次性点亮，机械共鸣的核心\n学习后才能学习其他共鸣技能\n（共鸣技能让模拟玩家机器\n如数字采矿机继承对应效果）";
+            case MACHINE_LOOT_BOMB -> "财源滚滚·机关共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器（假玩家）击杀生物\n才能继承战利品爆炸效果\n关闭/重置后立即失效\n前置：机关道祖 + 财源滚滚";
+            case MACHINE_UNBREAKABLE -> "万载不磨·机关共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器使用工具时\n才能继承工具不毁（耐久减免）效果\n关闭/重置后立即失效\n前置：机关道祖 + 万载不磨";
+            case MACHINE_MOB_DROP -> "猎魂丰收·机关共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承生物掉落倍率效果\n关闭/重置后立即失效\n前置：机关道祖 + 猎魂丰收";
+            case MACHINE_BLOCK_DROP -> "点石成金·机关共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器挖掘方块\n才能继承方块掉落倍率效果\n关闭/重置后立即失效\n前置：机关道祖 + 点石成金";
+            case MACHINE_XP_GAIN -> "经验飞涨·机关共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀/挖掘产生的经验\n才能继承经验获取倍率效果\n关闭/重置后立即失效\n前置：机关道祖 + 经验飞涨";
+            case MACHINE_SPAWN_EGG -> "妖魂凝卵·机关共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承刷怪蛋掉落效果\n关闭/重置后立即失效\n前置：机关道祖 + 妖魂凝卵";
+            case MACHINE_MOB_HEAD -> "斩首夺颅·机关共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承头颅掉落效果\n关闭/重置后立即失效\n前置：机关道祖 + 斩首夺颅";
+            case MACHINE_AUTO_SMELT -> "自动熔炼·机关共鸣：消耗 " + Config.MACHINE_RESONANCE_COST.get() + " 技能点\n一次性点亮，学习并开启后\n模拟玩家机器挖掘方块\n才能继承自动熔炼效果\n关闭/重置后立即失效\n前置：机关道祖 + 自动熔炼术";
+            case AURA_DAMAGE -> "子枫的杀戮领域：每级+10%伤害倍率，\n360°范围伤害，默认10秒攻击一次\n上限1000级\n前置：剑心通明100 + 疾风连击100";
+            case AURA_SPEED -> "疾攻之势：提高光环攻击频率\n（每级攻击间隔×0.9，20级=每秒约1.2次）\n上限20级\n前置：剑心通明100 + 疾风连击100";
+            case AURA_HEAL -> "回春妙手：每级给周围10格内\n友方单位对应等级的生命恢复效果\n（50级 = 生命恢复50级）\n上限50级，消耗随等级递增";
+            case AURA_MAGNET -> "吸星大法：一次性解锁（消耗 " + String.format("%.0f", org.zifeng.skilltree.Config.MAGNET_COST.get()) + " 技能点）\n按 H 键开关，自动吸取经验与掉落物\n（潜行时暂停）";
+            case AURA_TIME -> "时之环·刹那永恒：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定世界时间\n为开启瞬间的时间（不再强制正午）\n不被睡觉/时间命令影响\n关闭后立即恢复正常时间流动";
+            case AURA_WEATHER -> "晴空环·艳阳高照：消耗 " + Skills.minorUltCost() + " 技能点\n一次性点亮，开启后锁定晴天\n不被下雨/天气命令影响\n关闭后立即恢复正常天气";
+            case AURA_LOCK -> "定身神域：消耗 1000 技能点\n一次性点亮，开启后免疫 TP 与击退\n（传送/瞬移/击退均无效）\n只有自己移动/飞行才能真正移动";
+            case AURA_VOID -> "子枫的虚空诛灭：消耗 5000 技能点\n一次性点亮，杀戮光环获得虚空之矛力量\n（绝对秒杀+范围扩大至50格，K键控制）\n（磁铁范围扩至55格，H键控制）\n前置：子枫的杀戮领域 100 级";
+            case AURA_LOOT_VACUUM -> "子枫挪移术：消耗 10 技能点\n一次性点亮，手持原版木棍\n蹲下右键任意容器（箱子/漏斗等）绑定\n绑定后击杀生物/挖掘方块的掉落物\n直接传送进容器（不生成掉落物实体\n不卡顿，刷怪塔/挖矿机必备）\n跨维度生效（末地/下界杀怪也传回容器）\n再次蹲下右键同一容器解除绑定";
             default -> "";
         };
     }
@@ -739,6 +752,7 @@ public final class Skills {
             case AURA_WEATHER -> Items.SUNFLOWER;              // 晴空环：向日葵（面向太阳）
             case AURA_LOCK -> Items.ANVIL;                     // 光环锁定：铁砧（稳固不动）
             case AURA_VOID -> Items.DIAMOND_SWORD;            // 虚空之矛：原版钻石剑（虚空力量，金边=伤害吸收）
+            case AURA_LOOT_VACUUM -> Items.STICK;             // 凋落物挪移：木棍（绑定容器的工具）
             default -> Items.BARRIER;
         };
     }

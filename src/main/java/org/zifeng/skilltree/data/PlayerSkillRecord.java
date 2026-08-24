@@ -41,6 +41,14 @@ public class PlayerSkillRecord {
     private long totalConvertedPoints;
     /** 自动熔炼黑名单（2026-08-13 恢复）：黑名单中的掉落物不参与熔炼判定，当正常方块处理（Item 注册名集合） */
     private final Set<Item> autoSmeltBlacklist = new HashSet<>();
+    /** 凋落物挪移绑定（2026-08-24）：绑定信息存玩家存档（木棍只是绑定媒介，绑定后无需手持木棍）
+     *  null = 未绑定；维度字符串 + 坐标 + 朝向 + 容器显示名 */
+    private String lootVacuumDim;
+    private int lootVacuumX;
+    private int lootVacuumY;
+    private int lootVacuumZ;
+    private int lootVacuumFace = 0;
+    private String lootVacuumName = ""; // 容器方块显示名（如“箱子”）
 
     public Set<Item> getAutoSmeltBlacklist() {
         return Collections.unmodifiableSet(autoSmeltBlacklist);
@@ -54,6 +62,53 @@ public class PlayerSkillRecord {
     /** 移除黑名单物品（返回是否移除） */
     public boolean removeAutoSmeltBlacklist(Item item) {
         return autoSmeltBlacklist.remove(item);
+    }
+
+    // ============ 凋落物挪移绑定（2026-08-24） ============
+
+    /** 是否已绑定容器 */
+    public boolean hasLootVacuumBind() {
+        return lootVacuumDim != null && !lootVacuumDim.isBlank();
+    }
+
+    /** 绑定容器（维度字符串 + 坐标 + 朝向 + 容器显示名） */
+    public void setLootVacuumBind(String dim, int x, int y, int z, int face, String name) {
+        this.lootVacuumDim = dim;
+        this.lootVacuumX = x;
+        this.lootVacuumY = y;
+        this.lootVacuumZ = z;
+        this.lootVacuumFace = face;
+        this.lootVacuumName = name != null ? name : "";
+    }
+
+    /** 解除绑定 */
+    public void clearLootVacuumBind() {
+        this.lootVacuumDim = null;
+    }
+
+    public String getLootVacuumDim() {
+        return lootVacuumDim;
+    }
+
+    public int getLootVacuumX() {
+        return lootVacuumX;
+    }
+
+    public int getLootVacuumY() {
+        return lootVacuumY;
+    }
+
+    public int getLootVacuumZ() {
+        return lootVacuumZ;
+    }
+
+    public int getLootVacuumFace() {
+        return lootVacuumFace;
+    }
+
+    /** 容器显示名（如“箱子”） */
+    public String getLootVacuumName() {
+        return lootVacuumName;
     }
 
     public PlayerSkillRecord(UUID owner) {
@@ -403,6 +458,15 @@ public class PlayerSkillRecord {
                     .ifPresent(key -> blacklist.add(StringTag.valueOf(key.location().toString())));
         }
         tag.put("AutoSmeltBlacklist", blacklist);
+        // 凋落物挪移绑定
+        if (lootVacuumDim != null) {
+            tag.putString("LootVacuumDim", lootVacuumDim);
+            tag.putInt("LootVacuumX", lootVacuumX);
+            tag.putInt("LootVacuumY", lootVacuumY);
+            tag.putInt("LootVacuumZ", lootVacuumZ);
+            tag.putInt("LootVacuumFace", lootVacuumFace);
+            tag.putString("LootVacuumName", lootVacuumName);
+        }
         return tag;
     }
 
@@ -475,6 +539,15 @@ public class PlayerSkillRecord {
                     }
                 }
             }
+        }
+        // 凋落物挪移绑定（旧存档无此字段默认未绑定）
+        if (tag.contains("LootVacuumDim", Tag.TAG_STRING)) {
+            record.lootVacuumDim = tag.getString("LootVacuumDim");
+            record.lootVacuumX = tag.getInt("LootVacuumX");
+            record.lootVacuumY = tag.getInt("LootVacuumY");
+            record.lootVacuumZ = tag.getInt("LootVacuumZ");
+            record.lootVacuumFace = tag.getInt("LootVacuumFace");
+            record.lootVacuumName = tag.contains("LootVacuumName", Tag.TAG_STRING) ? tag.getString("LootVacuumName") : "";
         }
         return record;
     }

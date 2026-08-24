@@ -42,9 +42,10 @@ public record ToggleAuraC2SPacket() implements CustomPacketPayload {
                 record.setEnabled(Skills.AURA_DAMAGE, now);
                 data.setDirty();
                 // 聊天提示
+                String name = Skills.getDisplayName(Skills.AURA_DAMAGE);
                 player.sendSystemMessage(Component.literal(now
-                        ? "⚔ 杀戮光环·伤害已开启"
-                        : "✖ 杀戮光环·伤害已关闭"));
+                        ? "⚔ " + name + "已开启"
+                        : "✖ " + name + "已关闭"));
                 PacketDistributor.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
             }

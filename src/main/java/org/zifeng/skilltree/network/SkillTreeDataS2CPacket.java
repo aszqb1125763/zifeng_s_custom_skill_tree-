@@ -17,16 +17,37 @@ import java.util.Map;
  * 技能树数据（服务端 → 客户端）：技能点 + 已学 + 开关 + 生效等级 + 光环状态。
  */
 public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> learnedSkills, Map<String, Boolean> toggles,
-                                     Map<String, Integer> activeLevels, boolean auraEnabled, Map<String, Integer> auraTargetModes) implements CustomPacketPayload {
+                                     Map<String, Integer> activeLevels, boolean auraEnabled, Map<String, Integer> auraTargetModes,
+                                     String lootVacuumBind) implements CustomPacketPayload {
     public static final Type<SkillTreeDataS2CPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "skill_tree_data"));
-    public static final StreamCodec<FriendlyByteBuf, SkillTreeDataS2CPacket> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.DOUBLE, SkillTreeDataS2CPacket::skillPoints,
-            ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, ByteBufCodecs.VAR_INT), SkillTreeDataS2CPacket::learnedSkills,
-            ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, ByteBufCodecs.BOOL), SkillTreeDataS2CPacket::toggles,
-            ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, ByteBufCodecs.VAR_INT), SkillTreeDataS2CPacket::activeLevels,
-            ByteBufCodecs.BOOL, SkillTreeDataS2CPacket::auraEnabled,
-            ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, ByteBufCodecs.VAR_INT), SkillTreeDataS2CPacket::auraTargetModes,
-            SkillTreeDataS2CPacket::new);
+    // ⚠️ 2026-08-24：StreamCodec.composite 最多 8 字段，加 lootVacuumBind 后 9 个 → 改 StreamCodec.of 手动编解码
+    public static final StreamCodec<FriendlyByteBuf, SkillTreeDataS2CPacket> STREAM_CODEC = new StreamCodec<>() {
+        @Override
+        public SkillTreeDataS2CPacket decode(FriendlyByteBuf buf) {
+            double skillPoints = buf.readDouble();
+            Map<String, Integer> learnedSkills = buf.readMap(HashMap::new, FriendlyByteBuf::readUtf, FriendlyByteBuf::readVarInt);
+            Map<String, Boolean> toggles = buf.readMap(HashMap::new, FriendlyByteBuf::readUtf, FriendlyByteBuf::readBoolean);
+            Map<String, Integer> activeLevels = buf.readMap(HashMap::new, FriendlyByteBuf::readUtf, FriendlyByteBuf::readVarInt);
+            boolean auraEnabled = buf.readBoolean();
+            Map<String, Integer> auraTargetModes = buf.readMap(HashMap::new, FriendlyByteBuf::readUtf, FriendlyByteBuf::readVarInt);
+            String lootVacuumBind = buf.readBoolean() ? buf.readUtf() : null;
+            return new SkillTreeDataS2CPacket(skillPoints, learnedSkills, toggles, activeLevels, auraEnabled, auraTargetModes, lootVacuumBind);
+        }
+
+        @Override
+        public void encode(FriendlyByteBuf buf, SkillTreeDataS2CPacket p) {
+            buf.writeDouble(p.skillPoints());
+            buf.writeMap(p.learnedSkills(), FriendlyByteBuf::writeUtf, FriendlyByteBuf::writeVarInt);
+            buf.writeMap(p.toggles(), FriendlyByteBuf::writeUtf, FriendlyByteBuf::writeBoolean);
+            buf.writeMap(p.activeLevels(), FriendlyByteBuf::writeUtf, FriendlyByteBuf::writeVarInt);
+            buf.writeBoolean(p.auraEnabled());
+            buf.writeMap(p.auraTargetModes(), FriendlyByteBuf::writeUtf, FriendlyByteBuf::writeVarInt);
+            buf.writeBoolean(p.lootVacuumBind() != null);
+            if (p.lootVacuumBind() != null) {
+                buf.writeUtf(p.lootVacuumBind());
+            }
+        }
+    };
 
     @Override
     public Type<? extends CustomPacketPayload> type() {
@@ -39,7 +60,10 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
         boolean auraOn = record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.AURA_DAMAGE) > 0
                 && record.isEnabled(org.zifeng.skilltree.skill.Skills.AURA_DAMAGE);
         return new SkillTreeDataS2CPacket(record.getSkillPoints(), record.getLearnedSkills(), record.getToggles(),
-                record.getActiveLevels(), auraOn, record.getAuraTargetModes());
+                record.getActiveLevels(), auraOn, record.getAuraTargetModes(), record.hasLootVacuumBind()
+                        ? record.getLootVacuumName() + " [" + record.getLootVacuumX() + ", " + record.getLootVacuumY()
+                        + ", " + record.getLootVacuumZ() + "]"
+                        : null);
     }
 
     public static void handle(SkillTreeDataS2CPacket packet, IPayloadContext ctx) {
@@ -62,6 +86,8 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
                 // 校准磁力光环已学状态（蓝色圆环显示用）
                 org.zifeng.skilltree.client.ModKeyBindingEvents.setMagnetLearnedClient(
                         packet.learnedSkills().getOrDefault(org.zifeng.skilltree.skill.Skills.AURA_MAGNET, 0) > 0);
+                // 校准凋落物挪移绑定容器（技能树 tooltip 显示用）
+                org.zifeng.skilltree.client.ModKeyBindingEvents.setLootVacuumBindClient(packet.lootVacuumBind());
                 // 只在技能树界面已打开时更新数据，绝不强制打开界面
                 // （否则 K/L 键切换光环/目标时回发的数据包会把技能树界面弹出来）
                 if (mc.screen instanceof SkillTreeScreen screen) {

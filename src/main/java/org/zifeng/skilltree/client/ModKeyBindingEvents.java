@@ -46,6 +46,19 @@ public class ModKeyBindingEvents {
     /** 所有技能生效等级缓存（2026-08-13 第二快捷键循环等级用：技能ID → 当前生效等级） */
     private static final Map<String, Integer> allActiveLevelsCache = new HashMap<>();
 
+    /** 凋落物挪移绑定容器缓存（2026-08-24 服务端回发校准，技能树 tooltip 显示 "绑定容器+坐标"；null=未绑定） */
+    private static String lootVacuumBindClient = null;
+
+    /** 获取凋落物挪移绑定的容器坐标（"维度 x,y,z"，null=未绑定） */
+    public static String getLootVacuumBindClient() {
+        return lootVacuumBindClient;
+    }
+
+    /** 服务端回发校准凋落物挪移绑定容器 */
+    public static void setLootVacuumBindClient(String bind) {
+        lootVacuumBindClient = bind;
+    }
+
     /** 辅助：已学等级 */
     private static int learnedPointsOf(String skillId) {
         return allSkillsLevelsCache.getOrDefault(skillId, 0);
