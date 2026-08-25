@@ -91,6 +91,8 @@ gradlew.bat build
 | **Ars Nouveau（新生魔艺）** | 魔力属性互操作 | 魔法增幅列读取 PerkAttributes.MAX_MANA / MANA_REGEN_BONUS |
 | **Iron's Spells 'n Spellbooks（铁魔法）** | 魔力属性互操作 | 魔法增幅列读取 MAX_MANA / MANA_REGEN / 吟唱 / 冷却 / 流派法术强度属性 |
 | **Extra Utilities** | 自动熔炼机制 | 自动熔炼终极的技能设计灵感 |
+| **JustDireThings** | 掉落传送绑定机制（DROPTELEPORT） | 子枫挪移术（凋落物挪移）绑定思路参考——木棍蹲下右键容器绑定；独立重写（绑定信息存玩家存档而非物品组件），MIT 协议 |
+| **Flux-Networks** | long 能量传输接口（IFNEnergyStorage，超 int 21 亿） | 星能转换机超 21 亿 FE 能量兼容——注册其 FluxCapabilities.BLOCK capability 直灌 long 能量；反射软集成，未装 Flux 自动降级 |
 
 > 📝 声明：以上模组仅为机制参考，本模组代码由 AI 辅助原创编写，未复制任何模组的源码。
 
