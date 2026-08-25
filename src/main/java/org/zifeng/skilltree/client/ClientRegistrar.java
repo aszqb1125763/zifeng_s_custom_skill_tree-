@@ -16,5 +16,13 @@ public class ClientRegistrar {
         NeoForge.EVENT_BUS.register(ModKeyBindingEvents.class);
         // 凤凰涅槃冷却 HUD 提示（RenderGuiEvent.Post）
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ReviveHudRenderer.class);
+        // 技能点变动左下角 HUD 提示（2026-08-25：不刷聊天栏，显示在聊天栏下方）
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.SkillPointHudRenderer.class);
+        // 断开连接清空客户端缓存（2026-08-25 多人防跨服数据残留：HUD 技能点/凤凰涅槃冷却/技能缓存）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingOut event) -> {
+            org.zifeng.skilltree.client.SkillPointHudRenderer.onDisconnect();
+            org.zifeng.skilltree.client.ReviveHudRenderer.setCooldown(false, 0);
+            org.zifeng.skilltree.client.ModKeyBindingEvents.onDisconnect();
+        });
     }
 }

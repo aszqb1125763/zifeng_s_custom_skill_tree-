@@ -88,6 +88,8 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
                         packet.learnedSkills().getOrDefault(org.zifeng.skilltree.skill.Skills.AURA_MAGNET, 0) > 0);
                 // 校准凋落物挪移绑定容器（技能树 tooltip 显示用）
                 org.zifeng.skilltree.client.ModKeyBindingEvents.setLootVacuumBindClient(packet.lootVacuumBind());
+                // 校准技能点 HUD 常驻显示（2026-08-25：左下角总技能点绿色常驻）
+                org.zifeng.skilltree.client.SkillPointHudRenderer.updateTotal(packet.skillPoints());
                 // 只在技能树界面已打开时更新数据，绝不强制打开界面
                 // （否则 K/L 键切换光环/目标时回发的数据包会把技能树界面弹出来）
                 if (mc.screen instanceof SkillTreeScreen screen) {

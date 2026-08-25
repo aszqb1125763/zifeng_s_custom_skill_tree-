@@ -44,7 +44,7 @@ public class SkillTreeScreen extends Screen {
     private static final int HORIZONTAL_SPACING = 30;
     private static final int BORDER_THICKNESS = 4;
     private static final int PANEL_WIDTH = 150;
-    private static final double MIN_SCALE = 0.5;
+    private static final double MIN_SCALE = 0.25; // 2026-08-25：八列总宽 1960，0.25 缩放下全可见
     private static final double MAX_SCALE = 2.5;
 
     private double skillPoints;
@@ -132,17 +132,21 @@ public class SkillTreeScreen extends Screen {
 
     private int tickCounter = 0;
 
-    /** 六纵列布局：六列顶部对齐（上方对齐），魔法增幅列在最左，机械共鸣列在最右 */
+    /** 八纵列布局：八列顶部对齐（上方对齐），魔法增幅列在最左，子枫的馈赠列在最右。
+     * ⚠️ 2026-08-25 间距统一 280：每列实际占宽 244（按钮150+开关框44+等级框44+间隙），
+     *    280 > 244 保证列与列完全不重叠（原 240 会贴住/重叠）。 */
     private void rebuildButtons() {
         buttons.clear();
-        // 6 列中心 x：按钮 150 + 开关框 44 + 等级框 44 + 间隙 = 每列约 250 宽，列中心间隔 280（防第二框与下柱重叠）
-        int[] colCenters = {-700, -420, -140, 140, 420, 700};
+        // 8 列中心 x：间距统一 280（8 列总宽 1960，默认缩放 0.6 可见全列）
+        int[] colCenters = {-980, -700, -420, -140, 140, 420, 700, 980};
         placeColumn(Skills.MAGIC_SKILLS, colCenters[0]);
         placeColumn(Skills.BASE_SKILLS, colCenters[1]);
         placeColumn(Skills.AMPLIFY_SKILLS, colCenters[2]);
         placeColumn(Skills.ULTIMATE_SKILLS, colCenters[3]);
-        placeColumn(Skills.AURA_SKILLS, colCenters[4]);
-        placeColumn(Skills.MACHINE_SKILLS, colCenters[5]);
+        placeColumn(Skills.SPECIAL_SKILLS, colCenters[4]);
+        placeColumn(Skills.AURA_SKILLS, colCenters[5]);
+        placeColumn(Skills.MACHINE_SKILLS, colCenters[6]);
+        placeColumn(Skills.GIFT_SKILLS, colCenters[7]);
     }
 
     /** 五列统一顶部 y（上方对齐）：按钮区上方留空间给列标题（加大后标题占 30px 高） */
@@ -222,13 +226,15 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.pose().scale((float) scale, (float) scale, 1.0F);
 
         // 列标题（大字号 + 类型色边框背景，跟随各列顶部；与按钮区保持间距）
-        int[] colCenters = {-700, -420, -140, 140, 420, 700};
+        int[] colCenters = {-980, -700, -420, -140, 140, 420, 700, 980};
         renderColumnTitle(guiGraphics, "魔法增幅", colCenters[0], 0xFF55FFAA);
         renderColumnTitle(guiGraphics, "基础属性", colCenters[1], 0xFF87CEEB);
         renderColumnTitle(guiGraphics, "特殊增幅", colCenters[2], 0xFFFFAA55);
         renderColumnTitle(guiGraphics, "终极节点", colCenters[3], 0xFFFF5555);
-        renderColumnTitle(guiGraphics, "光环", colCenters[4], 0xFFAA55FF);
-        renderColumnTitle(guiGraphics, "机械共鸣", colCenters[5], 0xFFD7D7D7);
+        renderColumnTitle(guiGraphics, "特殊被动", colCenters[4], 0xFFD7A55A);
+        renderColumnTitle(guiGraphics, "光环", colCenters[5], 0xFFAA55FF);
+        renderColumnTitle(guiGraphics, "机械共鸣", colCenters[6], 0xFFD7D7D7);
+        renderColumnTitle(guiGraphics, "子枫的馈赠", colCenters[7], 0xFFE0B6C8);
 
         // 按键框列标题（2026-08-13 需求：按键框上方加标题，标明两列用途）
         // 第一框（开关）：按钮右缘 + 3；第二框（等级/目标）：再右移 44+3
@@ -261,8 +267,10 @@ public class SkillTreeScreen extends Screen {
             case 1 -> Skills.BASE_SKILLS;
             case 2 -> Skills.AMPLIFY_SKILLS;
             case 3 -> Skills.ULTIMATE_SKILLS;
-            case 4 -> Skills.AURA_SKILLS;
-            default -> Skills.MACHINE_SKILLS;
+            case 4 -> Skills.SPECIAL_SKILLS;
+            case 5 -> Skills.AURA_SKILLS;
+            case 6 -> Skills.MACHINE_SKILLS;
+            default -> Skills.GIFT_SKILLS;
         };
         for (String skillId : col) {
             if (isLevelBindable(skillId)) {
@@ -420,6 +428,89 @@ public class SkillTreeScreen extends Screen {
             renderPanelRestoreButton(guiGraphics);
         }
         renderHeaderInfo(guiGraphics);
+        renderHudToggleButton(guiGraphics);
+    }
+
+    /** 技能点 HUD 开关按钮（顶部信息区右下角，2026-08-25：自由开关左下角技能点 HUD）
+     *  下面两行：X 位置 / Y 位置调节（点击 ±10，Shift+点击 ±1） */
+    private static final int HUD_BTN_W = 110;
+    private static final int HUD_BTN_H = 14;
+    private static final int HUD_POS_W = 110;
+    private static final int HUD_POS_H = 13;
+
+    /** HUD 控件顶部 y */
+    private int hudPanelTop() {
+        return 8;
+    }
+
+    private void renderHudToggleButton(GuiGraphics guiGraphics) {
+        boolean visible = org.zifeng.skilltree.client.SkillPointHudRenderer.isVisible();
+        int x = width - HUD_BTN_W - 12;
+        int y = hudPanelTop();
+        // 行1：开关键
+        int bg = visible ? 0xFF2A4A2A : 0xFF4A2A2A;
+        int border = visible ? 0xFF55FF55 : 0xFFFF5555;
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + HUD_BTN_W, y + HUD_BTN_H, bg);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + HUD_BTN_W, y + 1, border);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y + HUD_BTN_H - 1, x + HUD_BTN_W, y + HUD_BTN_H, border);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + 1, y + HUD_BTN_H, border);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x + HUD_BTN_W - 1, y, x + HUD_BTN_W, y + HUD_BTN_H, border);
+        guiGraphics.drawCenteredString(font, visible ? "✅ 技能点HUD开" : "❌ 技能点HUD关", x + HUD_BTN_W / 2, y + 3, visible ? 0xFF55FF55 : 0xFFFF5555);
+        // 行2：X 位置
+        int y2 = y + HUD_BTN_H + 2;
+        drawHudPosRow(guiGraphics, x, y2, "X位置",
+                org.zifeng.skilltree.client.SkillPointHudRenderer.getHudOffsetX());
+        // 行3：Y 位置
+        int y3 = y2 + HUD_POS_H + 2;
+        drawHudPosRow(guiGraphics, x, y3, "Y位置",
+                org.zifeng.skilltree.client.SkillPointHudRenderer.getHudOffsetY());
+    }
+
+    private void drawHudPosRow(GuiGraphics guiGraphics, int x, int y, String label, int value) {
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + HUD_POS_W, y + HUD_POS_H, 0xFF2A2A3A);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + HUD_POS_W, y + 1, 0xFF555566);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y + HUD_POS_H - 1, x + HUD_POS_W, y + HUD_POS_H, 0xFF555566);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + 1, y + HUD_POS_H, 0xFF555566);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x + HUD_POS_W - 1, y, x + HUD_POS_W, y + HUD_POS_H, 0xFF555566);
+        // 左箭头区（0 ~ 20px）、文字区（20 ~ 90）、右箭头区（90 ~ 110）
+        guiGraphics.drawCenteredString(font, "◀", x + 10, y + 2, 0xFF87CEEB);
+        guiGraphics.drawCenteredString(font, label + ":" + value, x + 55, y + 2, 0xFFE0B6C8);
+        guiGraphics.drawCenteredString(font, "▶", x + HUD_POS_W - 10, y + 2, 0xFF87CEEB);
+    }
+
+    /** 点击 HUD 区域（返回 true=已处理）：行1 开关；行2 X位置；行3 Y位置 */
+    private boolean handleHudButtonClick(double mouseX, double mouseY) {
+        int x = width - HUD_BTN_W - 12;
+        int y = hudPanelTop();
+        // 行1：开关键
+        if (mouseX >= x && mouseX <= x + HUD_BTN_W && mouseY >= y && mouseY <= y + HUD_BTN_H) {
+            org.zifeng.skilltree.client.SkillPointHudRenderer.setVisible(
+                    !org.zifeng.skilltree.client.SkillPointHudRenderer.isVisible());
+            return true;
+        }
+        // 行2/行3：X/Y 位置
+        int y2 = y + HUD_BTN_H + 2;
+        int y3 = y2 + HUD_POS_H + 2;
+        boolean shift = isShiftHeld();
+        int step = shift ? 1 : 10;
+        if (mouseX >= x && mouseX <= x + HUD_POS_W && mouseY >= y2 && mouseY <= y2 + HUD_POS_H) {
+            // X 位置：左箭- / 右箭+
+            if (mouseX < x + 22) {
+                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetX(-step);
+            } else if (mouseX > x + HUD_POS_W - 22) {
+                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetX(step);
+            }
+            return true;
+        }
+        if (mouseX >= x && mouseX <= x + HUD_POS_W && mouseY >= y3 && mouseY <= y3 + HUD_POS_H) {
+            if (mouseX < x + 22) {
+                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetY(-step);
+            } else if (mouseX > x + HUD_POS_W - 22) {
+                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetY(step);
+            }
+            return true;
+        }
+        return false;
     }
 
     /** 顶部信息区（第一图层最顶）：技能树标题 + 技能点/状态行 + 快捷键提示行 + 未绑定快捷键警告 */
@@ -436,7 +527,7 @@ public class SkillTreeScreen extends Screen {
                 + "   ·   光环:" + (auraEnabled ? "开" : "关")
                 + "   ·   目标:" + modeText;
         // 第二行：快捷键提示（灰字，紧凑排列，不再一行塞满）
-        String hintLine = "左键加点  Shift+左键×10  Ctrl+Shift×100  右键开关  滚轮调级  Ctrl+R重置";
+        String hintLine = "左键加点  Shift+左键×10  Ctrl+Shift×100  右键开关  滚轮调级  中键拖动  Ctrl+R重置";
         // 光环快捷键未绑定提示（默认空键，引导玩家自行设置）
         boolean showWarn = org.zifeng.skilltree.client.ModKeyBindingEvents.hasUnboundAuraKeys();
         String warnLine = showWarn ? "⚠ 光环技能默认无快捷键：点击技能右下角 🔑 可设置开关快捷键" : null;
@@ -481,17 +572,21 @@ public class SkillTreeScreen extends Screen {
             case BASE -> 0xFF87CEEB;
             case AMPLIFY -> 0xFFFFAA55;
             case ULTIMATE -> 0xFFFF5555;
+            case SPECIAL -> 0xFFD7A55A;
             case AURA -> 0xFFAA55FF;
             case MAGIC -> 0xFF55FFAA;
             case MACHINE -> 0xFFD7D7D7;
+            case GIFT -> 0xFFE0B6C8; // 子枫的馈赠：柔和藕粉
         };
         String typeTag = switch (type) {
             case BASE -> "[基础]";
             case AMPLIFY -> "[增幅]";
             case ULTIMATE -> "[终极]";
+            case SPECIAL -> "[被动]";
             case AURA -> "[光环]";
             case MAGIC -> "[魔法]";
             case MACHINE -> "[共鸣]";
+            case GIFT -> "[馈赠]";
         };
         // 1. 标题行（大字号 + 类型色）
         lines.add(new TooltipLine(typeTag + " " + Skills.getDisplayName(skillId), titleColor, 1.15F));
@@ -518,10 +613,26 @@ public class SkillTreeScreen extends Screen {
             case MAGIC -> "[每级消耗 " + fmtCost(Skills.getMagicCostAtLevel(skillId, 0)) + " 点，线性增长]";
             case AURA -> "[下次消耗 " + (long) recordNextCost(skillId) + " 点]";
             case ULTIMATE -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点]";
+            case SPECIAL -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点]";
             case MACHINE -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点，一次性]";
+            case GIFT -> "[按游戏时长激活，不消耗技能点]";
         };
         lines.add(new TooltipLine(" ", 0xFF000000, 0.6F));
         lines.add(new TooltipLine(costText, 0xFFFFD700, 0.9F));
+
+        // 2.6 子枫的馈赠：显示激活条件（2026-08-25）
+        if (Skills.isGiftSkill(skillId)) {
+            if (Skills.GIFT_TIME_BAPTISM.equals(skillId) || Skills.GIFT_TIME_STORM.equals(skillId)
+                    || Skills.GIFT_TIME_FLOOD.equals(skillId)) {
+                long need = Skills.getGiftRequirementTicks(skillId);
+                lines.add(new TooltipLine("⏳ 激活要求：游戏时长 ≥ " + (need / 72000) + " 小时", 0xFFAAFF55, 0.9F));
+            } else if (Skills.isGiftDistanceBaptism(skillId)) {
+                String unit = Skills.GIFT_MINE_BAPTISM.equals(skillId) ? "个方块" : "米";
+                lines.add(new TooltipLine("📏 当前等级需求：" + Skills.getGiftDistanceRequirement(skillId, 1) + unit + " / 1 技能点", 0xFFAAFF55, 0.9F));
+                lines.add(new TooltipLine("   升级后：" + Skills.getGiftDistanceRequirement(skillId, 2) + unit + " → "
+                        + Skills.getGiftDistanceRequirement(skillId, 3) + unit, 0xFF88AA88, 0.9F));
+            }
+        }
 
         // 4. 模组缺失红字（MAGIC 且对应模组未装）
         String missingMod = missingModName(skillId);
@@ -564,6 +675,14 @@ public class SkillTreeScreen extends Screen {
         }
         if (missingModName(skillId) != null) {
             return "⚠ 未安装对应模组，无法学习";
+        }
+        if (Skills.isGiftSkill(skillId)) {
+            // 时间系列：游戏时长门槛；洗礼/增幅：技能点消耗
+            if (Skills.GIFT_TIME_BAPTISM.equals(skillId) || Skills.GIFT_TIME_STORM.equals(skillId) || Skills.GIFT_TIME_FLOOD.equals(skillId)) {
+                long need = Skills.getGiftRequirementTicks(skillId);
+                return "需游戏时长 " + (need / 72000) + " 小时（时间达标后左键激活）";
+            }
+            return "左键学习/升级（消耗技能点）· 右键开关";
         }
         if (skillPoints < nextCostLocal(skillId) - 1e-9) {
             return "技能点不足（需 " + fmtCost(nextCostLocal(skillId)) + " 点）";
@@ -657,7 +776,19 @@ public class SkillTreeScreen extends Screen {
                 && mouseY >= panelToggleY() && mouseY <= panelToggleY() + 14) {
             return true;
         }
+        // 技能点 HUD 开关+位置调节面板（右上角 3 行，2026-08-25）
+        if (isHudPanelHit(mouseX, mouseY)) {
+            return true;
+        }
         return false;
+    }
+
+    /** HUD 面板 3 行区域命中（开关 + X + Y） */
+    private boolean isHudPanelHit(double mouseX, double mouseY) {
+        int x = width - HUD_BTN_W - 12;
+        int y = hudPanelTop();
+        int panelBottom = y + HUD_BTN_H + 2 + HUD_POS_H + 2 + HUD_POS_H;
+        return mouseX >= x && mouseX <= x + HUD_BTN_W && mouseY >= y && mouseY <= panelBottom;
     }
 
     /** 图标被 UI/tooltip 覆盖时跳过的面积比例阈值（图标被遮 ≥15% 才跳过渲染） */
@@ -745,8 +876,10 @@ public class SkillTreeScreen extends Screen {
             case BASE -> hovered ? 0xFF3A5A8A : 0xFF24476E;
             case AMPLIFY -> hovered ? 0xFF8A5A2A : 0xFF6E4424;
             case ULTIMATE -> hovered ? 0xFF8A2A3A : 0xFF6E242E;
+            case SPECIAL -> hovered ? 0xFF7A5A2A : 0xFF5A4020; // 特殊被动：棕铜（被动/掉落主题）
             case AURA -> hovered ? 0xFF5A3A8A : 0xFF3E2470;
             case MACHINE -> hovered ? 0xFF6A6A6A : 0xFF4A4A4A; // 机械共鸣：铁灰（机械主题）
+            case GIFT -> hovered ? 0xFFD3A8B8 : 0xFFB08A98; // 子枫的馈赠：柔和藕粉系
         };
         int borderColor;
         if (!enabled) {
@@ -854,9 +987,10 @@ public class SkillTreeScreen extends Screen {
                 default -> 0;
             };
             costText = "生效:" + active + "/" + points + " 下1级:" + fmtCost(unitCost) + "点";
-        } else if (type == Skills.SkillType.ULTIMATE) {
+        } else if (type == Skills.SkillType.ULTIMATE || type == Skills.SkillType.SPECIAL) {
             // 终极节点：单次解锁消耗（浴血/金身/涅槃=500，死神=1000，全能精通=5000，宇宙的青睐=1000，夜视/饱食=100）
             // 多级终极（节点类）：村庄英雄10点/级、接触距离1点/级、发光1点，显示已耗+下一级
+            // ⚠️ SPECIAL（特殊被动）：同终极成本体系（从终极列拆出）
             if (Skills.ULT_FAVOR.equals(button.skillId())) {
                 costText = points > 0 ? "已解锁" : "需" + Skills.ultFavorCost() + "点";
             } else if (Skills.NIGHT_VISION.equals(button.skillId()) || Skills.SATURATION.equals(button.skillId())) {
@@ -874,6 +1008,22 @@ public class SkillTreeScreen extends Screen {
         } else if (type == Skills.SkillType.MACHINE) {
             // 机械共鸣：单级解锁（机械之星 1000 / 其余共鸣 5000）
             costText = points > 0 ? "已解锁" : "需" + (long) Skills.getMachineCost(button.skillId()) + "点";
+        } else if (type == Skills.SkillType.GIFT) {
+            // 子枫的馈赠：时间系列=按游戏时长激活（0点）；洗礼=阶梯消耗；增幅=指数消耗
+            if (Skills.GIFT_TIME_BAPTISM.equals(button.skillId())
+                    || Skills.GIFT_TIME_STORM.equals(button.skillId())
+                    || Skills.GIFT_TIME_FLOOD.equals(button.skillId())) {
+                // 时间系列：单级，已激活显示"已激活"
+                costText = points > 0 ? "已激活" : "需" + (Skills.getGiftRequirementTicks(button.skillId()) / 72000) + "小时";
+            } else if (points > 0 && points < Skills.getGiftMaxPoints(button.skillId())) {
+                // 已学未满级：显示下一级消耗（与其他类别技能一致，2026-08-25）
+                costText = "已学" + points + "/" + Skills.getGiftMaxPoints(button.skillId())
+                        + " 下1级:" + fmtCost(Skills.getGiftCost(button.skillId(), points)) + "点";
+            } else if (points > 0) {
+                costText = "已满级 " + points + "/" + Skills.getGiftMaxPoints(button.skillId());
+            } else {
+                costText = "需" + fmtCost(Skills.getGiftCost(button.skillId(), points)) + "点";
+            }
         } else {
             costText = points + "级";
         }
@@ -991,6 +1141,7 @@ public class SkillTreeScreen extends Screen {
         if (type == Skills.SkillType.BASE && current >= Skills.BASE_MAX_POINTS) return false;
         if (type == Skills.SkillType.AMPLIFY && current >= Skills.AMPLIFY_MAX_POINTS) return false;
         if (type == Skills.SkillType.ULTIMATE && current >= Skills.getUltimateMaxPoints(skillId)) return false;
+        if (type == Skills.SkillType.SPECIAL && current >= Skills.getUltimateMaxPoints(skillId)) return false; // 特殊被动：复用终极上限
         if (type == Skills.SkillType.AURA && current >= Skills.getAuraMaxPoints(skillId)) return false;
         if (type == Skills.SkillType.MAGIC) {
             if (current >= Skills.getMagicMaxPoints(skillId)) return false;
@@ -998,6 +1149,7 @@ public class SkillTreeScreen extends Screen {
             if (missingModName(skillId) != null) return false;
         }
         if (type == Skills.SkillType.MACHINE && current >= Skills.getMachineMaxPoints(skillId)) return false;
+        if (type == Skills.SkillType.GIFT && current >= Skills.getGiftMaxPoints(skillId)) return false; // 子枫的馈赠：单级
         // 前置需求（终极/光环通用：前置技能 → 所需等级）
         for (Map.Entry<String, Integer> entry : Skills.getPrerequisites(skillId)) {
             if (learnedSkills.getOrDefault(entry.getKey(), 0) < entry.getValue()) return false;
@@ -1073,7 +1225,7 @@ public class SkillTreeScreen extends Screen {
         String statusLine = "技能点：" + String.format("%.1f", Math.max(0, skillPoints))
                 + "   ·   光环:" + (auraEnabled ? "开" : "关")
                 + "   ·   目标:" + modeText;
-        String hintLine = "左键加点  Shift+左键×10  Ctrl+Shift×100  右键开关  滚轮调级  Ctrl+R重置";
+        String hintLine = "左键加点  Shift+左键×10  Ctrl+Shift×100  右键开关  滚轮调级  中键拖动  Ctrl+R重置";
         int maxWidth = Math.max(font.width(title), Math.max(font.width(statusLine), font.width(hintLine)));
         if (org.zifeng.skilltree.client.ModKeyBindingEvents.hasUnboundAuraKeys()) {
             maxWidth = Math.max(maxWidth, font.width("⚠ 光环技能默认无快捷键：点击技能右下角 🔑 可设置开关快捷键"));
@@ -1229,6 +1381,52 @@ public class SkillTreeScreen extends Screen {
             if (eldritch > 0) addRow(rows, "异界法术强度", eldritch * 100, "+%.0f%%");
         } else if (hasIron) {
             rows.add(new String[]{"铁魔法", "未安装，学习无效", "#FF5555"});
+        }
+
+        // ============ 子枫的馈赠（纵列7，2026-08-25：时间/移动/飞行/挖掘洗礼 + 增幅） ============
+        boolean hasGift = false;
+        for (String g : Skills.GIFT_SKILLS) {
+            if (rec.getLearnedPoints(g) > 0) {
+                hasGift = true;
+                break;
+            }
+        }
+        if (hasGift) {
+            rows.add(new String[]{"—— 子枫的馈赠 ——", "", "#777777"});
+            // 时间洗礼/风暴/洪流：等级
+            for (String timeSkill : java.util.List.of(Skills.GIFT_TIME_BAPTISM, Skills.GIFT_TIME_STORM, Skills.GIFT_TIME_FLOOD)) {
+                int t = rec.getLearnedPoints(timeSkill);
+                if (t > 0) {
+                    String enabledMark = rec.isEnabled(timeSkill) ? "" : "（关）";
+                    long interval = Skills.getGiftIntervalTicks(timeSkill) / 20;
+                    // 2026-08-25：简短格式避免叠加（时间风暴每次+5、洪流+10）
+                    int pts = Skills.GIFT_TIME_FLOOD.equals(timeSkill) ? 10 : Skills.GIFT_TIME_STORM.equals(timeSkill) ? 5 : 1;
+                    rows.add(new String[]{Skills.getDisplayName(timeSkill) + enabledMark,
+                            t + "级/" + (interval / 60) + "分钟+" + pts, "#E0B6C8"});
+                }
+            }
+            // 移动/飞行/挖掘/击杀洗礼：等级 + 当前需求（简短格式）
+            for (String dSkill : java.util.List.of(Skills.GIFT_MOVE_BAPTISM, Skills.GIFT_FLY_BAPTISM, Skills.GIFT_MINE_BAPTISM, Skills.GIFT_KILL_BAPTISM)) {
+                int lv = rec.getLearnedPoints(dSkill);
+                if (lv > 0) {
+                    String enabledMark = rec.isEnabled(dSkill) ? "" : "（关）";
+                    String unit = Skills.GIFT_KILL_BAPTISM.equals(dSkill) ? "杀" : (Skills.GIFT_MINE_BAPTISM.equals(dSkill) ? "块" : "米");
+                    long need = Skills.getGiftDistanceRequirement(dSkill, Math.max(1, rec.getActiveLevel(dSkill)));
+                    // 增幅等级
+                    String ampSkill = Skills.getGiftAmpSkill(dSkill);
+                    int ampLv = ampSkill != null && rec.isEnabled(ampSkill) ? rec.getActiveLevel(ampSkill) : 0;
+                    rows.add(new String[]{Skills.getDisplayName(dSkill) + enabledMark,
+                            lv + "级/" + need + unit + "+" + (1 + ampLv), "#E0B6C8"});
+                }
+            }
+            // 增幅单独行（简短）
+            for (String aSkill : java.util.List.of(Skills.GIFT_MOVE_AMP, Skills.GIFT_FLY_AMP, Skills.GIFT_MINE_AMP, Skills.GIFT_KILL_AMP)) {
+                int alv = rec.getLearnedPoints(aSkill);
+                if (alv > 0) {
+                    rows.add(new String[]{Skills.getDisplayName(aSkill) + (rec.isEnabled(aSkill) ? "" : "（关）"),
+                            alv + "/100", "#E0B6C8"});
+                }
+            }
         }
         rows.add(new String[]{"技能点", String.format("%.1f", Math.max(0, skillPoints)), "#FFFFD700"});
         return rows;
@@ -1473,6 +1671,10 @@ public class SkillTreeScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        // 技能点 HUD 开关 + 位置调节（右上角，2026-08-25）
+        if (button == 0 && handleHudButtonClick(mouseX, mouseY)) {
+            return true;
+        }
         // 面板开关按钮（右下角）：点击隐藏/显示；Shift+点击切换位置（优先级最高，避免误触技能）
         if (button == 0 && mouseX >= panelToggleX() && mouseX <= panelToggleX() + 14
                 && mouseY >= panelToggleY() && mouseY <= panelToggleY() + 14) {
@@ -1666,7 +1868,8 @@ public class SkillTreeScreen extends Screen {
         if (type == Skills.SkillType.AMPLIFY) return Skills.getAmplifyCostAtLevel(learnedSkills.getOrDefault(skillId, 0)); // 线性 +2/级
         if (type == Skills.SkillType.MAGIC) return Skills.getMagicCostAtLevel(skillId, learnedSkills.getOrDefault(skillId, 0)); // 线性（默认+2/级，吟唱缩减+5/级）
         if (type == Skills.SkillType.MACHINE) return Skills.getMachineCost(skillId); // 机械共鸣：一次性（机械之星 1000 / 其余 5000）
-        return Skills.getUltimateLevelCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 终极节点（单次或节点类阶梯递增）
+        if (type == Skills.SkillType.GIFT) return 0; // 子枫的馈赠：不消耗技能点
+        return Skills.getUltimateLevelCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 终极节点/特殊被动（单次或节点类阶梯递增）
     }
 
     private boolean isShiftHeld() {
@@ -1702,6 +1905,24 @@ public class SkillTreeScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        // 技能点 HUD 位置滚轮调整（2026-08-25）：悬停在 HUD 面板上时
+        // 滚轮 = 调整位置（X行滚轮改X，Y行滚轮改Y）；Shift+滚轮 = 10 点，普通 = 1 点
+        int hudStep = Screen.hasShiftDown() ? 10 : 1;
+        if (isHudPanelHit(mouseX, mouseY)) {
+            int x = width - HUD_BTN_W - 12;
+            int y = hudPanelTop();
+            int y2 = y + HUD_BTN_H + 2;
+            int y3 = y2 + HUD_POS_H + 2;
+            int dir = verticalAmount > 0 ? 1 : -1;
+            if (mouseY >= y2 && mouseY <= y2 + HUD_POS_H) {
+                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetX(dir * hudStep);
+                return true;
+            }
+            if (mouseY >= y3 && mouseY <= y3 + HUD_POS_H) {
+                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetY(dir * hudStep);
+                return true;
+            }
+        }
         // 鼠标在底部属性面板区域 → 翻页
         if (Config.PANEL_POSITION.get() == 1 && Config.PANEL_VISIBLE.get()
                 && mouseY >= height - 140 && mouseY <= height - 10) {

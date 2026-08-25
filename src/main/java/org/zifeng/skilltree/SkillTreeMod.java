@@ -39,6 +39,8 @@ public class SkillTreeMod {
         modEventBus.addListener(ModNetwork::register);
         modEventBus.addListener(ModCapabilities::registerCapabilities);
         modEventBus.addListener(SkillEvents::registerPlayerAttributes);
+        // Flux-Networks long 能量兼容（2026-08-25：未装 Flux 时安全跳过）
+        org.zifeng.skilltree.compat.FluxCompat.register(modEventBus);
 
         // 自动熔炼黑名单指令（/hmd 添加、/delhmd 删除，2026-08-13 恢复）
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.RegisterCommandsEvent event) ->
@@ -52,6 +54,7 @@ public class SkillTreeMod {
         NeoForge.EVENT_BUS.register(MagnetEvents.class);
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.LockEvents.class);
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.LootVacuumEvents.class);
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.GiftEvents.class);
 
         if (FMLLoader.getDist().isClient()) {
             ClientRegistrar.register(modEventBus);

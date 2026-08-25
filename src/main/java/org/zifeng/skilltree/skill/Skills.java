@@ -119,10 +119,14 @@ public final class Skills {
         AMPLIFY,
         /** 终极节点（单次解锁） */
         ULTIMATE,
+        /** 特殊被动（2026-08-25 新增：终极节点右边新列，原终极列中不加玩家属性的被动/掉落/行为类技能） */
+        SPECIAL,
         /** 杀戮光环（独立系统，不受属性加成） */
         AURA,
         /** 机械共鸣（模拟玩家机器继承开关，独立列，前置=机械之星+对应原技能） */
-        MACHINE
+        MACHINE,
+        /** 子枫的馈赠（2026-08-25 新增：最右列，按游戏时长激活，免费获得技能点的新途径） */
+        GIFT
     }
 
     // ============ 基础属性技能 ============
@@ -142,6 +146,7 @@ public final class Skills {
     public static final String LIFESTEAL = "lifesteal";       // 生命汲取（吸血）
     public static final String THORNS = "thorns";             // 荆棘反伤（受击反弹）
     public static final String ARMOR_PEN = "armor_pen";       // 破甲精通（无视护甲增伤）
+    // ============ 特殊被动（纵列4，2026-08-25：从终极列拆出，不加玩家属性的被动/掉落/行为类） ============
     public static final String VILLAGE_HERO = "village_hero"; // 村庄英雄（每级1级效果，上限10级）
     public static final String REACH = "reach";               // 接触距离（触摸/攻击距离，每级+1格，上限50级）
     public static final String GLOW = "glow";                 // 发光（35格生物发光，上限1级）
@@ -152,6 +157,25 @@ public final class Skills {
     public static final String XP_GAIN = "xp_gain";           // 经验获取倍率（上限10级，拆自掉落增幅）
     public static final String MOB_SPAWN_EGG = "mob_spawn_egg"; // 刷怪蛋掉落（上限10级，每级10%，独立不吃增幅）
     public static final String MOB_HEAD = "mob_head";           // 头颅掉落（上限5级，每级20%，独立不吃增幅）
+    public static final String AUTO_SMELT = "auto_smelt";   // 自动熔炼（挖掘自动熔炼矿物，1级，消耗30）
+    public static final String ULT_BREAK_ALL = "ult_break_all"; // 万物挖掘（可挖任何方块含基岩，1级，消耗100）
+    public static final String ULT_UNBREAK_TAG = "ult_unbreak_tag"; // 不毁词条（铁砧合成Unbreakable工具，1级，消耗100）
+    public static final String ULT_SWEEP = "ult_sweep";       // 横扫范围（每级+1格攻击范围，上限10，线性2）
+    public static final String ULT_KB_RESIST = "ult_kb_resist"; // 击退抗性（每级+10%，满10级免疫击退，线性2）
+
+    // ============ 子枫的馈赠（纵列7，2026-08-25 新增：按游戏时长/移动/飞行/挖掘激活，免费获得技能点） ============
+    public static final String GIFT_TIME_BAPTISM = "gift_time_baptism"; // 时间洗礼：游戏时长≥1小时可激活，每10分钟+1技能点
+    public static final String GIFT_TIME_STORM = "gift_time_storm";     // 时间风暴：游戏时长≥5小时可激活，每5分钟+1技能点（与洗礼叠加）
+    public static final String GIFT_TIME_FLOOD = "gift_time_flood";     // 时间洪流：游戏时长≥10小时可激活，每1分钟+1技能点（与洗礼叠加）
+    // 2026-08-25 新增：移动/飞行/挖掘洗礼（1-3级，消耗技能点升级，统计原版数据）+ 各增幅（上限20级，指数消耗）
+    public static final String GIFT_MOVE_BAPTISM = "gift_move_baptism"; // 移动洗礼：统计行走+疾跑距离，1级1000米/2级500米/3级100米 得1技能点
+    public static final String GIFT_MOVE_AMP = "gift_move_amp";         // 移动洗礼增幅：每级每次+1技能点获取，上限20级
+    public static final String GIFT_FLY_BAPTISM = "gift_fly_baptism";   // 飞行洗礼：统计飞行距离，1级1000米/2级500米/3级100米 得1技能点
+    public static final String GIFT_FLY_AMP = "gift_fly_amp";           // 飞行洗礼增幅：每级每次+1技能点获取，上限20级
+    public static final String GIFT_MINE_BAPTISM = "gift_mine_baptism"; // 挖掘洗礼：统计挖掘方块数，1级1000块/2级500块/3级100块 得1技能点
+    public static final String GIFT_MINE_AMP = "gift_mine_amp";         // 挖掘洗礼增幅：每级每次+1技能点获取，上限20级
+    public static final String GIFT_KILL_BAPTISM = "gift_kill_baptism"; // 击杀馈赠：统计击杀生物数，1级1000杀/2级500杀/3级100杀 得1技能点
+    public static final String GIFT_KILL_AMP = "gift_kill_amp";         // 击杀馈赠增幅：每级每次+1技能点获取，上限20级
 
     // ============ 特殊增幅技能（与基础技能一一对应，顺序同纵列1） ============
     public static final String AMP_HP = "amp_hp";                     // 生命增幅（对应生命强化）
@@ -181,11 +205,6 @@ public final class Skills {
     public static final String ULT_REVIVE = "ult_revive";   // 凤凰涅槃（死亡复活）
     public static final String ULT_REAPER = "ult_reaper";   // 死神凝视（处决低血目标）
     public static final String ULT_VOID_BODY = "ult_void_body"; // 虚空之躯（三层无敌防御）
-    public static final String AUTO_SMELT = "auto_smelt";   // 自动熔炼（挖掘自动熔炼矿物，1级，消耗30）
-    public static final String ULT_BREAK_ALL = "ult_break_all"; // 万物挖掘（可挖任何方块含基岩，1级，消耗100）
-    public static final String ULT_UNBREAK_TAG = "ult_unbreak_tag"; // 不毁词条（铁砧合成Unbreakable工具，1级，消耗100）
-    public static final String ULT_SWEEP = "ult_sweep";       // 横扫范围（每级+1格攻击范围，上限10，线性2）
-    public static final String ULT_KB_RESIST = "ult_kb_resist"; // 击退抗性（每级+10%，满10级免疫击退，线性2）
 
     // ============ 杀戮光环（AURA，独立系统） ============
     public static final String AURA_DAMAGE = "aura_damage";   // 杀戮光环·伤害
@@ -235,9 +254,13 @@ public final class Skills {
             AMP_HP, AMP_ARMOR, AMP_TOUGH, AMP_DAMAGE, AMP_ATTACK_SPEED, AMP_MINING, AMP_MOVE,
             AMP_REGEN, AMP_LUCK, AMP_JUMP, AMP_FLY, AMP_SWIM,
             AMP_CRIT, AMP_LIFESTEAL, AMP_THORNS, AMP_ARMOR_PEN);
-    /** 所有终极节点（纵列3） */
-    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY, VILLAGE_HERO, REACH, GLOW, LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN, MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT, ULT_BREAK_ALL, ULT_UNBREAK_TAG, ULT_SWEEP, ULT_KB_RESIST);
-    /** 所有杀戮光环（纵列4）：杀戮光环·强化 在 虚空之矛 上方 */
+    /** 所有终极节点（纵列3）：只保留加玩家属性/防御的终极（2026-08-25：不加属性的被动/掉落类已拆到 SPECIAL 纵列4） */
+    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY);
+    /** 所有特殊被动（纵列4，2026-08-25 新增）：原终极列中不加玩家属性的被动/掉落/行为类技能 */
+    public static final List<String> SPECIAL_SKILLS = List.of(
+            VILLAGE_HERO, REACH, GLOW, LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN,
+            MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT, ULT_BREAK_ALL, ULT_UNBREAK_TAG, ULT_SWEEP, ULT_KB_RESIST);
+    /** 所有杀戮光环（纵列5）：杀戮光环·强化 在 虚空之矛 上方 */
     public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM);
     /** 所有魔法增幅（纵列0）：其余模组兼容技能（新生魔艺/铁魔法等），不作为任何前置 */
     public static final List<String> MAGIC_SKILLS = List.of(
@@ -247,28 +270,38 @@ public final class Skills {
             IRON_MANA_AMP, IRON_MANA_REGEN, IRON_CAST_TIME, IRON_COOLDOWN,
             IRON_FIRE, IRON_ICE, IRON_LIGHTNING, IRON_HOLY, IRON_ENDER,
             IRON_BLOOD, IRON_EVOCATION, IRON_NATURE, IRON_ELDRITCH);
-    /** 所有机械共鸣（纵列5）：机械之星在最上，其余共鸣技能在前置原技能下方 */
+    /** 所有机械共鸣（纵列6）：机械之星在最上，其余共鸣技能在前置原技能下方 */
     public static final List<String> MACHINE_SKILLS = List.of(
             MACHINE_STAR,
             MACHINE_LOOT_BOMB, MACHINE_UNBREAKABLE, MACHINE_MOB_DROP, MACHINE_BLOCK_DROP,
             MACHINE_XP_GAIN, MACHINE_SPAWN_EGG, MACHINE_MOB_HEAD, MACHINE_AUTO_SMELT);
+    /** 所有子枫的馈赠（纵列7，2026-08-25 新增）：时间/移动/飞行/挖掘/击杀洗礼 + 增幅 */
+    public static final List<String> GIFT_SKILLS = List.of(
+            GIFT_TIME_BAPTISM, GIFT_TIME_STORM, GIFT_TIME_FLOOD,
+            GIFT_MOVE_BAPTISM, GIFT_MOVE_AMP,
+            GIFT_FLY_BAPTISM, GIFT_FLY_AMP,
+            GIFT_MINE_BAPTISM, GIFT_MINE_AMP,
+            GIFT_KILL_BAPTISM, GIFT_KILL_AMP);
 
     public static final List<String> ALL_SKILLS = new ArrayList<>() {{
         addAll(MAGIC_SKILLS);
         addAll(BASE_SKILLS);
         addAll(AMPLIFY_SKILLS);
         addAll(ULTIMATE_SKILLS);
+        addAll(SPECIAL_SKILLS);
         addAll(AURA_SKILLS);
         addAll(MACHINE_SKILLS);
+        addAll(GIFT_SKILLS);
     }};
 
     public static SkillType getType(String skillId) {
         if (MAGIC_SKILLS.contains(skillId)) return SkillType.MAGIC;
         if (MACHINE_SKILLS.contains(skillId)) return SkillType.MACHINE;
-        if (MACHINE_SKILLS.contains(skillId)) return SkillType.MACHINE;
+        if (GIFT_SKILLS.contains(skillId)) return SkillType.GIFT;
         if (BASE_SKILLS.contains(skillId)) return SkillType.BASE;
         if (AMPLIFY_SKILLS.contains(skillId)) return SkillType.AMPLIFY;
         if (ULTIMATE_SKILLS.contains(skillId)) return SkillType.ULTIMATE;
+        if (SPECIAL_SKILLS.contains(skillId)) return SkillType.SPECIAL;
         if (AURA_SKILLS.contains(skillId)) return SkillType.AURA;
         return SkillType.BASE;
     }
@@ -304,15 +337,105 @@ public final class Skills {
             case BASE -> BASE_MAX_POINTS;
             case AMPLIFY -> AMPLIFY_MAX_POINTS;
             case ULTIMATE -> getUltimateMaxPoints(skillId);
+            case SPECIAL -> getUltimateMaxPoints(skillId); // 特殊被动：复用终极的等级上限（多级节点类）
             case AURA -> getAuraMaxPoints(skillId);
             case MAGIC -> getMagicMaxPoints(skillId);
             case MACHINE -> getMachineMaxPoints(skillId);
+            case GIFT -> getGiftMaxPoints(skillId);
         };
     }
 
     /** 机械共鸣：全部单级解锁（上限 1） */
     public static int getMachineMaxPoints(String skillId) {
         return 1;
+    }
+
+    /** 子枫的馈赠：洗礼 1-5 级 / 增幅 100 级 / 时间系列单级（2026-08-25） */
+    public static int getGiftMaxPoints(String skillId) {
+        return switch (skillId) {
+            case GIFT_MOVE_BAPTISM, GIFT_FLY_BAPTISM, GIFT_MINE_BAPTISM, GIFT_KILL_BAPTISM -> 5; // 移动/飞行/挖掘/击杀洗礼：5 级
+            case GIFT_MOVE_AMP, GIFT_FLY_AMP, GIFT_MINE_AMP, GIFT_KILL_AMP -> 100;              // 增幅：上限 100 级
+            default -> 1; // 时间洗礼/风暴/洪流：单级
+        };
+    }
+
+    /**
+     * 子枫的馈赠激活/升级消耗（技能点）：
+     * 时间系列 0（按游戏时长激活）；移动/飞行/挖掘/击杀洗礼 10/1000/10000/50000/100000；增幅 1000 × 1.3^等级（指数增长 30%）。
+     * @param currentLevel 当前已学等级（0=学第1级）
+     */
+    public static long getGiftCost(String skillId, int currentLevel) {
+        return switch (skillId) {
+            case GIFT_MOVE_BAPTISM, GIFT_FLY_BAPTISM, GIFT_MINE_BAPTISM, GIFT_KILL_BAPTISM -> // 洗礼：10 / 1000 / 10000 / 50000 / 100000
+                    switch (currentLevel) {
+                        case 0 -> 10L;
+                        case 1 -> 1000L;
+                        case 2 -> 10000L;
+                        case 3 -> 50000L;
+                        default -> 100000L;
+                    };
+            case GIFT_MOVE_AMP, GIFT_FLY_AMP, GIFT_MINE_AMP, GIFT_KILL_AMP -> // 增幅：1000 × 1.3^等级（30% 指数）
+                    Math.round(1000 * Math.pow(1.3, currentLevel));
+            default -> 0L; // 时间系列：不消耗
+        };
+    }
+
+    /** 子枫的馈赠激活门槛（游戏时长，tick）：时间洗礼 1 小时 / 时间风暴 5 小时 / 时间洪流 10 小时。原版 play_time 统计单位 = tick。 */
+    public static long getGiftRequirementTicks(String skillId) {
+        return switch (skillId) {
+            case GIFT_TIME_BAPTISM -> 72000L;  // 1 小时 = 3600 秒 × 20
+            case GIFT_TIME_STORM -> 360000L;   // 5 小时
+            case GIFT_TIME_FLOOD -> 720000L;   // 10 小时
+            default -> Long.MAX_VALUE;
+        };
+    }
+
+    /**
+     * 子枫的馈赠获得技能点间隔（tick）：时间洗礼 10 分钟 / 时间风暴 5 分钟 / 时间洪流 1 分钟。
+     */
+    public static long getGiftIntervalTicks(String skillId) {
+        return switch (skillId) {
+            case GIFT_TIME_BAPTISM -> 12000L; // 10 分钟 = 600 秒 × 20
+            case GIFT_TIME_STORM -> 6000L;    // 5 分钟
+            case GIFT_TIME_FLOOD -> 1200L;    // 1 分钟
+            default -> Long.MAX_VALUE;
+        };
+    }
+
+    /**
+     * 移动/飞行/挖掘/击杀洗礼的每次触发需求（当前等级 1-5）：
+     * 移动/飞行单位 = 米（原版统计是 cm，需 ×100 换算）；挖掘单位 = 方块数；击杀单位 = 个。
+     */
+    public static long getGiftDistanceRequirement(String skillId, int level) {
+        return switch (level) {
+            case 1 -> 1000L;  // 1000 米 / 1000 块 / 1000 杀
+            case 2 -> 500L;   // 500
+            case 3 -> 100L;   // 100
+            case 4 -> 50L;    // 50（2026-08-25 新增 4 级）
+            default -> 10L;   // 10（2026-08-25 新增 5 级）
+        };
+    }
+
+    /** 该洗礼技能对应的增幅技能 ID（移动↔移动增幅，飞行↔飞行增幅，挖掘↔挖掘增幅，击杀↔击杀增幅） */
+    public static String getGiftAmpSkill(String baptismSkillId) {
+        return switch (baptismSkillId) {
+            case GIFT_MOVE_BAPTISM -> GIFT_MOVE_AMP;
+            case GIFT_FLY_BAPTISM -> GIFT_FLY_AMP;
+            case GIFT_MINE_BAPTISM -> GIFT_MINE_AMP;
+            case GIFT_KILL_BAPTISM -> GIFT_KILL_AMP;
+            default -> null;
+        };
+    }
+
+    /** 判断是否为子枫的馈赠技能 */
+    public static boolean isGiftSkill(String skillId) {
+        return GIFT_SKILLS.contains(skillId);
+    }
+
+    /** 判断是否为移动/飞行/挖掘/击杀洗礼（统计类，非时间类） */
+    public static boolean isGiftDistanceBaptism(String skillId) {
+        return GIFT_MOVE_BAPTISM.equals(skillId) || GIFT_FLY_BAPTISM.equals(skillId)
+                || GIFT_MINE_BAPTISM.equals(skillId) || GIFT_KILL_BAPTISM.equals(skillId);
     }
 
     /**
@@ -401,6 +524,13 @@ public final class Skills {
     /** 节点类终极（多级，可调生效等级）判断 */
     public static boolean isMultiLevelUltimate(String skillId) {
         return getUltimateMaxPoints(skillId) > 1;
+    }
+
+    /**
+     * 子枫的馈赠激活消耗：不消耗技能点（按游戏时长条件激活），恒 0。
+     */
+    public static long getGiftCost(String skillId) {
+        return 0L;
     }
 
     /**
@@ -518,6 +648,18 @@ public final class Skills {
             case AURA_LOCK -> "定身神域";          // 光环锁定
             case AURA_VOID -> "子枫的虚空诛灭";     // 杀戮光环·虚空之矛
             case AURA_LOOT_VACUUM -> "子枫挪移术"; // 凋落物挪移
+            // ===== 子枫的馈赠（纵列7，2026-08-25 新增） =====
+            case GIFT_TIME_BAPTISM -> "时间洗礼";
+            case GIFT_TIME_STORM -> "时间风暴";
+            case GIFT_TIME_FLOOD -> "时间洪流";
+            case GIFT_MOVE_BAPTISM -> "移动洗礼";
+            case GIFT_MOVE_AMP -> "移动洗礼增幅";
+            case GIFT_FLY_BAPTISM -> "飞行洗礼";
+            case GIFT_FLY_AMP -> "飞行洗礼增幅";
+            case GIFT_MINE_BAPTISM -> "挖掘洗礼";
+            case GIFT_MINE_AMP -> "挖掘洗礼增幅";
+            case GIFT_KILL_BAPTISM -> "击杀馈赠";
+            case GIFT_KILL_AMP -> "击杀馈赠增幅";
             default -> "未知技能";
         };
     }
@@ -614,6 +756,18 @@ public final class Skills {
             case AURA_LOCK -> "定身神域：消耗 1000 技能点\n一次性点亮，开启后免疫 TP 与击退\n（传送/瞬移/击退均无效）\n只有自己移动/飞行才能真正移动";
             case AURA_VOID -> "子枫的虚空诛灭：消耗 5000 技能点\n一次性点亮，杀戮光环获得虚空之矛力量\n（绝对秒杀+范围扩大至50格，K键控制）\n（磁铁范围扩至55格，H键控制）\n前置：子枫的杀戮领域 100 级";
             case AURA_LOOT_VACUUM -> "子枫挪移术：消耗 10 技能点\n一次性点亮，手持原版木棍\n蹲下右键任意容器（箱子/漏斗等）绑定\n绑定后击杀生物/挖掘方块的掉落物\n直接传送进容器（不生成掉落物实体\n不卡顿，刷怪塔/挖矿机必备）\n跨维度生效（末地/下界杀怪也传回容器）\n再次蹲下右键同一容器解除绑定";
+            // ===== 子枫的馈赠（纵列7，按游戏时长激活，免费获得技能点） =====
+            case GIFT_TIME_BAPTISM -> "时间洗礼：游戏时长达到 1 小时后可激活\n激活后每 10 分钟获得 1 技能点\n不消耗技能点（时间即是馈赠）\n激活后需开启开关才生效";
+            case GIFT_TIME_STORM -> "时间风暴：游戏时长达到 5 小时后可激活\n激活后每 5 分钟获得 5 技能点\n与时间洗礼叠加\n不消耗技能点（时间即是馈赠）\n激活后需开启开关才生效";
+            case GIFT_TIME_FLOOD -> "时间洪流：游戏时长达到 10 小时后可激活\n激活后每 1 分钟获得 10 技能点\n与时间洗礼/时间风暴叠加\n不消耗技能点（时间即是馈赠）\n激活后需开启开关才生效";
+            case GIFT_MOVE_BAPTISM -> "移动洗礼：统计行走+疾跑距离\n1级：每 1000 米获得 1 技能点（消耗 10 点）\n2级：每 500 米获得 1 技能点（消耗 1000 点）\n3级：每 100 米获得 1 技能点（消耗 10000 点）\n4级：每 50 米获得 1 技能点（消耗 50000 点）\n5级：每 10 米获得 1 技能点（消耗 100000 点）\n开启后按累计距离自动发放";
+            case GIFT_MOVE_AMP -> "移动洗礼增幅：上限 100 级\n每级让移动洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学移动洗礼）";
+            case GIFT_FLY_BAPTISM -> "飞行洗礼：统计飞行距离\n1级：每 1000 米获得 1 技能点（消耗 10 点）\n2级：每 500 米获得 1 技能点（消耗 1000 点）\n3级：每 100 米获得 1 技能点（消耗 10000 点）\n4级：每 50 米获得 1 技能点（消耗 50000 点）\n5级：每 10 米获得 1 技能点（消耗 100000 点）\n开启后按累计距离自动发放";
+            case GIFT_FLY_AMP -> "飞行洗礼增幅：上限 100 级\n每级让飞行洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学飞行洗礼）";
+            case GIFT_MINE_BAPTISM -> "挖掘洗礼：统计挖掘方块数\n1级：每 1000 个方块获得 1 技能点（消耗 10 点）\n2级：每 500 个方块获得 1 技能点（消耗 1000 点）\n3级：每 100 个方块获得 1 技能点（消耗 10000 点）\n4级：每 50 个方块获得 1 技能点（消耗 50000 点）\n5级：每 10 个方块获得 1 技能点（消耗 100000 点）\n开启后按累计挖掘自动发放";
+            case GIFT_MINE_AMP -> "挖掘洗礼增幅：上限 100 级\n每级让挖掘洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学挖掘洗礼）";
+            case GIFT_KILL_BAPTISM -> "击杀馈赠：统计击杀生物数\n1级：每 1000 个击杀获得 1 技能点（消耗 10 点）\n2级：每 500 个击杀获得 1 技能点（消耗 1000 点）\n3级：每 100 个击杀获得 1 技能点（消耗 10000 点）\n4级：每 50 个击杀获得 1 技能点（消耗 50000 点）\n5级：每 10 个击杀获得 1 技能点（消耗 100000 点）\n开启后按累计击杀自动发放";
+            case GIFT_KILL_AMP -> "击杀馈赠增幅：上限 100 级\n每级让击杀馈赠每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学击杀馈赠）";
             default -> "";
         };
     }
@@ -642,7 +796,12 @@ public final class Skills {
             case MACHINE_SPAWN_EGG -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(MOB_SPAWN_EGG, 1));
             case MACHINE_MOB_HEAD -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(MOB_HEAD, 1));
             case MACHINE_AUTO_SMELT -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(AUTO_SMELT, 1));
-            default -> List.of(); // 机械之星/宇宙的青睐/夜视/饱食/村庄英雄/接触距离/发光/战利品爆炸/工具不毁/掉落/经验无前置
+            // 子枫的馈赠增幅：需对应洗礼已学（2026-08-25）
+            case GIFT_MOVE_AMP -> List.of(Map.entry(GIFT_MOVE_BAPTISM, 1));
+            case GIFT_FLY_AMP -> List.of(Map.entry(GIFT_FLY_BAPTISM, 1));
+            case GIFT_MINE_AMP -> List.of(Map.entry(GIFT_MINE_BAPTISM, 1));
+            case GIFT_KILL_AMP -> List.of(Map.entry(GIFT_KILL_BAPTISM, 1));
+            default -> List.of(); // 机械之星/宇宙的青睐/夜视/饱食/村庄英雄/接触距离/发光/战利品爆炸/工具不毁/掉落/经验/时间洗礼无前置
         };
     }
 
@@ -753,6 +912,18 @@ public final class Skills {
             case AURA_LOCK -> Items.ANVIL;                     // 光环锁定：铁砧（稳固不动）
             case AURA_VOID -> Items.DIAMOND_SWORD;            // 虚空之矛：原版钻石剑（虚空力量，金边=伤害吸收）
             case AURA_LOOT_VACUUM -> Items.STICK;             // 凋落物挪移：木棍（绑定容器的工具）
+            // ===== 子枫的馈赠（纵列7） =====
+            case GIFT_TIME_BAPTISM -> Items.CLOCK;            // 时间洗礼：时钟（时间）
+            case GIFT_TIME_STORM -> Items.LIGHTNING_ROD;      // 时间风暴：避雷针（风暴）
+            case GIFT_TIME_FLOOD -> Items.WATER_BUCKET;       // 时间洪流：水桶（洪流）
+            case GIFT_MOVE_BAPTISM -> Items.LEATHER_BOOTS;    // 移动洗礼：皮靴（行走）
+            case GIFT_MOVE_AMP -> Items.DIAMOND_BOOTS;        // 移动洗礼增幅：钻石靴（进阶）
+            case GIFT_FLY_BAPTISM -> Items.ELYTRA;            // 飞行洗礼：鞘翅（飞行）
+            case GIFT_FLY_AMP -> Items.PHANTOM_MEMBRANE;      // 飞行洗礼增幅：幻翼膜（飞行进阶）
+            case GIFT_MINE_BAPTISM -> Items.IRON_PICKAXE;     // 挖掘洗礼：铁镐（挖掘）
+            case GIFT_MINE_AMP -> Items.DIAMOND_PICKAXE;      // 挖掘洗礼增幅：钻石镐（挖掘进阶）
+            case GIFT_KILL_BAPTISM -> Items.IRON_SWORD;       // 击杀馈赠：铁剑（击杀）
+            case GIFT_KILL_AMP -> Items.DIAMOND_SWORD;        // 击杀馈赠增幅：钻石剑（击杀进阶）
             default -> Items.BARRIER;
         };
     }

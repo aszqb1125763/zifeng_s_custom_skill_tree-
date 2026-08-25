@@ -56,6 +56,8 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
     private long lastChangedTick = -1;
     /** 本机器输入速率上限（FE/t，GUI 可调；默认取 Config.MACHINE_MAX_INPUT_RATE） */
     private long inputRate = -1; // -1 = 未设置，使用 Config 默认
+    /** 转换速率快照基准（每 2 秒计算 totalConverted 增量，2026-08-25） */
+    private long lastRateTotal = 0;
 
     /** 能量输入中断判定阈值：超过 1 秒（20 tick）未收到能量输入才清空进度 */
     private static final long PROGRESS_IDLE_TICKS = 20;
@@ -206,6 +208,60 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
         return progress;
     }
 
+    /** 能量缓冲上限（long 64 位，Flux long 接口用） */
+    public long getCapacityLong() {
+        return Math.max(1, Config.MACHINE_ENERGY_CAPACITY.get());
+    }
+
+    /**
+     * Flux-Networks long 能量接收（2026-08-25）：Flux 的 IFNEnergyStorage.receiveEnergyL(long)，
+     * 突破普通 IEnergyStorage 的 int（21 亿）上限，直接灌 long 能量。
+     * 复用 receiveEnergy 的接收逻辑（输入速率限制/缓冲上限/进度累积），但接受 long 量。
+     */
+    public long receiveEnergyLong(long maxReceive, boolean simulate) {
+        if (maxReceive <= 0 || isRedstoneBlocked()) {
+            return 0;
+        }
+        Level lvl = level;
+        long gameTime = lvl != null ? lvl.getGameTime() : 0;
+        // 每 tick 重置接收计数（输入速率限制）
+        if (gameTime != lastResetTick) {
+            receivedThisTick = 0;
+            lastResetTick = gameTime;
+        }
+        long allowed = maxReceive;
+        // 输入速率限制：每 tick 最多收 effectiveInputRate FE（GUI 无限制输入开关开启时忽略）
+        if (!unlimitedInput) {
+            long rate = effectiveInputRate();
+            if (receivedThisTick >= rate) {
+                return 0;
+            }
+            allowed = Math.min(allowed, rate - receivedThisTick);
+        }
+        // 缓冲上限约束（long 64 位）：progress 达 capacity 后拒绝更多输入
+        long capacity = getCapacityLong();
+        if (progress >= capacity) {
+            return 0;
+        }
+        long accept = Math.min(allowed, capacity - progress);
+        if (accept <= 0) {
+            return 0;
+        }
+        if (!simulate) {
+            if (lvl != null) {
+                lastReceiveTick = gameTime;
+            }
+            receivedThisTick += accept;
+            progress += accept;
+            if (gameTime != lastChangedTick) {
+                lastChangedTick = gameTime;
+                setChanged();
+                updateLitState(lvl);
+            }
+        }
+        return accept;
+    }
+
     public long getTotalConverted() {
         return totalConverted;
     }
@@ -300,6 +356,27 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
             be.grantSkillPoints(points); // long 64 位安全（无限制输入下单次转换可能超大）
             be.setChanged();
         }
+        // ⚠️ 2026-08-25：转换机每 2 秒（40 tick）快照一次转换速率发给 owner（/秒，恒定通电用速率显示）
+        if (gameTime % 40 == 0 && be.ownerUUID != null) {
+            net.minecraft.server.level.ServerPlayer owner = level.getServer().getPlayerList().getPlayer(be.ownerUUID);
+            if (owner != null) {
+                // 本 2 秒窗口内转换的技能点数（totalConverted 增量）
+                long nowConverted = be.totalConverted;
+                long delta = nowConverted - be.lastRateTotal;
+                be.lastRateTotal = nowConverted;
+                if (delta > 0) {
+                    double perSec = delta / 2.0; // 每 2 秒窗口 → 每秒速率
+                    java.util.Map<String, Double> rates = new java.util.HashMap<>();
+                    rates.put("⚡星能转换机", perSec);
+                    net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(owner,
+                            new org.zifeng.skilltree.network.SkillPointRateS2CPacket(
+                                    org.zifeng.skilltree.data.PlayerSkillSavedData.get((net.minecraft.server.level.ServerLevel) level)
+                                            .getOrCreatePlayer(be.ownerUUID).getSkillPoints(), rates));
+                } else {
+                    be.lastRateTotal = nowConverted;
+                }
+            }
+        }
         be.updateLitState(level);
     }
 
@@ -316,7 +393,13 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
         }
     }
 
-    /** 给绑定玩家发放技能点（玩家离线也照常累计，符合挂机玩法） */
+    /** 给绑定玩家发放技能点（玩家离线也照常累计，符合挂机玩法）
+     *  ⚠️ 2026-08-25 多人优化：发送限频（每 10 tick 合并发送一次），
+     *     防止无限制模式每 tick 转换时全量重发 SkillTreeDataS2CPacket（多人带宽优化）。 */
+    private static final long SYNC_INTERVAL_TICKS = 10;
+    private long lastSyncTick = -1;
+    private long pendingGranted = 0;
+
     private void grantSkillPoints(long amount) {
         if (ownerUUID == null || amount <= 0) {
             return;
@@ -333,11 +416,20 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
                 record.addSkillPoints(granted);
             }
             data.setDirty();
-            // 实时同步：玩家在线则立即回发技能数据包，技能树界面打开时技能点实时刷新
-            // （否则界面只能等 2 秒轮询，转换中的技能点显示滞后）
-            net.minecraft.server.level.ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(ownerUUID);
-            if (owner != null) {
-                PacketDistributor.sendToPlayer(owner, SkillTreeDataS2CPacket.from(record));
+            // ⚠️ 多人优化：限频发送——每 SYNC_INTERVAL_TICKS tick 合并发一次（pending 累计中间变更）
+            long gameTime = level.getGameTime();
+            if (granted > 0) {
+                pendingGranted += granted;
+            }
+            if (lastSyncTick < 0 || gameTime - lastSyncTick >= SYNC_INTERVAL_TICKS) {
+                lastSyncTick = gameTime;
+                net.minecraft.server.level.ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(ownerUUID);
+                if (owner != null) {
+                    PacketDistributor.sendToPlayer(owner, SkillTreeDataS2CPacket.from(record));
+                    pendingGranted = 0;
+                } else {
+                    pendingGranted = 0; // 离线不积累 pending（下次进世界全量同步）
+                }
             }
         }
     }

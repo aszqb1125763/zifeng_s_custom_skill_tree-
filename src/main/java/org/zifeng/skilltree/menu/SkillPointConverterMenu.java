@@ -91,7 +91,10 @@ public class SkillPointConverterMenu extends AbstractContainerMenu {
 
     @Override
     public boolean stillValid(Player player) {
-        // 信息展示界面（无槽位交互），保持一直有效；原版容器会检查距离，此处无需
-        return true;
+        // 信息展示界面（无槽位交互）。限距离校验（64 格内有效），防远程打开/操作他人机器
+        if (blockEntity == null) {
+            return true; // 客户端无 BE 引用（或已卸载），保持打开
+        }
+        return player.blockPosition().closerThan(blockEntity.getBlockPos(), 64.0);
     }
 }

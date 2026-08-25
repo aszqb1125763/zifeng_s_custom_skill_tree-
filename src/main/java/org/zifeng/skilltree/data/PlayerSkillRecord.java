@@ -235,6 +235,9 @@ public class PlayerSkillRecord {
         if (type == Skills.SkillType.ULTIMATE) {
             return current < Skills.getUltimateMaxPoints(skillId);
         }
+        if (type == Skills.SkillType.SPECIAL) {
+            return current < Skills.getUltimateMaxPoints(skillId); // 特殊被动：复用终极等级上限
+        }
         if (type == Skills.SkillType.AURA) {
             return current < Skills.getAuraMaxPoints(skillId);
         }
@@ -243,6 +246,9 @@ public class PlayerSkillRecord {
         }
         if (type == Skills.SkillType.MACHINE) {
             return current < Skills.getMachineMaxPoints(skillId);
+        }
+        if (type == Skills.SkillType.GIFT) {
+            return current < Skills.getGiftMaxPoints(skillId); // 子枫的馈赠：单级解锁
         }
         return true;
     }
@@ -282,6 +288,9 @@ public class PlayerSkillRecord {
         }
         if (type == Skills.SkillType.MACHINE) {
             return Skills.getMachineCost(skillId); // 机械共鸣：一次性（机械之星 1000 / 其余 5000）
+        }
+        if (type == Skills.SkillType.GIFT) {
+            return Skills.getGiftCost(skillId, getLearnedPoints(skillId)); // 子枫的馈赠：时间系列 0 / 洗礼 10-10000 / 增幅指数
         }
         return Skills.getUltimateLevelCost(skillId, getLearnedPoints(skillId)); // 终极节点（单次或节点类阶梯递增）
     }
@@ -393,7 +402,7 @@ public class PlayerSkillRecord {
                 yield total;
             }
             case MACHINE -> (double) Skills.getMachineCost(skillId) * points; // 机械共鸣：一次性固定消耗（单级）
-            case ULTIMATE -> { // 单次解锁或节点类阶梯递增（逐级累加 double，与学习时实际扣除一致；不再 ceil 防多返）
+            case ULTIMATE, SPECIAL -> { // 单次解锁或节点类阶梯递增（逐级累加 double，与学习时实际扣除一致；SPECIAL 复用终极成本）
                 double total = 0;
                 for (int i = 0; i < points; i++) {
                     total += Skills.getUltimateLevelCost(skillId, i);
@@ -404,6 +413,13 @@ public class PlayerSkillRecord {
                 double total = 0;
                 for (int i = 0; i < points; i++) {
                     total += Skills.getAuraCost(skillId, i);
+                }
+                yield total;
+            }
+            case GIFT -> { // 子枫的馈赠：逐级累加（时间系列 0；洗礼 10/1000/10000；增幅 1000×1.5^n）
+                double total = 0;
+                for (int i = 0; i < points; i++) {
+                    total += Skills.getGiftCost(skillId, i);
                 }
                 yield total;
             }

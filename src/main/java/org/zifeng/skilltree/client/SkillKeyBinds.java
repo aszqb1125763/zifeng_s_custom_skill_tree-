@@ -30,7 +30,11 @@ public class SkillKeyBinds {
     /** 技能树界面 panX / panY / scale（上次退出时的状态） */
     private static double lastPanX = 0;
     private static double lastPanY = 0;
-    private static double lastScale = 1.0;
+    /** 默认缩放 0.4（2026-08-25：八列技能树更宽，0.4 初始能看到全部列） */
+    private static double lastScale = 0.4;
+    /** 技能点 HUD 位置偏移（2026-08-25：持久化，重启不重置；基准点 = 用户测试调好的位置，默认 0,0） */
+    private static int hudOffsetX = 0;
+    private static int hudOffsetY = 0;
 
     private static boolean loaded = false;
 
@@ -165,6 +169,22 @@ public class SkillKeyBinds {
         save();
     }
 
+    // ============ 技能点 HUD 位置偏移持久化（2026-08-25） ============
+
+    public static int getHudOffsetX() {
+        return hudOffsetX;
+    }
+
+    public static int getHudOffsetY() {
+        return hudOffsetY;
+    }
+
+    public static void setHudOffset(int x, int y) {
+        hudOffsetX = x;
+        hudOffsetY = y;
+        save();
+    }
+
     // ============ 文件读写 ============
 
     private static File file() {
@@ -207,7 +227,9 @@ public class SkillKeyBinds {
             }
             lastPanX = data.panX;
             lastPanY = data.panY;
-            lastScale = data.scale > 0 ? data.scale : 1.0;
+            lastScale = data.scale > 0 ? data.scale : 0.4;
+            hudOffsetX = data.hudOffsetX;
+            hudOffsetY = data.hudOffsetY;
         } catch (Exception ignored) {
             // 读取失败（文件损坏等）→ 用默认值，不崩溃
         }
@@ -231,6 +253,8 @@ public class SkillKeyBinds {
             data.panX = lastPanX;
             data.panY = lastPanY;
             data.scale = lastScale;
+            data.hudOffsetX = hudOffsetX;
+            data.hudOffsetY = hudOffsetY;
             String json = new GsonBuilder().setPrettyPrinting().create().toJson(data);
             Files.writeString(f.toPath(), json, StandardCharsets.UTF_8);
         } catch (IOException ignored) {
@@ -245,5 +269,7 @@ public class SkillKeyBinds {
         double panX;
         double panY;
         double scale = 1.0;
+        int hudOffsetX = 0; // 基准点 = 用户测试调好的位置，显示从 0 开始
+        int hudOffsetY = 0;
     }
 }

@@ -59,6 +59,21 @@ public class ModKeyBindingEvents {
         lootVacuumBindClient = bind;
     }
 
+    /** 玩家断开连接/切换服务器时清空全部缓存（2026-08-25 多人防跨服数据残留） */
+    public static void onDisconnect() {
+        auraToggles.clear();
+        auraEnabledClient = true;
+        magnetLearnedClient = false;
+        auraDamageLearned = false;
+        auraLearnedCache.clear();
+        allSkillsLearnedCache.clear();
+        allSkillsLevelsCache.clear();
+        allTogglesCache.clear();
+        allActiveLevelsCache.clear();
+        lootVacuumBindClient = null;
+        auraTargetModes.clear();
+    }
+
     /** 辅助：已学等级 */
     private static int learnedPointsOf(String skillId) {
         return allSkillsLevelsCache.getOrDefault(skillId, 0);

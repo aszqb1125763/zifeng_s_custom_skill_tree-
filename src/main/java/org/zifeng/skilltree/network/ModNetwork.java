@@ -14,6 +14,7 @@ public class ModNetwork {
         registrar.playToServer(OpenSkillTreeC2SPacket.TYPE, OpenSkillTreeC2SPacket.STREAM_CODEC, OpenSkillTreeC2SPacket::handle);
         registrar.playToClient(SkillTreeDataS2CPacket.TYPE, SkillTreeDataS2CPacket.STREAM_CODEC, SkillTreeDataS2CPacket::handle);
         registrar.playToClient(ReviveCooldownS2CPacket.TYPE, ReviveCooldownS2CPacket.STREAM_CODEC, ReviveCooldownS2CPacket::handle);
+        registrar.playToClient(SkillPointRateS2CPacket.TYPE, SkillPointRateS2CPacket.STREAM_CODEC, SkillPointRateS2CPacket::handle);
         registrar.playToServer(LearnSkillC2SPacket.TYPE, LearnSkillC2SPacket.STREAM_CODEC, LearnSkillC2SPacket::handle);
         registrar.playToServer(SetSkillToggleC2SPacket.TYPE, SetSkillToggleC2SPacket.STREAM_CODEC, SetSkillToggleC2SPacket::handle);
         registrar.playToServer(AuraTargetC2SPacket.TYPE, AuraTargetC2SPacket.STREAM_CODEC, AuraTargetC2SPacket::handle);

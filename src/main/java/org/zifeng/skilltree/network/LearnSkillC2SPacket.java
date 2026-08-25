@@ -47,6 +47,22 @@ public record LearnSkillC2SPacket(String skillId, int levels) implements CustomP
                                 SkillTreeDataS2CPacket.from(record));
                         return;
                     }
+                    // ⚠️ 子枫的馈赠（2026-08-25）：仅【时间系列】按游戏时长激活（不消耗技能点）；
+                    //    移动/飞行/挖掘洗礼与增幅消耗技能点（走正常 learnSkill 扣点），无时间门槛
+                    if (Skills.GIFT_TIME_BAPTISM.equals(skillId) || Skills.GIFT_TIME_STORM.equals(skillId)
+                            || Skills.GIFT_TIME_FLOOD.equals(skillId)) {
+                        long need = Skills.getGiftRequirementTicks(skillId);
+                        long have = player.getStats().getValue(net.minecraft.stats.Stats.CUSTOM, net.minecraft.stats.Stats.PLAY_TIME);
+                        if (have < need) {
+                            long remainSec = (need - have) / 20;
+                            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                                    "⏳ " + Skills.getDisplayName(skillId) + " 需要游戏时长 "
+                                            + (need / 72000) + " 小时（当前 " + (have / 72000) + " 小时，还需约 " + (remainSec / 60) + " 分钟）")
+                                    .withColor(0xFFFFAA55));
+                            PacketDistributor.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
+                            return;
+                        }
+                    }
                     boolean learned = false;
                     for (int i = 0; i < levels; i++) {
                         if (record.learnSkill(skillId)) {
@@ -60,6 +76,11 @@ public record LearnSkillC2SPacket(String skillId, int levels) implements CustomP
                     if (learned) {
                         data.setDirty();
                         SkillEffects.applyAll(player, record);
+                        // 子枫的馈赠激活成功提示（不消耗技能点）
+                        if (Skills.isGiftSkill(skillId)) {
+                            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                                    "🎁 " + Skills.getDisplayName(skillId) + " 已激活！开启开关后按时间自动获得技能点"));
+                        }
                     }
                 }
                 PacketDistributor.sendToPlayer(player,

@@ -95,6 +95,8 @@ public class SkillEvents {
             UltimateEvents.clearPlayer(player);
             // 清理时之环/晴空环全局锁定计数（防残留导致 gamerule 永远锁死）
             AuraEvents.onPlayerLogout(player);
+            // 清理子枫的馈赠在线计时累计（防残留，下次进世界重新计时）
+            GiftEvents.onPlayerLogout(player);
         }
     }
 
