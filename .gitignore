@@ -1,0 +1,22 @@
+# Gradle / 构建产物
+build/
+bin/
+.gradle/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# 运行产物
+run/
+logs/
+crash-reports/
+
+# 系统
+Thumbs.db
+.DS_Store

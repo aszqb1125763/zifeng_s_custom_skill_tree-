@@ -1,0 +1,9 @@
+{
+  "itemGroup.zifeng_s_custom_skill_tree": "子枫·自定义技能树",
+  "block.zifeng_s_custom_skill_tree.star_energy_converter": "技能点转换机",
+  "block.zifeng_s_custom_skill_tree.creative_energy_block": "创造能量方块",
+  "key.categories.zifeng_s_custom_skill_tree": "子枫·自定义技能树",
+  "key.zifeng_s_custom_skill_tree.open_skill_tree": "打开技能树",
+  "key.zifeng_s_custom_skill_tree.toggle_aura": "切换杀戮光环开关",
+  "key.zifeng_s_custom_skill_tree.cycle_aura_target": "循环杀戮光环目标类型"
+}

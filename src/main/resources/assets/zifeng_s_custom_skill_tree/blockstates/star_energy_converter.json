@@ -1,0 +1,20 @@
+{
+  "variants": {
+    "facing=north,lit=false,powered=false": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter" },
+    "facing=north,lit=false,powered=true": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter" },
+    "facing=north,lit=true,powered=false": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter" },
+    "facing=north,lit=true,powered=true": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter" },
+    "facing=east,lit=false,powered=false": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 90 },
+    "facing=east,lit=false,powered=true": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 90 },
+    "facing=east,lit=true,powered=false": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 90 },
+    "facing=east,lit=true,powered=true": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 90 },
+    "facing=south,lit=false,powered=false": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 180 },
+    "facing=south,lit=false,powered=true": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 180 },
+    "facing=south,lit=true,powered=false": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 180 },
+    "facing=south,lit=true,powered=true": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 180 },
+    "facing=west,lit=false,powered=false": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 270 },
+    "facing=west,lit=false,powered=true": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 270 },
+    "facing=west,lit=true,powered=false": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 270 },
+    "facing=west,lit=true,powered=true": { "model": "zifeng_s_custom_skill_tree:block/star_energy_converter", "y": 270 }
+  }
+}

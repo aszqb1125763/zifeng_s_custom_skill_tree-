@@ -1,0 +1,26 @@
+modLoader = "javafml"
+loaderVersion = "[47,)"
+license = "All Rights Reserved"
+
+[[mods]]
+modId = "zifeng_s_custom_skill_tree"
+version = "${version}"
+displayName = "zifeng_s custom skill tree"
+description = '''子枫的自定义技能树模组（1.20.1 Forge 移植版）：技能点转换机、技能树、杀戮光环、终极被动。'''
+
+[[mixins]]
+config = "zifeng_s_custom_skill_tree.mixins.json"
+
+[[dependencies.zifeng_s_custom_skill_tree]]
+modId = "forge"
+mandatory = true
+versionRange = "[47,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.zifeng_s_custom_skill_tree]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[1.20.1,1.21)"
+ordering = "NONE"
+side = "BOTH"
