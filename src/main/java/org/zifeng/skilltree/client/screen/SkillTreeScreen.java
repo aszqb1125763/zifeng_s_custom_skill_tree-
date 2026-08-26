@@ -900,9 +900,15 @@ public class SkillTreeScreen extends Screen {
 
         // 图标是否会被第一图层 UI 或当前 tooltip 覆盖（面积比例 ≥ 阈值）→ 跳过 renderItem（半透明背景透出会混合）
         boolean iconOverlapped = isIconUnderUI(button);
-        // 技能图标（左侧 16×16，用原版物品图标；跟随技能树整体缩放）
+        // 技能图标（左侧 16×16；有自定义贴图用 blit 画贴图，否则用原版物品图标；跟随技能树整体缩放）
         if (!iconOverlapped) {
-            guiGraphics.renderItem(new net.minecraft.world.item.ItemStack(Skills.getIcon(button.skillId())), button.x() + 3, button.y() + 3);
+            var customTex = Skills.getIconTexture(button.skillId());
+            if (customTex != null) {
+                // 自定义贴图（16x16 PNG，直接按资源路径 blit）
+                guiGraphics.blit(customTex, button.x() + 3, button.y() + 3, 0, 0, 16, 16, 16, 16);
+            } else {
+                guiGraphics.renderItem(new net.minecraft.world.item.ItemStack(Skills.getIcon(button.skillId())), button.x() + 3, button.y() + 3);
+            }
             // 机械共鸣：图标外圈【钢灰机械边框】+ 右下角【螺丝角标】（与原技能区分，机械主题辨识度高）
             // 图标绘制区域 = (x+3, y+3) ~ (x+19, y+19)，边框包在四周 1px
             if (type == Skills.SkillType.MACHINE) {

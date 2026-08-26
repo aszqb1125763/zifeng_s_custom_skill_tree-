@@ -107,10 +107,12 @@ public class AuraEvents {
 
     /** 状态 diff：计数开启玩家数；最后一个关闭时恢复 doDaylightCycle=true */
     private static void updateTimeLock(ServerPlayer player, boolean on) {
-        Boolean prev = timeLockState.put(player.getUUID(), on);
+        // 2026-08-27 性能：先读后写——状态未变时连 put 都省掉（每 tick 调用的热路径）
+        Boolean prev = timeLockState.get(player.getUUID());
         if (prev != null && prev == on) {
             return; // 状态未变，零开销
         }
+        timeLockState.put(player.getUUID(), on);
         if (on) {
             if (timeLockCount == 0 && player.serverLevel() != null) {
                 // 第一个开启：记录当前世界时间（锁定开启时的时间，之后保持不变）
@@ -162,7 +164,12 @@ public class AuraEvents {
 
     /** 状态 diff：计数开启玩家数；最后一个关闭时恢复 doWeatherCycle=true */
     private static void updateWeatherLock(ServerPlayer player, boolean on) {
-        Boolean prev = weatherLockState.put(player.getUUID(), on);
+        // 2026-08-27 性能：先读后写——状态未变时连 put 都省掉（每 tick 调用的热路径）
+        Boolean prev = weatherLockState.get(player.getUUID());
+        if (prev != null && prev == on) {
+            return; // 状态未变，零开销
+        }
+        weatherLockState.put(player.getUUID(), on);
         if (prev != null && prev == on) {
             return; // 状态未变，零开销
         }

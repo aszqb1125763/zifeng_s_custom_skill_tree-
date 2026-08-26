@@ -45,11 +45,16 @@ public final class GiftEvents {
     /** 各洗礼上次开关状态（玩家 UUID → 技能 → 是否开启；2026-08-25：从开到关清累计，防残留立即触发） */
     private static final Map<UUID, Map<String, Boolean>> lastEnabled = new HashMap<>();
 
+    // 常量化技能列表（2026-08-27 性能优化：原每 tick List.of 分配 4 次小数组）
+    private static final List<String> TIME_SKILLS = List.of(Skills.GIFT_TIME_BAPTISM, Skills.GIFT_TIME_STORM, Skills.GIFT_TIME_FLOOD);
+    private static final List<String> DISTANCE_SKILLS = List.of(Skills.GIFT_MOVE_BAPTISM, Skills.GIFT_FLY_BAPTISM);
+    private static final List<String> ALL_BAPTISM_SKILLS = List.of(Skills.GIFT_MOVE_BAPTISM, Skills.GIFT_FLY_BAPTISM,
+            Skills.GIFT_MINE_BAPTISM, Skills.GIFT_KILL_BAPTISM);
+
     /** 检测洗礼开关状态变化：关闭时清空该玩家对应累计（防重新开启立即触发残留） */
     private static void checkToggleChanged(PlayerSkillRecord record, UUID uuid) {
         Map<String, Boolean> last = lastEnabled.computeIfAbsent(uuid, k -> new HashMap<>());
-        for (String skill : List.of(Skills.GIFT_MOVE_BAPTISM, Skills.GIFT_FLY_BAPTISM,
-                Skills.GIFT_MINE_BAPTISM, Skills.GIFT_KILL_BAPTISM)) {
+        for (String skill : ALL_BAPTISM_SKILLS) {
             boolean on = record.getLearnedPoints(skill) > 0 && record.isEnabled(skill);
             Boolean prev = last.put(skill, on);
             if (prev != null && prev && !on) {
@@ -95,7 +100,7 @@ public final class GiftEvents {
         checkToggleChanged(record, uuid);
 
         // ============ 时间类（在线 tick 累计；2026-08-25：风暴每次 +5 点，洪流每次 +10 点，洗礼 +1 点保底） ============
-        for (String skill : List.of(Skills.GIFT_TIME_BAPTISM, Skills.GIFT_TIME_STORM, Skills.GIFT_TIME_FLOOD)) {
+        for (String skill : TIME_SKILLS) {
             if (!isActive(record, skill)) {
                 continue;
             }
@@ -113,7 +118,7 @@ public final class GiftEvents {
         }
 
         // ============ 距离类（移动/飞行：原版统计差值，cm） ============
-        for (String skill : List.of(Skills.GIFT_MOVE_BAPTISM, Skills.GIFT_FLY_BAPTISM)) {
+        for (String skill : DISTANCE_SKILLS) {
             if (!isActive(record, skill)) {
                 continue;
             }

@@ -16,6 +16,12 @@ public class ClientRegistrar {
         NeoForge.EVENT_BUS.register(ModKeyBindingEvents.class);
         // 凤凰涅槃冷却 HUD 提示（RenderGuiEvent.Post）
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ReviveHudRenderer.class);
+        // 碧波清眸：水下/岩浆清晰视野（2026-08-27，ViewportEvent.RenderFog）
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientVisionEvents.class);
+        // 御风止步：飞行无惯性（2026-08-27，客户端输入驱动）
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientFlightEvents.class);
+        // 寻宝大师：64格内战利品容器/考古点发光轮廓（2026-08-27，RenderLevelStageEvent）
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientTreasureEvents.class);
         // 技能点变动左下角 HUD 提示（2026-08-25：不刷聊天栏，显示在聊天栏下方）
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.SkillPointHudRenderer.class);
         // 断开连接清空客户端缓存（2026-08-25 多人防跨服数据残留：HUD 技能点/凤凰涅槃冷却/技能缓存）

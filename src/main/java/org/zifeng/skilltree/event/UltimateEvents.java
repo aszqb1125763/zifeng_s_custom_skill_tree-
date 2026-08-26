@@ -1,16 +1,20 @@
 package org.zifeng.skilltree.event;
 
 import net.minecraft.core.Holder;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.EnchantmentTags;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Abilities;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
@@ -34,6 +38,7 @@ import org.zifeng.skilltree.skill.SkillEffects;
 import org.zifeng.skilltree.skill.Skills;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -122,6 +127,19 @@ public class UltimateEvents {
             // ⚠️ 性能优化（2026-08-13）：PlayerSkillSavedData 已静态缓存（getRecord 零分配），
             // 这里只取一次 record 供本 tick 所有判断复用。
             PlayerSkillRecord record = getRecord(player);
+            // 防刷物品快照兜底清理（2026-08-26）：每 5 秒清理超过 30 秒未结算的装备快照
+            // （死亡被取消/极端时序残留，正常路径 put+remove 成对，Map 恒为空/极小）
+            if (player.tickCount % 100 == 0 && !DEATH_SNAPSHOT_TIME.isEmpty()) {
+                long now = player.level().getGameTime();
+                var it = DEATH_SNAPSHOT_TIME.entrySet().iterator();
+                while (it.hasNext()) {
+                    var e = it.next();
+                    if (now - e.getValue() > 600) { // 超过 30 秒（600 tick）
+                        it.remove();
+                        DEATH_EQUIPMENT_SNAPSHOT.remove(e.getKey());
+                    }
+                }
+            }
             // 再生体魄：每秒结算（regen 计算移入 %20 内，避免每 tick 调用 getRegenPerSecond）
             if (player.tickCount % 20 == 0) {
                 double regen = SkillEffects.getRegenPerSecond(record);
@@ -211,8 +229,9 @@ public class UltimateEvents {
                     }
                 }
             }
-            // 星食·饱腹：饱食度与饱和度永远满值
-            if (record.getLearnedPoints(Skills.SATURATION) > 0 && record.isEnabled(Skills.SATURATION)) {
+            // 星食·饱腹：饱食度与饱和度永远满值（%20 节流，避免每 tick 标记 FoodData 脏）
+            if (record.getLearnedPoints(Skills.SATURATION) > 0 && record.isEnabled(Skills.SATURATION)
+                    && player.tickCount % 20 == 0) {
                 player.getFoodData().setFoodLevel(20);
                 player.getFoodData().setSaturation(20.0f);
             }
@@ -280,15 +299,17 @@ public class UltimateEvents {
             // 虚空之躯：三层无敌之每 tick 修复层（参考虚空之矛）——回满血 + 吸收 20 + 氧气无限 + 灭火 + 清负面 + 虚空救援
             // ⚠️ 放在全能精通之后：虚空之躯是全能精通的升级，防御更强（血量恒满而非免死保底）
             if (isVoidBodyEnabled(record)) {
-                // ① 血量只增不减：持续回满（等效虚空之矛 setHealth 只增不减）
-                if (player.getHealth() < player.getMaxHealth()) {
+                // ① 血量只增不减：持续回满（等效虚空之矛 setHealth 只增不减）；%5 节流降低战斗中属性重算频率
+                if (player.getHealth() < player.getMaxHealth() && player.tickCount % 5 == 0) {
                     player.setHealth(player.getMaxHealth());
                 }
-                // ② 保持吸收 20 点（10 颗黄心，虚空之矛同款，防伤害穿透）
-                var voidAbs = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
-                if (voidAbs == null || voidAbs.getAmplifier() < 4 || voidAbs.getDuration() < 300) {
-                    player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                            net.minecraft.world.effect.MobEffects.ABSORPTION, 400, 4, false, false, false));
+                // ② 保持吸收 20 点（10 颗黄心，虚空之矛同款，防伤害穿透）；%20 节流
+                if (player.tickCount % 20 == 0) {
+                    var voidAbs = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
+                    if (voidAbs == null || voidAbs.getAmplifier() < 4 || voidAbs.getDuration() < 300) {
+                        player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                                net.minecraft.world.effect.MobEffects.ABSORPTION, 400, 4, false, false, false));
+                    }
                 }
                 // ③ 氧气无限：永不溺水
                 if (player.getAirSupply() < player.getMaxAirSupply()) {
@@ -308,16 +329,33 @@ public class UltimateEvents {
                     }
                 }
             }
+            // ===== 终极节点·生存辅助（2026-08-27 新增） =====
+            // 御风止步（FLY_NO_INERTIA）：客户端处理（ClientFlightEvents，客户端有完整输入状态）
+            // 烈焰不侵：无需每 tick 灭火——EntityFireImmuneMixin（fireImmune→true）自动灭火/免伤/无视觉
+            // 鲛人之息：水下无限呼吸（氧气条恒满，含岩浆）
+            if (record.getLearnedPoints(Skills.WATER_BREATH) > 0 && record.isEnabled(Skills.WATER_BREATH)
+                    && player.getAirSupply() < player.getMaxAirSupply()) {
+                player.setAirSupply(player.getMaxAirSupply());
+            }
+            // 无限回路：AE2 无限频道（软集成，未装 AE2 时无操作；全局生效，玩家集合管理）
+            // 开启 → 注册玩家并应用无限；关闭 → 注销玩家，最后一个关闭者恢复原频道模式
+            boolean aeOn = record.getLearnedPoints(Skills.AE_INFINITE_CHANNEL) > 0 && record.isEnabled(Skills.AE_INFINITE_CHANNEL);
+            if (aeOn) {
+                org.zifeng.skilltree.compat.Ae2Compat.enable(player.getUUID());
+            } else {
+                org.zifeng.skilltree.compat.Ae2Compat.disable(player.getUUID());
+            }
             // 凤凰涅槃：每秒同步冷却状态到客户端（HUD 图标提示冷却倒计时/就绪）
+            // ⚠️ 性能优化（2026-08-27）：未学/未开启技能 → 不发包（避免全员每秒收无意义小包）
             if (player.tickCount % 20 == 0) {
                 boolean reviveLearned = record.getLearnedPoints(Skills.ULT_REVIVE) > 0 && record.isEnabled(Skills.ULT_REVIVE);
-                int remaining = 0;
-                if (reviveLearned) {
-                    long cdUntil = reviveCooldownUntil.getOrDefault(player.getUUID(), 0L);
-                    remaining = (int) Math.max(0, cdUntil - player.level().getGameTime());
+                if (!reviveLearned) {
+                    return; // 未学：无需同步（客户端默认隐藏 HUD）；此处已是方法末尾，安全返回
                 }
+                long cdUntil = reviveCooldownUntil.getOrDefault(player.getUUID(), 0L);
+                int remaining = (int) Math.max(0, cdUntil - player.level().getGameTime());
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
-                        new org.zifeng.skilltree.network.ReviveCooldownS2CPacket(reviveLearned, remaining));
+                        new org.zifeng.skilltree.network.ReviveCooldownS2CPacket(true, remaining));
             }
         }
     }
@@ -325,6 +363,8 @@ public class UltimateEvents {
     // ============ 浴血奋战（常驻属性：攻击力/生命 +50%，由 SkillEffects 属性修饰符实现）+ 暴击/破甲/死神凝视 ============
     @SubscribeEvent
     public static void onLivingDamage(LivingDamageEvent.Pre event) {
+        // 烈焰不侵：火焰伤害免疫已由 EntityFireImmuneMixin（fireImmune→true）在伤害源头拦截，
+        // 无需在此处理（LivingDamageEvent.Pre 不可取消，且 fireImmune 已覆盖 IS_FIRE 全部伤害）。
         if (event.getSource().getDirectEntity() instanceof ServerPlayer attacker) {
             PlayerSkillRecord record = getRecord(attacker);
             // 暴击：暴击精通（几率）+ 暴击增幅（伤害），任意来源攻击（含光环）都可触发
@@ -457,14 +497,86 @@ public class UltimateEvents {
         }
     }
 
+    // ============ 凌空采掘（FLY_MINING，2026-08-27）：飞行中挖掘无视原版空中 5 倍惩罚 ============
+    // 原版 Player.getDestroySpeed：!onGround() → 挖掘速度 /5。本事件在速度计算后触发，×5 恢复。
+    @SubscribeEvent
+    public static void onBreakSpeed(net.neoforged.neoforge.event.entity.player.PlayerEvent.BreakSpeed event) {
+        Player player = event.getEntity();
+        if (!(player instanceof ServerPlayer sp)) {
+            return;
+        }
+        PlayerSkillRecord record = getRecord(sp);
+        if (record.getLearnedPoints(Skills.FLY_MINING) > 0 && record.isEnabled(Skills.FLY_MINING)
+                && !player.onGround()) {
+            // 恢复空中 /5 惩罚（水下/水外惩罚独立计算，不受影响）
+            event.setNewSpeed(event.getOriginalSpeed() * 5.0F);
+        }
+    }
+
+    // ============ 破暗之瞳（DARK_VISION，2026-08-27）：免疫黑暗效果（坚守者/古城） ============
+    // 在效果即将施加时拦截（MobEffectEvent.Applicable DO_NOT_APPLY）——效果根本不施加，
+    // 无闪烁、无残留（比每 tick 移除更干净，玩家完全不受黑暗效果影响）
+    @SubscribeEvent
+    public static void onEffectApplicable(net.neoforged.neoforge.event.entity.living.MobEffectEvent.Applicable event) {
+        if (event.getEntity() instanceof ServerPlayer sp
+                && event.getEffectInstance() != null
+                && event.getEffectInstance().getEffect() == net.minecraft.world.effect.MobEffects.DARKNESS) {
+            PlayerSkillRecord record = getRecord(sp);
+            if (record.getLearnedPoints(Skills.DARK_VISION) > 0 && record.isEnabled(Skills.DARK_VISION)) {
+                event.setResult(net.neoforged.neoforge.event.entity.living.MobEffectEvent.Applicable.Result.DO_NOT_APPLY);
+            }
+        }
+    }
+
     // ============ 凤凰涅槃：死亡时原地复活 + 全能精通免死保底 ============
+
+    // 无限回路（AE2 无限频道，2026-08-27）：玩家登出时从集合移除，
+    // 最后一个开启者登出后恢复 AE 原频道模式（Ae2Compat.disable 内部处理）
+    @SubscribeEvent
+    public static void onPlayerLogout(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer sp) {
+            org.zifeng.skilltree.compat.Ae2Compat.disable(sp.getUUID());
+        }
+    }
+
+    // 无限回路：服务器停止/重启时清理 Ae2Compat 全局状态（2026-08-27 性能审计修复：
+    // 防异常退出后 previousMode 残留导致 AE 频道模式跨世界永久锁定 INFINITE）
+    @SubscribeEvent
+    public static void onServerStopped(net.neoforged.neoforge.event.server.ServerStoppedEvent event) {
+        org.zifeng.skilltree.compat.Ae2Compat.onServerStopped();
+    }
+
+    // 防刷物品（2026-08-26）：生物死亡瞬间装备栏物品快照（玩家给予的装备）。
+    // 战利品爆炸/掉落倍率只放大【战利品表掉落】，跳过装备栏来源的物品（玩家塞给生物的装备也能被刷）。
+    // ⚠️ 性能（2026-08-26）：只在击杀者可能是玩家（含机器 FakePlayer，可能触发掉落放大）时存快照，
+    //    自然死亡/环境死亡不存（否则服务器长期运行会内存泄漏）；时间戳 + 定期清理兜底（死亡被取消的残留）。
+    private static final java.util.Map<java.util.UUID, java.util.List<ItemStack>> DEATH_EQUIPMENT_SNAPSHOT = new java.util.HashMap<>();
+    private static final java.util.Map<java.util.UUID, Long> DEATH_SNAPSHOT_TIME = new java.util.HashMap<>();
+
     @SubscribeEvent
     public static void onLivingDeath(LivingDeathEvent event) {
+        // 非玩家生物：仅在击杀者可能是玩家（真玩家或机器 FakePlayer，都可能触发掉落放大）时快照装备栏
+        if (!(event.getEntity() instanceof ServerPlayer)) {
+            // 与 onLivingDrops 相同的击杀者判定（direct/间接投射物），排除自然死亡/环境死亡 → 不存快照，防泄漏
+            boolean playerKill = event.getSource().getDirectEntity() instanceof ServerPlayer
+                    || event.getSource().getEntity() instanceof ServerPlayer;
+            if (playerKill && event.getEntity() instanceof LivingEntity living) {
+                java.util.List<ItemStack> equipped = new java.util.ArrayList<>();
+                for (net.minecraft.world.entity.EquipmentSlot slot : net.minecraft.world.entity.EquipmentSlot.values()) {
+                    ItemStack stack = living.getItemBySlot(slot);
+                    if (!stack.isEmpty()) {
+                        equipped.add(stack.copy());
+                    }
+                }
+                DEATH_EQUIPMENT_SNAPSHOT.put(living.getUUID(), equipped);
+                DEATH_SNAPSHOT_TIME.put(living.getUUID(), living.level().getGameTime());
+            }
+            return;
+        }
         if (event.getEntity() instanceof ServerPlayer player) {
             PlayerSkillRecord record = getRecord(player);
             long now = player.level().getGameTime();
             UUID uuid = player.getUUID();
-
             // 虚空之躯：绝对不死（三层无敌第二层，死亡事件直接取消并回满血，无冷却）
             //    参考虚空之矛 onLivingDeath cancel + 回满血；优先于全能精通免死保底
             if (isVoidBodyEnabled(record)) {
@@ -668,6 +780,11 @@ public class UltimateEvents {
             return;
         }
         PlayerSkillRecord record = getRecord(sp);
+        // 防刷物品（2026-08-26）：读取该生物死亡瞬间的装备栏快照（玩家给予的装备），
+        // 战利品爆炸/掉落倍率跳过这些装备来源的物品，只放大战利品表掉落。取后移除防泄漏。
+        java.util.UUID deadId = event.getEntity().getUUID();
+        java.util.List<ItemStack> equippedSnapshot = DEATH_EQUIPMENT_SNAPSHOT.remove(deadId);
+        DEATH_SNAPSHOT_TIME.remove(deadId);
         // ============ 战利品爆炸（终极节点，参考神化 FestiveAffix）============
         // 对所有生物（含 Boss、含其他模组怪物）击杀时 100% 触发：掉落物翻倍爆炸散射
         // 1 级 = 掉落 1 倍（即 2 份），100 级 = 100 倍（线性：倍率 = 1 + 等级）
@@ -687,6 +804,10 @@ public class UltimateEvents {
                 List<ItemEntity> snapshot = new java.util.ArrayList<>(event.getDrops());
                 for (ItemEntity item : snapshot) {
                     if (item == null || !item.isAlive()) {
+                        continue;
+                    }
+                    // ⚠️ 防刷物品（2026-08-26）：跳过生物装备栏来源的物品（玩家主动给予的装备）
+                    if (isEquippedItem(equippedSnapshot, item.getItem())) {
                         continue;
                     }
                     // 复制 (bombMult-1) 份（item.copy() 独立栈）
@@ -726,7 +847,14 @@ public class UltimateEvents {
             // 只对掉落表含"抢夺"条件的生物生效（如骷髅的骨头、僵尸的腐肉；猪肉/皮革不受抢夺影响不放大）
             net.minecraft.resources.ResourceKey<LootTable> lootKey = event.getEntity().getLootTable();
             if (lootKey != null && supportsLooting(lootKey, sp.serverLevel())) {
-                applyDropMultiplier(event.getDrops(), sp, mult);
+                // ⚠️ 防刷物品（2026-08-26）：掉落倍率跳过生物装备栏来源的物品（玩家主动给予的装备）
+                java.util.List<ItemEntity> filterable = new java.util.ArrayList<>();
+                for (ItemEntity drop : event.getDrops()) {
+                    if (!isEquippedItem(equippedSnapshot, drop.getItem())) {
+                        filterable.add(drop);
+                    }
+                }
+                applyDropMultiplier(filterable, sp, mult);
             }
         }
         // ============ 凋落物挪移（光环技能，2026-08-24）：掉落物直传绑定容器，不生成实体（防卡顿）============
@@ -1089,6 +1217,23 @@ public class UltimateEvents {
     }
 
     /**
+     * 防刷物品（2026-08-26）：判断掉落物是否来自生物死亡瞬间的装备栏（玩家主动给予的装备）。
+     * 战利品爆炸/生物掉落倍率跳过这类物品——玩家给生物塞装备再击杀会刷物品。
+     * 战利品表掉落的物品（骨头/腐肉等）不在装备栏，不受影响。
+     */
+    private static boolean isEquippedItem(java.util.List<ItemStack> equippedSnapshot, ItemStack drop) {
+        if (equippedSnapshot == null || equippedSnapshot.isEmpty() || drop == null || drop.isEmpty()) {
+            return false;
+        }
+        for (ItemStack equipped : equippedSnapshot) {
+            if (ItemStack.isSameItemSameComponents(equipped, drop)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 按倍率放大掉落物数量（确定性）：
      * 每个掉落物最终总数量 = floor(原数量 × 倍率 + 随机小数)，
      * 超出单堆上限的拆成多个 ItemEntity（保持原位置/速度/拾取延迟）。
@@ -1140,23 +1285,122 @@ public class UltimateEvents {
     // ============ 工具耐久减免（采掘熟稔，Mixin 实现于 ItemStackMixin） ============
 
     /**
-     * 不毁词条（终极节点 ULT_UNBREAK_TAG，2026-08-13 需求）：激活后在铁砧中
-     * 放入两个相同的物品，可合成出带有【无法破坏】词条的工具（Unbreakable 组件，原版机制）。
+     * 村民交易技能（v1.3.0，2026-08-27）：交易完成后触发（NeoForge TradeWithVillagerEvent）。
+     * <ul>
+     *   <li>无限交易（UNLIMITED_TRADES）：resetUses() 把交易次数归 0 → 永不售罄、村民不用补货
+     *       （参考 Tweakeroo disableVillagerTradeLocking：每次 use 后抬 maxUses；resetUses 更彻底）</li>
+     *   <li>村民大师（VILLAGER_MASTER）：交易后村民 VillagerData 直接升到 5 级（满级）+ 刷新交易配方</li>
+     * </ul>
+     * 仅服务端真实记录判断（per-player，多人隔离）；流浪商人（WanderingTrader）不受村民大师影响。
      */
     @SubscribeEvent
-    public static void onAnvilUpdate(net.neoforged.neoforge.event.AnvilUpdateEvent event) {
-        // 铁砧预览更新：左右槽都是相同物品
-        ItemStack left = event.getLeft();
-        ItemStack right = event.getRight();
-        if (left.isEmpty() || right.isEmpty() || left.getItem() != right.getItem()) {
-            return;
-        }
-        Player player = event.getPlayer();
-        if (!(player instanceof ServerPlayer sp)) {
+    public static void onTradeWithVillager(net.neoforged.neoforge.event.entity.player.TradeWithVillagerEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer sp)) {
             return;
         }
         PlayerSkillRecord record = getRecord(sp);
-        if (record.getLearnedPoints(Skills.ULT_UNBREAK_TAG) <= 0 || !record.isEnabled(Skills.ULT_UNBREAK_TAG)) {
+        // ===== 无限交易：交易次数归 0（永不售罄） =====
+        if (record.getLearnedPoints(Skills.UNLIMITED_TRADES) > 0 && record.isEnabled(Skills.UNLIMITED_TRADES)) {
+            net.minecraft.world.item.trading.MerchantOffer offer = event.getMerchantOffer();
+            if (offer != null && offer.getUses() > 0) {
+                offer.resetUses(); // uses → 0，交易永不锁定
+            }
+        }
+        // ===== 村民大师：村民直接满级（5 级）+ 逐级解锁全部交易配方 =====
+        // ⚠️ 修复（2026-08-27 v2）：原实现 overrideOffers(null) 会清空原有交易，且 updateTrades 只加
+        //    "当前等级"的交易集 → 2/3/4 级交易全丢。改为模拟原版 increaseMerchantCareer 逐级升级：
+        //    每升一级 setLevel + updateTrades() 追加该级交易（原有 1 级交易保留，2-5 级依次追加）。
+        if (record.getLearnedPoints(Skills.VILLAGER_MASTER) > 0 && record.isEnabled(Skills.VILLAGER_MASTER)) {
+            if (event.getAbstractVillager() instanceof net.minecraft.world.entity.npc.Villager villager) {
+                int currentLevel = villager.getVillagerData().getLevel();
+                if (currentLevel < 5) {
+                    // 先确保现有 offers 已生成（updateTrades 内部调 getOffers，需非 null 避免递归）
+                    villager.getOffers();
+                    // 反射调用 protected updateTrades()（编译环境无参签名）
+                    java.lang.reflect.Method updateTrades = null;
+                    try {
+                        updateTrades = net.minecraft.world.entity.npc.AbstractVillager.class
+                                .getDeclaredMethod("updateTrades");
+                        updateTrades.setAccessible(true);
+                    } catch (Exception ignored) {
+                        // 反射失败（API 变动）→ 至少保证等级提升，交易下次打开菜单重建
+                    }
+                    for (int lv = currentLevel + 1; lv <= 5; lv++) {
+                        villager.setVillagerData(villager.getVillagerData().setLevel(lv));
+                        if (updateTrades != null) {
+                            try {
+                                updateTrades.invoke(villager); // 追加该级交易（2→3→4→5）
+                            } catch (Exception ignored) {
+                                break;
+                            }
+                        }
+                    }
+                    villager.setVillagerXp(1000000); // 经验远超过量
+                }
+            }
+        }
+    }
+
+    /**
+     * 不毁词条（终极节点 ULT_UNBREAK_TAG，2026-08-13 需求）：激活后在铁砧中
+     * 放入两个相同的物品，可合成出带有【无法破坏】词条的工具（Unbreakable 组件，原版机制）。
+     * <p>
+     * 铁砧附魔（v1.3.0，2026-08-27）：检测左槽物品 + 右槽材料（青金石4=随机附魔 /
+     * 青金石块2=附魔突破 / 下界之星2=超限附魔），随机给一个正面附魔或已有附魔+1级。
+     */
+    @SubscribeEvent
+    public static void onAnvilUpdate(net.neoforged.neoforge.event.AnvilUpdateEvent event) {
+        ItemStack left = event.getLeft();
+        ItemStack right = event.getRight();
+        if (left.isEmpty() || right.isEmpty()) {
+            return;
+        }
+        Player player = event.getPlayer();
+        if (player == null) {
+            return;
+        }
+
+        // ===== 铁砧附魔（v1.3.0）：右槽材料判定 =====
+        // 技能判断：服务端查真实记录（权威），客户端用本地缓存（S2CPacket 校准，铁砧预览显示）
+        if (right.is(Items.LAPIS_LAZULI)) {
+            // 随机附魔：4 青金石 + 1 级经验，随机给一个该物品可拥有的正面附魔
+            if (!isEnchantSkillEnabled(player, Skills.ENCHANT_RANDOM)) {
+                return;
+            }
+            if (right.getCount() < 4) {
+                return; // 材料不足
+            }
+            handleRandomEnchant(event, player, left, 4, 1);
+            return;
+        }
+        if (right.is(Items.LAPIS_BLOCK)) {
+            // 附魔突破：2 青金石块 + 4 级经验，所有已有附魔 +1 级（上限 20）
+            if (!isEnchantSkillEnabled(player, Skills.ENCHANT_BREAK)) {
+                return;
+            }
+            if (right.getCount() < 2) {
+                return;
+            }
+            handleLevelUpEnchant(event, left, 2, 4, 20, 1);
+            return;
+        }
+        if (right.is(Items.NETHER_STAR)) {
+            // 超限附魔：2 下界之星 + 10 级经验，所有已有附魔 +2 级（上限 100）
+            if (!isEnchantSkillEnabled(player, Skills.ENCHANT_OVER)) {
+                return;
+            }
+            if (right.getCount() < 2) {
+                return;
+            }
+            handleLevelUpEnchant(event, left, 2, 10, 100, 2);
+            return;
+        }
+
+        // ===== 不毁词条：左右槽都是相同物品 =====
+        if (left.getItem() != right.getItem()) {
+            return;
+        }
+        if (!isEnchantSkillEnabled(player, Skills.ULT_UNBREAK_TAG)) {
             return;
         }
         // 输出：左槽物品副本 + 无法破坏组件（原版 Unbreakable，工具不再消耗耐久）
@@ -1166,6 +1410,100 @@ public class UltimateEvents {
         event.setOutput(out);
         event.setCost(1); // 仅 1 级经验成本（合成费用低）
         event.setMaterialCost(1); // 消耗右槽 1 个
+    }
+
+    /**
+     * 技能是否已学且开启（多人安全）：服务端查真实记录（权威，防作弊）；
+     * 客户端用本地缓存（服务端 S2CPacket 校准），使铁砧 GUI 能显示预览。
+     */
+    private static boolean isEnchantSkillEnabled(Player player, String skillId) {
+        if (player instanceof ServerPlayer sp) {
+            PlayerSkillRecord record = getRecord(sp);
+            return record.getLearnedPoints(skillId) > 0 && record.isEnabled(skillId);
+        }
+        // 客户端：本地缓存（服务端校准；懒加载安全，服务端不执行此分支）
+        return org.zifeng.skilltree.client.ModKeyBindingEvents.isSkillEnabledClient(skillId);
+    }
+
+    /**
+     * 随机附魔（ENCHANT_RANDOM）：遍历注册表所有附魔，过滤出
+     * ①非诅咒 ②左槽物品可拥有 ③尚未拥有 ④与已有附魔不互斥的附魔，加权随机选一个，随机 1~最大等级。
+     * 互斥检查（2026-08-26）：时运与精准采集只能拥有一种（原版 exclusiveSet）。
+     */
+    private static void handleRandomEnchant(net.neoforged.neoforge.event.AnvilUpdateEvent event, Player player,
+                                            ItemStack left, int materialCost, int cost) {
+        HolderLookup.RegistryLookup<Enchantment> reg = player.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+        ItemEnchantments has = left.getEnchantments();
+        List<Holder.Reference<Enchantment>> candidates = new ArrayList<>();
+        int totalWeight = 0;
+        for (Holder.Reference<Enchantment> holder : reg.listElements().toList()) {
+            Enchantment ench = holder.value();
+            // ① 排除诅咒附魔（curse 标签） ② 该物品能否拥有 ③ 尚未拥有 ④ 与已有附魔互斥（时运/精准采集二选一）
+            if (holder.is(EnchantmentTags.CURSE) || !ench.canEnchant(left) || has.getLevel(holder) > 0
+                    || isExclusiveWithExisting(has, holder)) {
+                continue;
+            }
+            candidates.add(holder);
+            totalWeight += Math.max(1, ench.getWeight());
+        }
+        if (candidates.isEmpty()) {
+            return; // 无可用附魔（如不可附魔的物品）
+        }
+        // 按权重随机选一个
+        int roll = player.getRandom().nextInt(totalWeight);
+        Holder.Reference<Enchantment> picked = candidates.get(0);
+        for (Holder.Reference<Enchantment> holder : candidates) {
+            roll -= Math.max(1, holder.value().getWeight());
+            if (roll < 0) {
+                picked = holder;
+                break;
+            }
+        }
+        // 随机等级 1 ~ 该附魔最大等级
+        int level = 1 + player.getRandom().nextInt(Math.max(1, picked.value().getMaxLevel()));
+        ItemStack out = left.copy();
+        out.enchant(picked, level);
+        event.setOutput(out);
+        event.setCost(cost);
+        event.setMaterialCost(materialCost);
+    }
+
+    /** 候选附魔是否与物品已有附魔互斥（原版 exclusiveSet：时运/精准采集等） */
+    private static boolean isExclusiveWithExisting(ItemEnchantments has, Holder<Enchantment> candidate) {
+        for (Holder<Enchantment> existing : has.keySet()) {
+            if (!Enchantment.areCompatible(existing, candidate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 附魔突破（ENCHANT_BREAK）/ 超限附魔（ENCHANT_OVER）：所有已有附魔一起升级
+     * （突破 +1 / 超限 +2），单个附魔等级上限 maxLevel（突破=20，超限=100）。
+     */
+    private static void handleLevelUpEnchant(net.neoforged.neoforge.event.AnvilUpdateEvent event,
+                                             ItemStack left, int materialCost, int cost, int maxLevel, int addLevel) {
+        ItemEnchantments enchants = left.getEnchantments();
+        if (enchants.isEmpty()) {
+            return; // 没有附魔可突破
+        }
+        ItemStack out = left.copy();
+        boolean changed = false;
+        for (Holder<Enchantment> holder : enchants.keySet()) {
+            int current = enchants.getLevel(holder);
+            if (current >= maxLevel) {
+                continue; // 已达上限，跳过
+            }
+            out.enchant(holder, Math.min(current + addLevel, maxLevel));
+            changed = true;
+        }
+        if (!changed) {
+            return; // 所有附魔都已达上限
+        }
+        event.setOutput(out);
+        event.setCost(cost);
+        event.setMaterialCost(materialCost);
     }
 
     /**

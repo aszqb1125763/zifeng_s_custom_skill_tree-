@@ -93,6 +93,8 @@ gradlew.bat build
 | **Extra Utilities** | 自动熔炼机制 | 自动熔炼终极的技能设计灵感 |
 | **JustDireThings** | 掉落传送绑定机制（DROPTELEPORT） | 子枫挪移术（凋落物挪移）绑定思路参考——木棍蹲下右键容器绑定；独立重写（绑定信息存玩家存档而非物品组件），MIT 协议 |
 | **Flux-Networks** | long 能量传输接口（IFNEnergyStorage，超 int 21 亿） | 星能转换机超 21 亿 FE 能量兼容——注册其 FluxCapabilities.BLOCK capability 直灌 long 能量；反射软集成，未装 Flux 自动降级 |
+| **Tweakeroo** | 无限交易（disableVillagerTradeLocking） | 无限交易技能灵感——交易次数不减少；独立实现（用 NeoForge 原生 TradeWithVillagerEvent + MerchantOffer.resetUses()，非 Mixin 抬 maxUses） |
+| **Applied Energistics 2（应用能源2）** | 频道模式切换 API（AEConfig.setChannelModel + Grid repath） | 无限回路（AE 无限频道）技能——调用 AE2 官方公开 API（与 /ae2 channelmode infinite 指令相同逻辑），反射软集成，未装 AE2 自动降级 |
 
 > 📝 声明：以上模组仅为机制参考，本模组代码由 AI 辅助原创编写，未复制任何模组的源码。
 

@@ -7,7 +7,9 @@
     "RangedAttributeMixin",
     "ItemStackMixin",
     "PlayerRendererMixin",
-    "BlockStateMixin"
+    "BlockStateMixin",
+    "EntityFireImmuneMixin",
+    "FogRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 0

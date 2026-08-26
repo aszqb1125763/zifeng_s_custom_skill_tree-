@@ -106,6 +106,15 @@ public final class Skills {
             case ULT_VOID_BODY -> Math.round(Config.VOID_BODY_COST.get());
             case AUTO_SMELT -> 30L; // 自动熔炼：一次性 30 点
             case ULT_BREAK_ALL, ULT_UNBREAK_TAG -> 100L; // 万物挖掘/不毁词条：一次性 100 点
+            case ENCHANT_RANDOM -> 100L;  // 随机附魔：一次性 100 点
+            case ENCHANT_BREAK -> 1000L;  // 附魔突破：一次性 1000 点
+            case ENCHANT_OVER -> 10000L;  // 超限附魔：一次性 10000 点
+            case UNLIMITED_TRADES -> 100L;   // 无限交易：一次性 100 点
+            case VILLAGER_MASTER -> 1000L;   // 村民大师：一次性 1000 点
+            case TREASURE_HUNTER -> 500L;    // 寻宝大师：一次性 500 点
+            // 终极节点·生存辅助（2026-08-27）：100 点；AE 无限频道 1000 点
+            case FLY_NO_INERTIA, FLY_MINING, FIRE_PROTECT, WATER_BREATH, DARK_VISION, UNDERWATER_VISION -> 100L;
+            case AE_INFINITE_CHANNEL -> 1000L;
             default -> 1L; // 普通终极 1 点
         };
     }
@@ -162,6 +171,23 @@ public final class Skills {
     public static final String ULT_UNBREAK_TAG = "ult_unbreak_tag"; // 不毁词条（铁砧合成Unbreakable工具，1级，消耗100）
     public static final String ULT_SWEEP = "ult_sweep";       // 横扫范围（每级+1格攻击范围，上限10，线性2）
     public static final String ULT_KB_RESIST = "ult_kb_resist"; // 击退抗性（每级+10%，满10级免疫击退，线性2）
+    // 2026-08-26 新增：铁砧随机附魔系列（特殊被动）
+    public static final String ENCHANT_RANDOM = "enchant_random";     // 随机附魔（100点，铁砧+4青金石+1级经验，随机正面附魔）
+    public static final String ENCHANT_BREAK = "enchant_break";       // 附魔突破（1000点，铁砧+2青金石块+4级经验，已有附魔+1级，上限20）
+    public static final String ENCHANT_OVER = "enchant_over";         // 超限附魔（10000点，铁砧+2下界之星+10级经验，已有附魔+1级，上限100）
+    // 2026-08-27 新增：村民交易系列（特殊被动）
+    public static final String UNLIMITED_TRADES = "unlimited_trades"; // 无限交易（100点，村民不用补货，交易次数不减少）
+    public static final String VILLAGER_MASTER = "villager_master";   // 村民大师（1000点，交易后村民直接满级）
+    public static final String TREASURE_HUNTER = "treasure_hunter";   // 寻宝大师（500点，64格内战利品容器/考古刷扫点发光）
+
+    // ============ 终极节点·生存辅助（纵列3，2026-08-27 新增：飞行/火焰/呼吸/视野/AE兼容） ============
+    public static final String FLY_NO_INERTIA = "fly_no_inertia";           // 御风止步：飞行无惯性，松空格即停（1级，100点）
+    public static final String FLY_MINING = "fly_mining";                   // 凌空采掘：飞行中挖掘无视原版 5 倍惩罚（1级，100点）
+    public static final String FIRE_PROTECT = "fire_protect";               // 烈焰不侵：不着火/无火焰视觉/免疫火焰伤害（1级，100点）
+    public static final String WATER_BREATH = "water_breath";               // 鲛人之息：水下无限呼吸（1级，100点）
+    public static final String DARK_VISION = "dark_vision";                 // 破暗之瞳：免疫黑暗效果视觉影响（1级，100点）
+    public static final String UNDERWATER_VISION = "underwater_vision";     // 碧波清眸：水下/岩浆清晰视野（1级，100点）
+    public static final String AE_INFINITE_CHANNEL = "ae_infinite_channel"; // 无限回路：AE2 网络无限频道（1级，1000点，软集成）
 
     // ============ 子枫的馈赠（纵列7，2026-08-25 新增：按游戏时长/移动/飞行/挖掘激活，免费获得技能点） ============
     public static final String GIFT_TIME_BAPTISM = "gift_time_baptism"; // 时间洗礼：游戏时长≥1小时可激活，每10分钟+1技能点
@@ -255,11 +281,14 @@ public final class Skills {
             AMP_REGEN, AMP_LUCK, AMP_JUMP, AMP_FLY, AMP_SWIM,
             AMP_CRIT, AMP_LIFESTEAL, AMP_THORNS, AMP_ARMOR_PEN);
     /** 所有终极节点（纵列3）：只保留加玩家属性/防御的终极（2026-08-25：不加属性的被动/掉落类已拆到 SPECIAL 纵列4） */
-    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY);
+    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY,
+            FLY_NO_INERTIA, FLY_MINING, FIRE_PROTECT, WATER_BREATH, DARK_VISION, UNDERWATER_VISION, AE_INFINITE_CHANNEL);
     /** 所有特殊被动（纵列4，2026-08-25 新增）：原终极列中不加玩家属性的被动/掉落/行为类技能 */
     public static final List<String> SPECIAL_SKILLS = List.of(
             VILLAGE_HERO, REACH, GLOW, LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN,
-            MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT, ULT_BREAK_ALL, ULT_UNBREAK_TAG, ULT_SWEEP, ULT_KB_RESIST);
+            MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT, ULT_BREAK_ALL, ULT_UNBREAK_TAG, ULT_SWEEP, ULT_KB_RESIST,
+            ENCHANT_RANDOM, ENCHANT_BREAK, ENCHANT_OVER,
+            UNLIMITED_TRADES, VILLAGER_MASTER, TREASURE_HUNTER);
     /** 所有杀戮光环（纵列5）：杀戮光环·强化 在 虚空之矛 上方 */
     public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM);
     /** 所有魔法增幅（纵列0）：其余模组兼容技能（新生魔艺/铁魔法等），不作为任何前置 */
@@ -354,7 +383,7 @@ public final class Skills {
     public static int getGiftMaxPoints(String skillId) {
         return switch (skillId) {
             case GIFT_MOVE_BAPTISM, GIFT_FLY_BAPTISM, GIFT_MINE_BAPTISM, GIFT_KILL_BAPTISM -> 5; // 移动/飞行/挖掘/击杀洗礼：5 级
-            case GIFT_MOVE_AMP, GIFT_FLY_AMP, GIFT_MINE_AMP, GIFT_KILL_AMP -> 100;              // 增幅：上限 100 级
+            case GIFT_MOVE_AMP, GIFT_FLY_AMP, GIFT_MINE_AMP, GIFT_KILL_AMP -> 5;               // 增幅：上限 5 级（2026-08-27 从 100 下调）
             default -> 1; // 时间洗礼/风暴/洪流：单级
         };
     }
@@ -612,6 +641,14 @@ public final class Skills {
             case ULT_REVIVE -> "子枫的浴火重生";   // 凤凰涅槃
             case ULT_REAPER -> "死神凝视";        // 死神凝视
             case ULT_VOID_BODY -> "子枫的虚空神体"; // 虚空之躯
+            // 终极节点·生存辅助（2026-08-27）
+            case FLY_NO_INERTIA -> "御风止步";         // 取消飞行惯性
+            case FLY_MINING -> "凌空采掘";             // 取消挖掘惩罚
+            case FIRE_PROTECT -> "烈焰不侵";           // 火焰防护
+            case WATER_BREATH -> "鲛人之息";           // 水下呼吸
+            case DARK_VISION -> "破暗之瞳";           // 黑暗视觉
+            case UNDERWATER_VISION -> "碧波清眸";     // 水下视觉
+            case AE_INFINITE_CHANNEL -> "无限回路";   // AE无限频道
             case AUTO_SMELT -> "自动熔炼术";      // 自动熔炼
             case ULT_BREAK_ALL -> "子枫的万物可掘"; // 万物挖掘
             case ULT_UNBREAK_TAG -> "不朽铭文";   // 不毁词条
@@ -660,6 +697,13 @@ public final class Skills {
             case GIFT_MINE_AMP -> "挖掘洗礼增幅";
             case GIFT_KILL_BAPTISM -> "击杀馈赠";
             case GIFT_KILL_AMP -> "击杀馈赠增幅";
+            // ===== 铁砧附魔（纵列4，2026-08-27 新增） =====
+            case ENCHANT_RANDOM -> "随机附魔";
+            case ENCHANT_BREAK -> "附魔突破";
+            case ENCHANT_OVER -> "超限附魔";
+            case UNLIMITED_TRADES -> "无限交易";
+            case VILLAGER_MASTER -> "村民大师";
+            case TREASURE_HUNTER -> "寻宝大师";
             default -> "未知技能";
         };
     }
@@ -733,6 +777,14 @@ public final class Skills {
             case ULT_REVIVE -> "子枫的浴火重生：消耗 500 技能点，\n死亡原地复活一次，恢复50%生命\n并清除负面效果，冷却1分钟\n前置：噬血之刃500 + 暴击要害500";
             case ULT_REAPER -> "死神凝视：消耗 1000 技能点，\n攻击生命<15%的非玩家生物时\n30%概率直接处决\n前置：破甲利刃500 + 剑心通明500";
             case ULT_VOID_BODY -> "子枫的虚空神体：消耗 5000 技能点，\n三层无敌：免伤/免死/血量只增不减\n抗击退/免摔落/免火焰/清负面\n前置：子枫的全能精通";
+            // ===== 终极节点·生存辅助（2026-08-27） =====
+            case FLY_NO_INERTIA -> "御风止步：消耗 100 技能点\n一次性点亮，飞行中松开空格\n立即停止垂直移动（无飞行惯性）\n创造飞行与鞘翅飞行均生效";
+            case FLY_MINING -> "凌空采掘：消耗 100 技能点\n一次性点亮，飞行中挖掘方块\n无视原版空中 5 倍挖掘惩罚\n（空中挖掘速度与地面相同）";
+            case FIRE_PROTECT -> "烈焰不侵：消耗 100 技能点\n一次性点亮，完全免疫火焰：\n不会着火、身上无火焰视觉遮挡\n不受火焰/岩浆伤害";
+            case WATER_BREATH -> "鲛人之息：消耗 100 技能点\n一次性点亮，水下无限呼吸\n（氧气条永远保持满值）";
+            case DARK_VISION -> "破暗之瞳：消耗 100 技能点\n一次性点亮，免疫黑暗效果\n（坚守者/古城区域的黑暗视觉影响\n不再让视野变暗闪烁）";
+            case UNDERWATER_VISION -> "碧波清眸：消耗 100 技能点\n一次性点亮，在水底/岩浆中\n拥有清晰视野（雾效大幅减弱）";
+            case AE_INFINITE_CHANNEL -> "无限回路：消耗 1000 技能点\n一次性点亮，AE2 网络频道无限\n（等效 /ae2 channelmode infinite）\n⚠ 需安装 AE2 模组，未安装时学习无效\n⚠ 全局生效：服务器所有 AE 网络无限频道";
             case AUTO_SMELT -> "自动熔炼术：消耗 30 技能点\n挖掘方块时自动熔炼掉落物\n（铁矿石→铁锭、金矿石→金锭等）\n按熔炉配方判断能否熔炼\n判断顺序：先熔炉、再时运、再技能增幅\n一次性点亮，1 级\n\n⚠ 黑名单：\n手持对应矿石的粗矿\n（如挖铁矿石得到的生铁 raw_iron）\n输入 /hmd 加入黑名单\n黑名单中的物品不参与熔炼判定\n输入 /delhmd 可查看并移除";
             case ULT_BREAK_ALL -> "子枫的万物可掘：消耗 100 技能点\n一次性点亮，激活后可以挖掘任何方块\n包括基岩这类无法破坏的方块\n挖掘后会掉落对应方块\n（左键点击即可挖掘，无需等待）";
             case ULT_UNBREAK_TAG -> "不朽铭文：消耗 100 技能点\n一次性点亮，激活后\n在铁砧中放入两个相同的物品\n可以合成出带有【无法破坏】词条的工具\n（工具不再消耗耐久）";
@@ -761,13 +813,20 @@ public final class Skills {
             case GIFT_TIME_STORM -> "时间风暴：游戏时长达到 5 小时后可激活\n激活后每 5 分钟获得 5 技能点\n与时间洗礼叠加\n不消耗技能点（时间即是馈赠）\n激活后需开启开关才生效";
             case GIFT_TIME_FLOOD -> "时间洪流：游戏时长达到 10 小时后可激活\n激活后每 1 分钟获得 10 技能点\n与时间洗礼/时间风暴叠加\n不消耗技能点（时间即是馈赠）\n激活后需开启开关才生效";
             case GIFT_MOVE_BAPTISM -> "移动洗礼：统计行走+疾跑距离\n1级：每 1000 米获得 1 技能点（消耗 10 点）\n2级：每 500 米获得 1 技能点（消耗 1000 点）\n3级：每 100 米获得 1 技能点（消耗 10000 点）\n4级：每 50 米获得 1 技能点（消耗 50000 点）\n5级：每 10 米获得 1 技能点（消耗 100000 点）\n开启后按累计距离自动发放";
-            case GIFT_MOVE_AMP -> "移动洗礼增幅：上限 100 级\n每级让移动洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学移动洗礼）";
+            case GIFT_MOVE_AMP -> "移动洗礼增幅：上限 5 级\n每级让移动洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学移动洗礼）";
             case GIFT_FLY_BAPTISM -> "飞行洗礼：统计飞行距离\n1级：每 1000 米获得 1 技能点（消耗 10 点）\n2级：每 500 米获得 1 技能点（消耗 1000 点）\n3级：每 100 米获得 1 技能点（消耗 10000 点）\n4级：每 50 米获得 1 技能点（消耗 50000 点）\n5级：每 10 米获得 1 技能点（消耗 100000 点）\n开启后按累计距离自动发放";
-            case GIFT_FLY_AMP -> "飞行洗礼增幅：上限 100 级\n每级让飞行洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学飞行洗礼）";
+            case GIFT_FLY_AMP -> "飞行洗礼增幅：上限 5 级\n每级让飞行洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学飞行洗礼）";
             case GIFT_MINE_BAPTISM -> "挖掘洗礼：统计挖掘方块数\n1级：每 1000 个方块获得 1 技能点（消耗 10 点）\n2级：每 500 个方块获得 1 技能点（消耗 1000 点）\n3级：每 100 个方块获得 1 技能点（消耗 10000 点）\n4级：每 50 个方块获得 1 技能点（消耗 50000 点）\n5级：每 10 个方块获得 1 技能点（消耗 100000 点）\n开启后按累计挖掘自动发放";
-            case GIFT_MINE_AMP -> "挖掘洗礼增幅：上限 100 级\n每级让挖掘洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学挖掘洗礼）";
+            case GIFT_MINE_AMP -> "挖掘洗礼增幅：上限 5 级\n每级让挖掘洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学挖掘洗礼）";
             case GIFT_KILL_BAPTISM -> "击杀馈赠：统计击杀生物数\n1级：每 1000 个击杀获得 1 技能点（消耗 10 点）\n2级：每 500 个击杀获得 1 技能点（消耗 1000 点）\n3级：每 100 个击杀获得 1 技能点（消耗 10000 点）\n4级：每 50 个击杀获得 1 技能点（消耗 50000 点）\n5级：每 10 个击杀获得 1 技能点（消耗 100000 点）\n开启后按累计击杀自动发放";
-            case GIFT_KILL_AMP -> "击杀馈赠增幅：上限 100 级\n每级让击杀馈赠每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学击杀馈赠）";
+            case GIFT_KILL_AMP -> "击杀馈赠增幅：上限 5 级\n每级让击杀馈赠每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%\n（需先学击杀馈赠）";
+            // ===== 铁砧附魔（2026-08-27） =====
+            case ENCHANT_RANDOM -> "随机附魔：消耗 100 技能点\n一次性点亮，在铁砧中：\n左槽放任意可附魔物品\n右槽放 4 个青金石\n花费 1 级经验\n随机获得一个该物品可拥有的正面附魔\n（不含诅咒附魔，不限制工具/物品兼容性）\n（时运与精准采集互斥，只能有一种）";
+            case ENCHANT_BREAK -> "附魔突破：消耗 1000 技能点\n一次性点亮，在铁砧中：\n左槽放已附魔物品\n右槽放 2 个青金石块\n花费 4 级经验\n所有已有附魔 +1 级（单个上限 20 级）\n前置：随机附魔";
+            case ENCHANT_OVER -> "超限附魔：消耗 10000 技能点\n一次性点亮，在铁砧中：\n左槽放已附魔物品\n右槽放 2 个下界之星\n花费 10 级经验\n所有已有附魔 +2 级（单个上限 100 级）\n前置：随机附魔";
+            case UNLIMITED_TRADES -> "无限交易：消耗 100 技能点\n一次性点亮，与村民交易后\n交易次数不减少、永不售罄\n村民不用补货也能无限交易";
+            case VILLAGER_MASTER -> "村民大师：消耗 1000 技能点\n一次性点亮，与村民交易后\n该村民直接升到满级（5 级）\n解锁全部高级交易配方";
+            case TREASURE_HUNTER -> "寻宝大师：消耗 500 技能点\n一次性点亮，64 格内所有\n战利品容器与考古刷扫点\n显示白色发光轮廓\n（兼容所有模组的战利品容器）";
             default -> "";
         };
     }
@@ -796,6 +855,8 @@ public final class Skills {
             case MACHINE_SPAWN_EGG -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(MOB_SPAWN_EGG, 1));
             case MACHINE_MOB_HEAD -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(MOB_HEAD, 1));
             case MACHINE_AUTO_SMELT -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(AUTO_SMELT, 1));
+            // 铁砧附魔（2026-08-27）：附魔突破/超限附魔 前置 = 随机附魔
+            case ENCHANT_BREAK, ENCHANT_OVER -> List.of(Map.entry(ENCHANT_RANDOM, 1));
             // 子枫的馈赠增幅：需对应洗礼已学（2026-08-25）
             case GIFT_MOVE_AMP -> List.of(Map.entry(GIFT_MOVE_BAPTISM, 1));
             case GIFT_FLY_AMP -> List.of(Map.entry(GIFT_FLY_BAPTISM, 1));
@@ -807,6 +868,18 @@ public final class Skills {
 
     public static ResourceLocation id(String path) {
         return ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, path);
+    }
+
+    /**
+     * 自定义技能图标贴图（2026-08-27）：返回非 null 时技能树用自定义贴图渲染（blit），
+     * 返回 null 用 {@link #getIcon} 的原版物品图标。当前仅「无限回路」用自绘贴图
+     * （AE2 主题：紫水晶能量 + ∞ 无限回路符号，无合适原版物品图标）。
+     */
+    public static ResourceLocation getIconTexture(String skillId) {
+        return switch (skillId) {
+            case AE_INFINITE_CHANNEL -> id("textures/skill/ae_infinite_channel.png");
+            default -> null;
+        };
     }
 
     /**
@@ -879,6 +952,14 @@ public final class Skills {
             case ULT_REVIVE -> Items.TOTEM_OF_UNDYING;         // 凤凰涅槃：不死图腾
             case ULT_REAPER -> Items.WITHER_SKELETON_SKULL;    // 死神凝视：凋灵骷髅头
             case ULT_VOID_BODY -> Items.DIAMOND_CHESTPLATE;    // 虚空之躯：原版钻石甲（金边=伤害吸收）
+            // ===== 终极节点·生存辅助（2026-08-27） =====
+            case FLY_NO_INERTIA -> Items.FEATHER;             // 御风止步：羽毛（轻盈无惯性）
+            case FLY_MINING -> Items.NETHERITE_PICKAXE;       // 凌空采掘：下界合金镐（飞行挖掘）
+            case FIRE_PROTECT -> Items.MAGMA_CREAM;           // 烈焰不侵：岩浆膏（火焰）
+            case WATER_BREATH -> Items.HEART_OF_THE_SEA;      // 鲛人之息：海洋之心（水下呼吸）
+            case DARK_VISION -> Items.SCULK_SENSOR;           // 破暗之瞳：幽匿感测体（黑暗来源）
+            case UNDERWATER_VISION -> Items.PRISMARINE_CRYSTALS; // 碧波清眸：海晶碎片（晶莹视野）
+            case AE_INFINITE_CHANNEL -> Items.AMETHYST_SHARD; // 无限回路：紫水晶碎片（AE能量）
             case AUTO_SMELT -> Items.FURNACE;                  // 自动熔炼：熔炉（熔炼主题）
             case ULT_BREAK_ALL -> Items.BEDROCK;               // 万物挖掘：基岩（挖穿一切）
             case ULT_UNBREAK_TAG -> Items.DIAMOND_PICKAXE;     // 不毁词条：钻石镐（永不损坏）
@@ -924,6 +1005,13 @@ public final class Skills {
             case GIFT_MINE_AMP -> Items.DIAMOND_PICKAXE;      // 挖掘洗礼增幅：钻石镐（挖掘进阶）
             case GIFT_KILL_BAPTISM -> Items.IRON_SWORD;       // 击杀馈赠：铁剑（击杀）
             case GIFT_KILL_AMP -> Items.DIAMOND_SWORD;        // 击杀馈赠增幅：钻石剑（击杀进阶）
+            // ===== 铁砧附魔（2026-08-27）：青金石/青金石块/下界之星 =====
+            case ENCHANT_RANDOM -> Items.LAPIS_LAZULI;        // 随机附魔：青金石（附魔材料）
+            case ENCHANT_BREAK -> Items.LAPIS_BLOCK;          // 附魔突破：青金石块（附魔进阶）
+            case ENCHANT_OVER -> Items.NETHER_STAR;           // 超限附魔：下界之星（极限力量）
+            case UNLIMITED_TRADES -> Items.EMERALD;           // 无限交易：绿宝石（交易货币）
+            case VILLAGER_MASTER -> Items.EMERALD_BLOCK;      // 村民大师：绿宝石块（满级大师）
+            case TREASURE_HUNTER -> Items.GOLD_NUGGET;        // 寻宝大师：金粒（宝箱宝藏）
             default -> Items.BARRIER;
         };
     }
