@@ -38,7 +38,7 @@ public class ClientTreasureEvents {
     // 金色高亮（2026-08-27）：白线太细不显眼 → 金色双线框（外暗金粗线 + 内亮金），远看是粗金框
     private static final float OUTER_R = 1.0F, OUTER_G = 0.78F, OUTER_B = 0.15F;   // 暗金（外层）
     private static final float INNER_R = 1.0F, INNER_G = 0.92F, INNER_B = 0.35F;   // 亮金（内层）
-    private static final float OUTLINE_ALPHA = 0.95F; // 发光轮廓不透明度
+    private static final float OUTLINE_ALPHA = 1.0F; // 纯色不透明（alpha=1 → 混合时 dst 贡献 0 → 颜色不受背后方块影响，2026-08-27 同步 1.20.1 修复）
     // 刷怪笼高亮（2026-08-27）：品红色双线框（与金色容器区分，刷怪笼火焰粒子同色系）
     private static final float SPAWNER_OUTER_R = 0.75F, SPAWNER_OUTER_G = 0.1F, SPAWNER_OUTER_B = 0.9F;  // 深品红（外层）
     private static final float SPAWNER_INNER_R = 1.0F, SPAWNER_INNER_G = 0.5F, SPAWNER_INNER_B = 1.0F;  // 亮品红（内层）
@@ -157,6 +157,9 @@ public class ClientTreasureEvents {
         com.mojang.blaze3d.systems.RenderSystem.enableBlend();
         com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
         com.mojang.blaze3d.systems.RenderSystem.disableCull();
+        // ⚠️ 2026-08-27 修复（v1.3.1）：不加 disableDepthTest → 深度测试默认 LEQUAL → 被方块挡住
+        //    的部分不显示 = 不能透视。1.20.1 已验证 disableDepthTest 全局开关是稳定穿墙方案，同步过来。
+        com.mojang.blaze3d.systems.RenderSystem.disableDepthTest();
         com.mojang.blaze3d.systems.RenderSystem.setShader(() -> GameRenderer.getPositionColorShader());
 
         BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.DEBUG_LINES, DefaultVertexFormat.POSITION_COLOR);
@@ -211,6 +214,7 @@ public class ClientTreasureEvents {
         }
         BufferUploader.drawWithShader(buffer.buildOrThrow());
 
+        com.mojang.blaze3d.systems.RenderSystem.enableDepthTest(); // 恢复深度测试，不影响后续渲染
         com.mojang.blaze3d.systems.RenderSystem.enableCull();
         com.mojang.blaze3d.systems.RenderSystem.disableBlend();
         poseStack.popPose();
