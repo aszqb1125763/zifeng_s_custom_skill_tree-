@@ -50,8 +50,19 @@ public class SetSkillLevelC2SPacket {
                 String name = Skills.getDisplayName(packet.skillId);
                 int learned = record.getLearnedPoints(packet.skillId);
                 int active = packet.level;
-                player.sendSystemMessage(Component.literal(
-                        "📶 " + name + " 生效等级：" + active + (learned > 0 ? " / " + learned + " 级" : "")));
+                String msg = "📶 " + name + " 生效等级：" + active + (learned > 0 ? " / " + learned + " 级" : "");
+                // 无限回路：附加当前频道倍率提示（2026-08-27：0=默认 1=X2 2=X3 3=X4 4=无限）
+                if (Skills.AE_INFINITE_CHANNEL.equals(packet.skillId)) {
+                    String mode = switch (active) {
+                        case 1 -> "X2（2倍）";
+                        case 2 -> "X3（3倍）";
+                        case 3 -> "X4（4倍）";
+                        case 4 -> "INFINITE（无限）";
+                        default -> "默认（原版频道）";
+                    };
+                    msg += " → 频道" + mode;
+                }
+                player.sendSystemMessage(Component.literal(msg));
                 ModNetwork.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
         });

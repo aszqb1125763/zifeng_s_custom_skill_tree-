@@ -6,12 +6,12 @@ import java.util.UUID;
 
 /**
  * Applied Energistics 2 兼容（2026-08-27）：
- * <p>「无限回路」终极节点：把 AE2 频道模式设为 INFINITE（等效 /ae2 channelmode infinite）。
- * 反射调用 {@code AEConfig.instance().setChannelModel(ChannelMode.INFINITE)} 并遍历所有 Grid 强制
+ * <p>「无限回路」终极节点：把 AE2 频道模式设为对应等级（1=X2 2=X3 3=X4 4=INFINITE）。
+ * 反射调用 {@code AEConfig.instance().setChannelModel(ChannelMode.X2/X3/X4/INFINITE)} 并遍历所有 Grid 强制
  * repath（与 AE2 官方指令 ChannelModeCommand 相同的逻辑）。
  * <p>⚠️ 软引用：未装 AE2 时 isAe2Loaded() 返回 false，类加载安全降级，不影响模组其他功能。
- * <p>⚠️ 全局生效：AE2 频道模式是服务器全局配置。用玩家集合管理：还有玩家开启该技能 → 保持无限；
- * 最后一个开启者关闭/登出 → 恢复应用前的原模式（避免"关不掉"的 bug，2026-08-27 测试反馈）。
+ * <p>⚠️ 全局生效：AE2 频道模式是服务器全局配置。用玩家集合管理：还有玩家开启该技能 → 应用
+ * 所有开启玩家中的最高等级；最后一个开启者关闭/登出 → 恢复应用前的原模式。
  */
 public final class Ae2Compat {
     private Ae2Compat() {
@@ -21,17 +21,41 @@ public final class Ae2Compat {
     private static boolean ae2Loaded = false;
     private static boolean ae2Checked = false;
 
-    /** 当前开启「无限回路」技能的玩家（服务端） */
-    private static final Set<UUID> ACTIVE_PLAYERS = new HashSet<>();
+    /** 当前开启「无限回路」技能的玩家（服务端）：玩家 UUID → 等级（1=X2 2=X3 3=X4 4=INFINITE） */
+    private static final java.util.Map<UUID, Integer> ACTIVE_PLAYERS = new java.util.HashMap<>();
 
-    /** 应用无限前的原频道模式（首次应用时记录；恢复时用） */
+    /** 应用频道模式前的原模式（首次应用时记录；全部关闭时恢复） */
     private static volatile Object previousMode = null;
+
+    /** 当前生效频道模式码（0=默认 1=X2 2=X3 3=X4 4=无限；-1=未应用）——供服务器全局状态提示同步 */
+    private static volatile int currentModeCode = -1;
+    /** 已恢复默认标记（2026-08-27 性能：集合空且已恢复后，disable 每 tick 调用直接幂等返回，不重复 repath/推送） */
+    private static boolean restoredDefault = false;
+
+    /** 当前生效频道模式码（供 GlobalStateS2CPacket 同步给客户端显示） */
+    public static int getCurrentModeCode() {
+        return currentModeCode;
+    }
+
+    /** 模式对象 → 模式码 */
+    private static int codeOf(Object mode) {
+        if (mode == null) return -1;
+        if (mode == X2_MODE) return 1;
+        if (mode == X3_MODE) return 2;
+        if (mode == X4_MODE) return 3;
+        if (mode == INFINITE_MODE) return 4;
+        if (mode == DEFAULT_MODE) return 0;
+        return -1;
+    }
 
     // ===== 反射成员缓存（2026-08-27 v3 性能优化：首次解析后复用，避免每 tick Class.forName/getMethod/invoke 开销） =====
     private static java.lang.reflect.Method INSTANCE_METHOD;
     private static java.lang.reflect.Method GET_CHANNEL_MODE;
     private static java.lang.reflect.Method SET_CHANNEL_MODEL;
     private static java.lang.reflect.Method SAVE;
+    private static Object X2_MODE;
+    private static Object X3_MODE;
+    private static Object X4_MODE;
     private static Object INFINITE_MODE;
     private static Object DEFAULT_MODE;
     private static java.lang.reflect.Method TICK_HANDLER_INSTANCE;
@@ -48,6 +72,9 @@ public final class Ae2Compat {
             SET_CHANNEL_MODEL = aeConfigCls.getMethod("setChannelModel", channelModeCls);
             SAVE = aeConfigCls.getMethod("save");
             Class<? extends Enum> enumCls = (Class<? extends Enum>) channelModeCls;
+            X2_MODE = Enum.valueOf(enumCls, "X2");
+            X3_MODE = Enum.valueOf(enumCls, "X3");
+            X4_MODE = Enum.valueOf(enumCls, "X4");
             INFINITE_MODE = Enum.valueOf(enumCls, "INFINITE");
             DEFAULT_MODE = Enum.valueOf(enumCls, "DEFAULT");
             Class<?> tickHandlerCls = Class.forName("appeng.hooks.ticking.TickHandler");
@@ -57,11 +84,17 @@ public final class Ae2Compat {
         return INSTANCE_METHOD.invoke(null);
     }
 
-    private static Object getInfiniteMode() {
-        if (INFINITE_MODE == null) {
+    /** 等级 → 频道模式（1=X2 2=X3 3=X4 4+=INFINITE） */
+    private static Object modeForLevel(int level) {
+        if (X2_MODE == null) {
             try { getAeConfigInstance(); } catch (Throwable ignored) { }
         }
-        return INFINITE_MODE;
+        return switch (level) {
+            case 1 -> X2_MODE;
+            case 2 -> X3_MODE;
+            case 3 -> X4_MODE;
+            default -> INFINITE_MODE; // 4 级及以上：无限
+        };
     }
 
     private static Object getDefaultMode() {
@@ -104,34 +137,45 @@ public final class Ae2Compat {
     }
 
     /**
-     * 玩家开启技能时调用：注册玩家并确保 AE 频道无限。
-     * <p>性能（2026-08-27 v3）：①已注册玩家直接返回（避免每 tick 反射）②反射成员首次解析后静态缓存。
+     * 玩家开启技能时调用：注册玩家（记录等级）并应用所有开启玩家中的最高频道等级。
+     * <p>性能（2026-08-27 v3）：①已注册玩家且等级未变直接返回（避免每 tick 反射）②反射成员首次解析后静态缓存。
      *
-     * @return true 表示无限已生效；false 表示未装 AE2 或反射失败
+     * @param level 频道等级（1=X2 2=X3 3=X4 4=INFINITE）
+     * @return true 表示频道模式已生效；false 表示未装 AE2 或反射失败
      */
-    public static synchronized boolean enable(UUID playerId) {
-        if (playerId != null && !ACTIVE_PLAYERS.add(playerId)) {
-            return true; // 已注册过（每 tick 调用，幂等快速返回，零反射）
+    public static synchronized boolean enable(UUID playerId, int level) {
+        if (playerId != null) {
+            Integer prev = ACTIVE_PLAYERS.get(playerId);
+            if (prev != null && prev == level) {
+                return true; // 已注册且等级未变（每 tick 调用，幂等快速返回，零反射）
+            }
+            ACTIVE_PLAYERS.put(playerId, Math.max(1, Math.min(4, level)));
+            restoredDefault = false; // 有新开启者 → 取消已恢复标记
         }
         if (!isAe2Loaded()) {
             return false;
         }
         try {
+            // 取所有开启玩家中的最高等级
+            int maxLevel = ACTIVE_PLAYERS.values().stream().mapToInt(Integer::intValue).max().orElse(4);
+            Object target = modeForLevel(maxLevel);
             Object instance = getAeConfigInstance();
-            Object infinite = getInfiniteMode();
             Object current = GET_CHANNEL_MODE.invoke(instance);
-            if (current == infinite) {
-                // 已是无限（管理员设过或之前应用过）：无需重复设置
-                return true;
+            if (current == target) {
+                currentModeCode = codeOf(target); // 已是目标模式：确保模式码已同步
+                return true; // 已是目标模式：无需重复设置
             }
             // 首次应用：记录原模式（仅记录一次，避免循环覆盖）
             if (previousMode == null) {
                 previousMode = current;
             }
             // 设置模式 + 保存配置
-            SET_CHANNEL_MODEL.invoke(instance, infinite);
+            SET_CHANNEL_MODEL.invoke(instance, target);
             SAVE.invoke(instance);
             repathAllGrids();
+            currentModeCode = codeOf(target);
+            // 事件驱动：状态实际变化 → 推送全局状态给关注玩家（性能最优，非轮询）
+            org.zifeng.skilltree.GlobalStateSync.pushToWatchers();
             return true;
         } catch (Throwable ignored) {
             // AE2 API 变动等 → 静默跳过（技能仍可学习，只是不生效）
@@ -140,23 +184,38 @@ public final class Ae2Compat {
     }
 
     /**
-     * 玩家关闭技能/登出时调用：移除玩家；最后一个开启者移除后恢复原频道模式。
-     * <p>修复（2026-08-27 v2）：previousMode 为 null（首次开启时 AE 已是 INFINITE 的残留）
-     * 也恢复 DEFAULT；且无条件 repath（即使模式未变也重算网络，确保恢复生效）。
+     * 玩家关闭技能/登出时调用：移除玩家；重新应用剩余玩家的最高等级；
+     * 全部关闭后恢复原频道模式。
      */
     public static synchronized void disable(UUID playerId) {
         if (playerId != null) {
             ACTIVE_PLAYERS.remove(playerId);
-        }
-        if (!ACTIVE_PLAYERS.isEmpty()) {
-            return; // 还有玩家开着 → 保持无限
         }
         if (!isAe2Loaded()) {
             return;
         }
         try {
             Object instance = getAeConfigInstance();
-            // 恢复目标：应用前的模式；没有记录（如开启时已无限）→ 恢复 DEFAULT（用户要求的默认频道数量）
+            if (!ACTIVE_PLAYERS.isEmpty()) {
+                // 还有玩家开着 → 应用剩余玩家的最高等级
+                restoredDefault = false;
+                int maxLevel = ACTIVE_PLAYERS.values().stream().mapToInt(Integer::intValue).max().orElse(4);
+                Object target = modeForLevel(maxLevel);
+                Object current = GET_CHANNEL_MODE.invoke(instance);
+                if (current != target) {
+                    SET_CHANNEL_MODEL.invoke(instance, target);
+                    SAVE.invoke(instance);
+                    repathAllGrids();
+                }
+                currentModeCode = codeOf(target);
+                org.zifeng.skilltree.GlobalStateSync.pushToWatchers();
+                return;
+            }
+            // ⚠️ 幂等（2026-08-27 性能）：集合空且已恢复过 → 每 tick 调用直接返回，不重复恢复/repath/推送
+            if (restoredDefault) {
+                return;
+            }
+            // 全部关闭：恢复原模式（无记录 → DEFAULT）
             Object target = previousMode != null ? previousMode : getDefaultMode();
             Object current = GET_CHANNEL_MODE.invoke(instance);
             if (current != target) {
@@ -165,6 +224,10 @@ public final class Ae2Compat {
             }
             // 无条件 repath：即使模式未变也强制网络重算（确保频道数生效）
             repathAllGrids();
+            currentModeCode = codeOf(target);
+            restoredDefault = true; // 标记已恢复默认
+            // 事件驱动：状态实际变化 → 推送全局状态给关注玩家
+            org.zifeng.skilltree.GlobalStateSync.pushToWatchers();
         } catch (Throwable ignored) {
             // 恢复失败静默跳过（AE 保持当前模式）
         } finally {
@@ -180,5 +243,7 @@ public final class Ae2Compat {
     public static synchronized void onServerStopped() {
         ACTIVE_PLAYERS.clear();
         previousMode = null;
+        currentModeCode = -1;
+        restoredDefault = false;
     }
 }

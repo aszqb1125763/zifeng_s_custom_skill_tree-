@@ -73,11 +73,16 @@ public class SkillTreeScreen extends Screen {
     private boolean levelKeyBindListening = false;
 
     /** 是否可设置等级/目标循环快捷键（2026-08-13 优化）：
-     *  光环仅 伤害/速度/治愈 使用目标模式（敌我过滤）；时之环/晴空环/磁力/锁定/强化/虚空之矛 无目标模式不显示。
+     *  光环仅 伤害/速度/治愈 使用目标模式（敌我过滤）；时之环/磁力/锁定/强化/虚空之矛 无目标模式不显示。
+     *  晴空环（寰宇法则，2026-08-27）：第二键循环天气模式（晴/雨/雷暴）。
      *  其余技能：可调等级（上限>1）可循环生效等级。 */
     private boolean isLevelBindable(String skillId) {
         if (Skills.AURA_SKILLS.contains(skillId)) {
             return Skills.AURA_DAMAGE.equals(skillId) || Skills.AURA_SPEED.equals(skillId) || Skills.AURA_HEAL.equals(skillId);
+        }
+        // 晴空环：第二键循环天气模式
+        if (Skills.AURA_WEATHER.equals(skillId)) {
+            return true;
         }
         return Skills.getMaxPoints(skillId) > 1; // 可调等级技能（基础/增幅/多级终极/魔法/多级光环）
     }
@@ -88,6 +93,15 @@ public class SkillTreeScreen extends Screen {
             case 1 -> "友好";
             case 2 -> "所有";
             default -> "敌对";
+        };
+    }
+
+    /** 晴空环天气模式文字（0 晴 / 1 雨 / 2 雷暴；2026-08-27） */
+    private String weatherTextOf() {
+        return switch (org.zifeng.skilltree.client.ModKeyBindingEvents.getWeatherModeClient()) {
+            case 1 -> "🌧 雨天";
+            case 2 -> "⛈ 雷暴";
+            default -> "☀ 晴天";
         };
     }
 
@@ -137,16 +151,17 @@ public class SkillTreeScreen extends Screen {
      *    280 > 244 保证列与列完全不重叠（原 240 会贴住/重叠）。 */
     private void rebuildButtons() {
         buttons.clear();
-        // 8 列中心 x：间距统一 280（8 列总宽 1960，默认缩放 0.6 可见全列）
-        int[] colCenters = {-980, -700, -420, -140, 140, 420, 700, 980};
+        // 9 列中心 x：间距统一 280（9 列总宽 2240，默认缩放 0.55 可见全列；2026-08-27 新增寰宇法则列）
+        int[] colCenters = {-1120, -840, -560, -280, 0, 280, 560, 840, 1120};
         placeColumn(Skills.MAGIC_SKILLS, colCenters[0]);
         placeColumn(Skills.BASE_SKILLS, colCenters[1]);
         placeColumn(Skills.AMPLIFY_SKILLS, colCenters[2]);
         placeColumn(Skills.ULTIMATE_SKILLS, colCenters[3]);
         placeColumn(Skills.SPECIAL_SKILLS, colCenters[4]);
         placeColumn(Skills.AURA_SKILLS, colCenters[5]);
-        placeColumn(Skills.MACHINE_SKILLS, colCenters[6]);
-        placeColumn(Skills.GIFT_SKILLS, colCenters[7]);
+        placeColumn(Skills.GLOBAL_SKILLS, colCenters[6]);
+        placeColumn(Skills.MACHINE_SKILLS, colCenters[7]);
+        placeColumn(Skills.GIFT_SKILLS, colCenters[8]);
     }
 
     /** 五列统一顶部 y（上方对齐）：按钮区上方留空间给列标题（加大后标题占 30px 高） */
@@ -226,15 +241,16 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.pose().scale((float) scale, (float) scale, 1.0F);
 
         // 列标题（大字号 + 类型色边框背景，跟随各列顶部；与按钮区保持间距）
-        int[] colCenters = {-980, -700, -420, -140, 140, 420, 700, 980};
+        int[] colCenters = {-1120, -840, -560, -280, 0, 280, 560, 840, 1120};
         renderColumnTitle(guiGraphics, "魔法增幅", colCenters[0], 0xFF55FFAA);
         renderColumnTitle(guiGraphics, "基础属性", colCenters[1], 0xFF87CEEB);
         renderColumnTitle(guiGraphics, "特殊增幅", colCenters[2], 0xFFFFAA55);
         renderColumnTitle(guiGraphics, "终极节点", colCenters[3], 0xFFFF5555);
         renderColumnTitle(guiGraphics, "特殊被动", colCenters[4], 0xFFD7A55A);
         renderColumnTitle(guiGraphics, "光环", colCenters[5], 0xFFAA55FF);
-        renderColumnTitle(guiGraphics, "机械共鸣", colCenters[6], 0xFFD7D7D7);
-        renderColumnTitle(guiGraphics, "子枫的馈赠", colCenters[7], 0xFFE0B6C8);
+        renderColumnTitle(guiGraphics, "寰宇法则", colCenters[6], 0xFF66CCFF); // 2026-08-27 新增：全局更改类
+        renderColumnTitle(guiGraphics, "机械共鸣", colCenters[7], 0xFFD7D7D7);
+        renderColumnTitle(guiGraphics, "子枫的馈赠", colCenters[8], 0xFFE0B6C8);
 
         // 按键框列标题（2026-08-13 需求：按键框上方加标题，标明两列用途）
         // 第一框（开关）：按钮右缘 + 3；第二框（等级/目标）：再右移 44+3
@@ -248,9 +264,12 @@ public class SkillTreeScreen extends Screen {
             // 该列是否有可绑定第二键的技能（光环 或 可调等级技能）
             boolean hasLevelBindable = columnHasLevelBindable(i);
             if (hasLevelBindable) {
-                boolean auraCol = (i == 4); // 光环列 → 目标循环
-                renderKeyColumnTitle(guiGraphics, auraCol ? "目标" : "等级", k2x, titleY,
-                        auraCol ? 0xFFBB77FF : 0xFF87CEEB, KEY2_BOX_WIDTH);
+                // 列索引：0魔法 1基础 2增幅 3终极 4被动 5光环 6寰宇 7机械 8馈赠（2026-08-27 九列）
+                boolean auraCol = (i == 5);    // 光环列 → 目标循环
+                boolean globalCol = (i == 6);  // 寰宇列 → 天气/等级循环
+                String secondTitle = auraCol ? "目标" : (globalCol ? "天气" : "等级");
+                renderKeyColumnTitle(guiGraphics, secondTitle, k2x, titleY,
+                        auraCol ? 0xFFBB77FF : (globalCol ? 0xFF66CCFF : 0xFF87CEEB), KEY2_BOX_WIDTH);
             }
         }
 
@@ -269,7 +288,8 @@ public class SkillTreeScreen extends Screen {
             case 3 -> Skills.ULTIMATE_SKILLS;
             case 4 -> Skills.SPECIAL_SKILLS;
             case 5 -> Skills.AURA_SKILLS;
-            case 6 -> Skills.MACHINE_SKILLS;
+            case 6 -> Skills.GLOBAL_SKILLS;
+            case 7 -> Skills.MACHINE_SKILLS;
             default -> Skills.GIFT_SKILLS;
         };
         for (String skillId : col) {
@@ -574,6 +594,7 @@ public class SkillTreeScreen extends Screen {
             case ULTIMATE -> 0xFFFF5555;
             case SPECIAL -> 0xFFD7A55A;
             case AURA -> 0xFFAA55FF;
+            case GLOBAL -> 0xFF66CCFF; // 寰宇法则：天蓝（世界/全局主题）
             case MAGIC -> 0xFF55FFAA;
             case MACHINE -> 0xFFD7D7D7;
             case GIFT -> 0xFFE0B6C8; // 子枫的馈赠：柔和藕粉
@@ -584,6 +605,7 @@ public class SkillTreeScreen extends Screen {
             case ULTIMATE -> "[终极]";
             case SPECIAL -> "[被动]";
             case AURA -> "[光环]";
+            case GLOBAL -> "[寰宇]";
             case MAGIC -> "[魔法]";
             case MACHINE -> "[共鸣]";
             case GIFT -> "[馈赠]";
@@ -606,6 +628,32 @@ public class SkillTreeScreen extends Screen {
             }
         }
 
+        // 2.5b 寰宇法则（全局技能）：显眼的服务器当前状态提示（2026-08-27 需求）
+        if (Skills.isGlobalSkill(skillId)) {
+            // 晴空环：当前锁定天气 + 按键切换提示
+            if (Skills.AURA_WEATHER.equals(skillId)) {
+                boolean locked = org.zifeng.skilltree.client.ClientGlobalState.isWeatherLocked();
+                String weather = weatherTextOf();
+                lines.add(new TooltipLine("🌍 服务器当前：" + (locked ? "已锁定为 " + weather : "天气自然循环（未锁定）"),
+                        locked ? 0xFFFFD700 : 0xFF888888, 1.0F));
+                if (locked) {
+                    lines.add(new TooltipLine("   按第二快捷键（🎯）切换 晴/雨/雷暴", 0xFF66CCFF, 0.9F));
+                }
+            }
+            // 时之环：当前时间是否锁定
+            if (Skills.AURA_TIME.equals(skillId)) {
+                boolean locked = org.zifeng.skilltree.client.ClientGlobalState.isTimeLocked();
+                lines.add(new TooltipLine("🌍 服务器当前：" + (locked ? "时间已锁定" : "时间自然流动（未锁定）"),
+                        locked ? 0xFFFFD700 : 0xFF888888, 1.0F));
+            }
+            // 无限回路：服务器 AE 频道模式
+            if (Skills.AE_INFINITE_CHANNEL.equals(skillId)) {
+                String aeMode = org.zifeng.skilltree.client.ClientGlobalState.getAeChannelModeText();
+                lines.add(new TooltipLine("🌍 服务器 AE 频道模式：" + aeMode,
+                        aeMode.startsWith("未知") ? 0xFF888888 : 0xFFFFD700, 1.0F));
+            }
+        }
+
         // 3. 消耗信息（金色，小一号）
         String costText = switch (type) {
             case BASE -> "[每级消耗 " + fmtCost(Skills.basePointCost()) + " 点]";
@@ -614,6 +662,7 @@ public class SkillTreeScreen extends Screen {
             case AURA -> "[下次消耗 " + (long) recordNextCost(skillId) + " 点]";
             case ULTIMATE -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点]";
             case SPECIAL -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点]";
+            case GLOBAL -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点]" + (Skills.getGlobalMaxPoints(skillId) > 1 ? "，循序升级" : "，一次性") + (Skills.isGlobalSkill(skillId) ? "，全局生效" : "");
             case MACHINE -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点，一次性]";
             case GIFT -> "[按游戏时长激活，不消耗技能点]";
         };
@@ -878,6 +927,7 @@ public class SkillTreeScreen extends Screen {
             case ULTIMATE -> hovered ? 0xFF8A2A3A : 0xFF6E242E;
             case SPECIAL -> hovered ? 0xFF7A5A2A : 0xFF5A4020; // 特殊被动：棕铜（被动/掉落主题）
             case AURA -> hovered ? 0xFF5A3A8A : 0xFF3E2470;
+            case GLOBAL -> hovered ? 0xFF2A6A8A : 0xFF1E4E6E; // 寰宇法则：深天蓝（世界/全局主题）
             case MACHINE -> hovered ? 0xFF6A6A6A : 0xFF4A4A4A; // 机械共鸣：铁灰（机械主题）
             case GIFT -> hovered ? 0xFFD3A8B8 : 0xFFB08A98; // 子枫的馈赠：柔和藕粉系
         };
@@ -968,8 +1018,6 @@ public class SkillTreeScreen extends Screen {
                 costText = points > 0 ? "已解锁" : "需" + (long) (double) org.zifeng.skilltree.Config.MAGNET_COST.get() + "点";
             } else if (Skills.AURA_LOCK.equals(button.skillId())) {
                 costText = points > 0 ? "已解锁" : "需" + (long) (double) org.zifeng.skilltree.Config.LOCK_COST.get() + "点";
-            } else if (Skills.AURA_TIME.equals(button.skillId()) || Skills.AURA_WEATHER.equals(button.skillId())) {
-                costText = points > 0 ? "已解锁" : "需" + Skills.minorUltCost() + "点";
             } else {
                 long total = 0;
                 for (int i = 0; i < points; i++) {
@@ -982,6 +1030,16 @@ public class SkillTreeScreen extends Screen {
                 } else {
                     costText = "已耗" + total + "点 下1级:" + (long) nextCost + "点";
                 }
+            }
+        } else if (type == Skills.SkillType.GLOBAL) {
+            // 寰宇法则：时之环/晴空环单级；无限回路 4 级（生效:X/Y + 下一级）
+            if (Skills.getGlobalMaxPoints(button.skillId()) > 1) {
+                int active = activeLevels.getOrDefault(button.skillId(), points);
+                costText = points > 0
+                        ? "生效:" + active + "/" + points + " 下1级:" + fmtCost(Skills.getGlobalCost(button.skillId(), points)) + "点"
+                        : "需" + fmtCost(Skills.getGlobalCost(button.skillId(), 0)) + "点";
+            } else {
+                costText = points > 0 ? "已解锁" : "需" + fmtCost(Skills.getGlobalCost(button.skillId(), 0)) + "点";
             }
         } else if (type == Skills.SkillType.BASE || type == Skills.SkillType.AMPLIFY || type == Skills.SkillType.MAGIC) {
             // 生效等级（滚轮可调，实时显示）+ 下一级真实消耗（线性增长：基础 +1/级、增幅/魔法 +2/级）
@@ -1879,8 +1937,10 @@ public class SkillTreeScreen extends Screen {
         if (Skills.AURA_MAGNET.equals(skillId)) return org.zifeng.skilltree.Config.MAGNET_COST.get();
         if (Skills.AURA_LOCK.equals(skillId)) return org.zifeng.skilltree.Config.LOCK_COST.get();
         if (Skills.AURA_VOID.equals(skillId)) return org.zifeng.skilltree.Config.VOID_AURA_COST.get();
-        if (Skills.AURA_TIME.equals(skillId) || Skills.AURA_WEATHER.equals(skillId)) return Skills.minorUltCost();
         Skills.SkillType type = Skills.getType(skillId);
+        if (type == Skills.SkillType.GLOBAL) {
+            return Skills.getGlobalCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 寰宇法则：时之环/晴空环 100；无限回路阶梯
+        }
         if (type == Skills.SkillType.AURA) {
             return Skills.getAuraCost(skillId, learnedSkills.getOrDefault(skillId, 0));
         }

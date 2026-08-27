@@ -20,10 +20,11 @@ public class SkillTreeDataS2CPacket {
     private final boolean auraEnabled;
     private final Map<String, Integer> auraTargetModes;
     private final String lootVacuumBind;
+    private final int weatherMode;
 
     public SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> learnedSkills, Map<String, Boolean> toggles,
                                   Map<String, Integer> activeLevels, boolean auraEnabled, Map<String, Integer> auraTargetModes,
-                                  String lootVacuumBind) {
+                                  String lootVacuumBind, int weatherMode) {
         this.skillPoints = skillPoints;
         this.learnedSkills = learnedSkills;
         this.toggles = toggles;
@@ -31,6 +32,7 @@ public class SkillTreeDataS2CPacket {
         this.auraEnabled = auraEnabled;
         this.auraTargetModes = auraTargetModes;
         this.lootVacuumBind = lootVacuumBind;
+        this.weatherMode = weatherMode;
     }
 
     public void encode(FriendlyByteBuf buf) {
@@ -44,6 +46,7 @@ public class SkillTreeDataS2CPacket {
         if (lootVacuumBind != null) {
             buf.writeUtf(lootVacuumBind);
         }
+        buf.writeVarInt(weatherMode);
     }
 
     public static SkillTreeDataS2CPacket decode(FriendlyByteBuf buf) {
@@ -54,7 +57,8 @@ public class SkillTreeDataS2CPacket {
         boolean auraEnabled = buf.readBoolean();
         Map<String, Integer> auraTargetModes = buf.readMap(HashMap::new, FriendlyByteBuf::readUtf, FriendlyByteBuf::readVarInt);
         String lootVacuumBind = buf.readBoolean() ? buf.readUtf() : null;
-        return new SkillTreeDataS2CPacket(skillPoints, learnedSkills, toggles, activeLevels, auraEnabled, auraTargetModes, lootVacuumBind);
+        int weatherMode = buf.readVarInt();
+        return new SkillTreeDataS2CPacket(skillPoints, learnedSkills, toggles, activeLevels, auraEnabled, auraTargetModes, lootVacuumBind, weatherMode);
     }
 
     /** 从玩家技能记录构建数据包（统一便捷入口） */
@@ -66,7 +70,7 @@ public class SkillTreeDataS2CPacket {
                 record.getActiveLevels(), auraOn, record.getAuraTargetModes(), record.hasLootVacuumBind()
                         ? record.getLootVacuumName() + " [" + record.getLootVacuumX() + ", " + record.getLootVacuumY()
                         + ", " + record.getLootVacuumZ() + "]"
-                        : null);
+                        : null, record.getWeatherMode());
     }
 
     public static void handle(SkillTreeDataS2CPacket packet, Supplier<NetworkEvent.Context> ctxSupplier) {
@@ -78,6 +82,8 @@ public class SkillTreeDataS2CPacket {
             }
             // 校准光环目标模式本地状态（各光环独立）
             org.zifeng.skilltree.client.ModKeyBindingEvents.setAuraTargetModes(packet.auraTargetModes);
+            // 校准晴空环天气模式（2026-08-27：0=晴 1=雨 2=雷暴）
+            org.zifeng.skilltree.client.ModKeyBindingEvents.setWeatherModeClient(packet.weatherMode);
             // 校准光环总开关本地状态（圆环渲染器判断是否显示淡红光环）
             org.zifeng.skilltree.client.ModKeyBindingEvents.setAuraEnabledClient(packet.auraEnabled);
             // 校准光环技能开关缓存（独立快捷键取反发送用）

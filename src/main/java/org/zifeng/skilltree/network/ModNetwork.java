@@ -78,6 +78,11 @@ public class ModNetwork {
                 .decoder(ConverterRateC2SPacket::decode)
                 .consumerMainThread(ConverterRateC2SPacket::handle)
                 .add();
+        CHANNEL.messageBuilder(WeatherModeC2SPacket.class, id++)
+                .encoder(WeatherModeC2SPacket::encode)
+                .decoder(WeatherModeC2SPacket::decode)
+                .consumerMainThread(WeatherModeC2SPacket::handle)
+                .add();
         // ===== 服务端 → 客户端 =====
         CHANNEL.messageBuilder(SkillTreeDataS2CPacket.class, id++)
                 .encoder(SkillTreeDataS2CPacket::encode)
@@ -93,6 +98,11 @@ public class ModNetwork {
                 .encoder(SkillPointRateS2CPacket::encode)
                 .decoder(SkillPointRateS2CPacket::decode)
                 .consumerMainThread(SkillPointRateS2CPacket::handle)
+                .add();
+        CHANNEL.messageBuilder(GlobalStateS2CPacket.class, id++)
+                .encoder(GlobalStateS2CPacket::encode)
+                .decoder(GlobalStateS2CPacket::decode)
+                .consumerMainThread(GlobalStateS2CPacket::handle)
                 .add();
     }
 
