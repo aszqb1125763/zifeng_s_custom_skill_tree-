@@ -337,11 +337,17 @@ public class UltimateEvents {
                     && player.getAirSupply() < player.getMaxAirSupply()) {
                 player.setAirSupply(player.getMaxAirSupply());
             }
-            // 无限回路：AE2 无限频道（软集成，未装 AE2 时无操作；全局生效，玩家集合管理）
-            // 开启 → 注册玩家并应用无限；关闭 → 注销玩家，最后一个关闭者恢复原频道模式
+            // 无限回路：AE2 频道倍增/无限（软集成，未装 AE2 时无操作；全局生效，玩家集合管理）
+            // 4 级：1=X2 2=X3 3=X4 4=INFINITE；多人取所有开启玩家中的最高等级
+            // ⚠️ 2026-08-27 修复：生效等级 0（技能完全不生效）→ 走 disable 恢复默认，勿 Math.max(1,0)=X2
             boolean aeOn = record.getLearnedPoints(Skills.AE_INFINITE_CHANNEL) > 0 && record.isEnabled(Skills.AE_INFINITE_CHANNEL);
             if (aeOn) {
-                org.zifeng.skilltree.compat.Ae2Compat.enable(player.getUUID());
+                int aeLevel = record.getActiveLevel(Skills.AE_INFINITE_CHANNEL); // 可低于已学；未设置默认=已学
+                if (aeLevel <= 0) {
+                    org.zifeng.skilltree.compat.Ae2Compat.disable(player.getUUID());
+                } else {
+                    org.zifeng.skilltree.compat.Ae2Compat.enable(player.getUUID(), aeLevel);
+                }
             } else {
                 org.zifeng.skilltree.compat.Ae2Compat.disable(player.getUUID());
             }
@@ -536,6 +542,7 @@ public class UltimateEvents {
     public static void onPlayerLogout(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer sp) {
             org.zifeng.skilltree.compat.Ae2Compat.disable(sp.getUUID());
+            org.zifeng.skilltree.GlobalStateSync.removeWatcher(sp.getUUID());
         }
     }
 
@@ -544,6 +551,7 @@ public class UltimateEvents {
     @SubscribeEvent
     public static void onServerStopped(net.neoforged.neoforge.event.server.ServerStoppedEvent event) {
         org.zifeng.skilltree.compat.Ae2Compat.onServerStopped();
+        org.zifeng.skilltree.GlobalStateSync.clear();
     }
 
     // 防刷物品（2026-08-26）：生物死亡瞬间装备栏物品快照（玩家给予的装备）。

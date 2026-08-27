@@ -112,9 +112,8 @@ public final class Skills {
             case UNLIMITED_TRADES -> 100L;   // 无限交易：一次性 100 点
             case VILLAGER_MASTER -> 1000L;   // 村民大师：一次性 1000 点
             case TREASURE_HUNTER -> 500L;    // 寻宝大师：一次性 500 点
-            // 终极节点·生存辅助（2026-08-27）：100 点；AE 无限频道 1000 点
+            // 终极节点·生存辅助（2026-08-27）：100 点
             case FLY_NO_INERTIA, FLY_MINING, FIRE_PROTECT, WATER_BREATH, DARK_VISION, UNDERWATER_VISION -> 100L;
-            case AE_INFINITE_CHANNEL -> 1000L;
             default -> 1L; // 普通终极 1 点
         };
     }
@@ -132,6 +131,8 @@ public final class Skills {
         SPECIAL,
         /** 杀戮光环（独立系统，不受属性加成） */
         AURA,
+        /** 寰宇法则（2026-08-27 新增：全局更改类技能，时之环/晴空环/无限回路——服务器全局生效） */
+        GLOBAL,
         /** 机械共鸣（模拟玩家机器继承开关，独立列，前置=机械之星+对应原技能） */
         MACHINE,
         /** 子枫的馈赠（2026-08-25 新增：最右列，按游戏时长激活，免费获得技能点的新途径） */
@@ -187,7 +188,6 @@ public final class Skills {
     public static final String WATER_BREATH = "water_breath";               // 鲛人之息：水下无限呼吸（1级，100点）
     public static final String DARK_VISION = "dark_vision";                 // 破暗之瞳：免疫黑暗效果视觉影响（1级，100点）
     public static final String UNDERWATER_VISION = "underwater_vision";     // 碧波清眸：水下/岩浆清晰视野（1级，100点）
-    public static final String AE_INFINITE_CHANNEL = "ae_infinite_channel"; // 无限回路：AE2 网络无限频道（1级，1000点，软集成）
 
     // ============ 子枫的馈赠（纵列7，2026-08-25 新增：按游戏时长/移动/飞行/挖掘激活，免费获得技能点） ============
     public static final String GIFT_TIME_BAPTISM = "gift_time_baptism"; // 时间洗礼：游戏时长≥1小时可激活，每10分钟+1技能点
@@ -237,12 +237,15 @@ public final class Skills {
     public static final String AURA_SPEED = "aura_speed";     // 杀戮光环·速度
     public static final String AURA_HEAL = "aura_heal";       // 治愈光环（群体治疗）
     public static final String AURA_MAGNET = "aura_magnet";   // 磁力光环（吸取经验/掉落物）
-    public static final String AURA_TIME = "aura_time";       // 时之环·时间停止（锁定开启时的时间）
-    public static final String AURA_WEATHER = "aura_weather"; // 晴空环·永恒晴天（锁定天气）
     public static final String AURA_LOCK = "aura_lock";       // 光环锁定（免疫TP/击退）
     public static final String AURA_EMPOWER = "aura_empower"; // 杀戮光环·强化（混沌/Boss伤害，拆自光环，虚空之矛上方）
     public static final String AURA_VOID = "aura_void";       // 杀戮光环·虚空之矛（虚空伤害/秒杀）
     public static final String AURA_LOOT_VACUUM = "aura_loot_vacuum"; // 凋落物挪移（木棍绑定容器，掉落直传容器不生成实体）
+
+    // ============ 寰宇法则（GLOBAL，纵列6，2026-08-27 新增：全局更改类技能，服务器全局生效，光环右侧） ============
+    public static final String AURA_TIME = "aura_time";       // 时之环·时间停止（锁定开启时的时间，全局 gamerule）
+    public static final String AURA_WEATHER = "aura_weather"; // 晴空环·永恒晴天（锁定天气，全局 gamerule）
+    public static final String AE_INFINITE_CHANNEL = "ae_infinite_channel"; // 无限回路：AE2 频道翻倍/无限（4级，全局 AE 配置）
 
     // ============ 魔法增幅（纵列0，其余模组兼容技能，不参与任何前置） ============
     public static final String MANA_AMP = "mana_amp";                 // 新生魔艺魔力增幅（每级+10%魔力，上限1000）
@@ -282,15 +285,17 @@ public final class Skills {
             AMP_CRIT, AMP_LIFESTEAL, AMP_THORNS, AMP_ARMOR_PEN);
     /** 所有终极节点（纵列3）：只保留加玩家属性/防御的终极（2026-08-25：不加属性的被动/掉落类已拆到 SPECIAL 纵列4） */
     public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY,
-            FLY_NO_INERTIA, FLY_MINING, FIRE_PROTECT, WATER_BREATH, DARK_VISION, UNDERWATER_VISION, AE_INFINITE_CHANNEL);
+            FLY_NO_INERTIA, FLY_MINING, FIRE_PROTECT, WATER_BREATH, DARK_VISION, UNDERWATER_VISION);
     /** 所有特殊被动（纵列4，2026-08-25 新增）：原终极列中不加玩家属性的被动/掉落/行为类技能 */
     public static final List<String> SPECIAL_SKILLS = List.of(
             VILLAGE_HERO, REACH, GLOW, LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN,
             MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT, ULT_BREAK_ALL, ULT_UNBREAK_TAG, ULT_SWEEP, ULT_KB_RESIST,
             ENCHANT_RANDOM, ENCHANT_BREAK, ENCHANT_OVER,
             UNLIMITED_TRADES, VILLAGER_MASTER, TREASURE_HUNTER);
-    /** 所有杀戮光环（纵列5）：杀戮光环·强化 在 虚空之矛 上方 */
-    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_TIME, AURA_WEATHER, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM);
+    /** 所有杀戮光环（纵列5）：杀戮光环·强化 在 虚空之矛 上方；时之环/晴空环已移至寰宇法则列（2026-08-27） */
+    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM);
+    /** 所有寰宇法则（纵列6，2026-08-27 新增）：全局更改类技能（服务器全局生效，无法单人隔离） */
+    public static final List<String> GLOBAL_SKILLS = List.of(AURA_TIME, AURA_WEATHER, AE_INFINITE_CHANNEL);
     /** 所有魔法增幅（纵列0）：其余模组兼容技能（新生魔艺/铁魔法等），不作为任何前置 */
     public static final List<String> MAGIC_SKILLS = List.of(
             // 新生魔艺
@@ -319,6 +324,7 @@ public final class Skills {
         addAll(ULTIMATE_SKILLS);
         addAll(SPECIAL_SKILLS);
         addAll(AURA_SKILLS);
+        addAll(GLOBAL_SKILLS);
         addAll(MACHINE_SKILLS);
         addAll(GIFT_SKILLS);
     }};
@@ -327,6 +333,7 @@ public final class Skills {
         if (MAGIC_SKILLS.contains(skillId)) return SkillType.MAGIC;
         if (MACHINE_SKILLS.contains(skillId)) return SkillType.MACHINE;
         if (GIFT_SKILLS.contains(skillId)) return SkillType.GIFT;
+        if (GLOBAL_SKILLS.contains(skillId)) return SkillType.GLOBAL;
         if (BASE_SKILLS.contains(skillId)) return SkillType.BASE;
         if (AMPLIFY_SKILLS.contains(skillId)) return SkillType.AMPLIFY;
         if (ULTIMATE_SKILLS.contains(skillId)) return SkillType.ULTIMATE;
@@ -350,14 +357,34 @@ public final class Skills {
             case AURA_SPEED -> 20;
             case AURA_HEAL -> 50;
             case AURA_MAGNET -> 1;
-            case AURA_TIME -> 1; // 一次性解锁（100 技能点）
-            case AURA_WEATHER -> 1; // 一次性解锁（100 技能点）
             case AURA_LOCK -> 1; // 一次性解锁（1000 技能点）
             case AURA_EMPOWER -> 1; // 一次性解锁（1000 技能点）
             case AURA_VOID -> 1; // 一次性解锁（5000 技能点）
             case AURA_LOOT_VACUUM -> 1; // 一次性解锁（10 技能点）
             default -> 0;
         };
+    }
+
+    /** 寰宇法则（全局更改类）：时之环/晴空环 1 级；无限回路 4 级（X2→X3→X4→无限，2026-08-27） */
+    public static int getGlobalMaxPoints(String skillId) {
+        return switch (skillId) {
+            case AURA_TIME, AURA_WEATHER -> 1; // 一次性解锁（100 技能点）
+            case AE_INFINITE_CHANNEL -> 4;     // 4 级：1=X2 2=X3 3=X4 4=无限
+            default -> 1;
+        };
+    }
+
+    /** 寰宇法则：第 n 级消耗（循序渐进）：时之环/晴空环 100；无限回路 200/500/1000/2000 */
+    public static long getGlobalCost(String skillId, int currentLevel) {
+        if (AE_INFINITE_CHANNEL.equals(skillId)) {
+            return switch (currentLevel) {
+                case 0 -> 200L;  // 1级 = X2（2倍频道）
+                case 1 -> 500L;  // 2级 = X3（3倍频道）
+                case 2 -> 1000L; // 3级 = X4（4倍频道）
+                default -> 2000L; // 4级 = INFINITE（无限频道）
+            };
+        }
+        return minorUltCost(); // 时之环/晴空环：100 点一次性
     }
 
     /** 各技能等级上限（按钮第2行显示用）：基础 1000 / 增幅 500 / 终极 1（多级终极各自上限） / 光环各自上限 / 魔法增幅各自上限 / 机械共鸣 1 */
@@ -368,6 +395,7 @@ public final class Skills {
             case ULTIMATE -> getUltimateMaxPoints(skillId);
             case SPECIAL -> getUltimateMaxPoints(skillId); // 特殊被动：复用终极的等级上限（多级节点类）
             case AURA -> getAuraMaxPoints(skillId);
+            case GLOBAL -> getGlobalMaxPoints(skillId);
             case MAGIC -> getMagicMaxPoints(skillId);
             case MACHINE -> getMachineMaxPoints(skillId);
             case GIFT -> getGiftMaxPoints(skillId);
@@ -459,6 +487,11 @@ public final class Skills {
     /** 判断是否为子枫的馈赠技能 */
     public static boolean isGiftSkill(String skillId) {
         return GIFT_SKILLS.contains(skillId);
+    }
+
+    /** 判断是否为寰宇法则（全局更改）技能 */
+    public static boolean isGlobalSkill(String skillId) {
+        return GLOBAL_SKILLS.contains(skillId);
     }
 
     /** 判断是否为移动/飞行/挖掘/击杀洗礼（统计类，非时间类） */
@@ -784,7 +817,7 @@ public final class Skills {
             case WATER_BREATH -> "鲛人之息：消耗 100 技能点\n一次性点亮，水下无限呼吸\n（氧气条永远保持满值）";
             case DARK_VISION -> "破暗之瞳：消耗 100 技能点\n一次性点亮，免疫黑暗效果\n（坚守者/古城区域的黑暗视觉影响\n不再让视野变暗闪烁）";
             case UNDERWATER_VISION -> "碧波清眸：消耗 100 技能点\n一次性点亮，在水底/岩浆中\n拥有清晰视野（雾效大幅减弱）";
-            case AE_INFINITE_CHANNEL -> "无限回路：消耗 1000 技能点\n一次性点亮，AE2 网络频道无限\n（等效 /ae2 channelmode infinite）\n⚠ 需安装 AE2 模组，未安装时学习无效\n⚠ 全局生效：服务器所有 AE 网络无限频道";
+            case AE_INFINITE_CHANNEL -> "无限回路：AE2 频道倍增/无限（4级，全局）\n1级=X2（2倍频道，200点）\n2级=X3（3倍频道，500点）\n3级=X4（4倍频道，1000点）\n4级=无限频道（INFINITE，2000点）\n（等效 /ae2 channelmode x2/x3/x4/infinite）\n⚠ 需安装 AE2 模组，未安装时学习无效\n⚠ 全局生效：服务器所有 AE 网络频道模式\n   多人下取开启玩家中的最高等级";
             case AUTO_SMELT -> "自动熔炼术：消耗 30 技能点\n挖掘方块时自动熔炼掉落物\n（铁矿石→铁锭、金矿石→金锭等）\n按熔炉配方判断能否熔炼\n判断顺序：先熔炉、再时运、再技能增幅\n一次性点亮，1 级\n\n⚠ 黑名单：\n手持对应矿石的粗矿\n（如挖铁矿石得到的生铁 raw_iron）\n输入 /hmd 加入黑名单\n黑名单中的物品不参与熔炼判定\n输入 /delhmd 可查看并移除";
             case ULT_BREAK_ALL -> "子枫的万物可掘：消耗 100 技能点\n一次性点亮，激活后可以挖掘任何方块\n包括基岩这类无法破坏的方块\n挖掘后会掉落对应方块\n（左键点击即可挖掘，无需等待）";
             case ULT_UNBREAK_TAG -> "不朽铭文：消耗 100 技能点\n一次性点亮，激活后\n在铁砧中放入两个相同的物品\n可以合成出带有【无法破坏】词条的工具\n（工具不再消耗耐久）";

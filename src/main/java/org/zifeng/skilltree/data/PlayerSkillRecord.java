@@ -195,6 +195,21 @@ public class PlayerSkillRecord {
         return Collections.unmodifiableMap(auraTargetModes);
     }
 
+    // ============ 晴空环天气模式（2026-08-27：0=晴 1=雨 2=雷暴） ============
+
+    /** 晴空环天气模式（0 晴天 / 1 雨天 / 2 雷暴）；默认晴天 */
+    private int weatherMode = 0;
+
+    /** 当前选择的晴空环天气模式 */
+    public int getWeatherMode() {
+        return weatherMode;
+    }
+
+    /** 设置晴空环天气模式（clamp 0-2） */
+    public void setWeatherMode(int mode) {
+        weatherMode = Math.max(0, Math.min(2, mode));
+    }
+
     /** 杀戮光环总开关 */
     public boolean isAuraEnabled() {
         return auraEnabled;
@@ -241,6 +256,9 @@ public class PlayerSkillRecord {
         if (type == Skills.SkillType.AURA) {
             return current < Skills.getAuraMaxPoints(skillId);
         }
+        if (type == Skills.SkillType.GLOBAL) {
+            return current < Skills.getGlobalMaxPoints(skillId);
+        }
         if (type == Skills.SkillType.MAGIC) {
             return current < Skills.getMagicMaxPoints(skillId);
         }
@@ -270,10 +288,10 @@ public class PlayerSkillRecord {
         if (Skills.AURA_VOID.equals(skillId)) {
             return org.zifeng.skilltree.Config.VOID_AURA_COST.get(); // 杀戮光环·虚空之矛：一次性解锁
         }
-        if (Skills.AURA_TIME.equals(skillId) || Skills.AURA_WEATHER.equals(skillId)) {
-            return Skills.minorUltCost(); // 时之环/晴空环：一次性解锁（默认 100 点）
-        }
         Skills.SkillType type = Skills.getType(skillId);
+        if (type == Skills.SkillType.GLOBAL) {
+            return Skills.getGlobalCost(skillId, getLearnedPoints(skillId)); // 寰宇法则：时之环/晴空环 100；无限回路阶梯
+        }
         if (type == Skills.SkillType.AURA) {
             return Skills.getAuraCost(skillId, getLearnedPoints(skillId));
         }
@@ -376,9 +394,6 @@ public class PlayerSkillRecord {
         if (Skills.AURA_VOID.equals(skillId)) {
             return org.zifeng.skilltree.Config.VOID_AURA_COST.get();
         }
-        if (Skills.AURA_TIME.equals(skillId) || Skills.AURA_WEATHER.equals(skillId)) {
-            return Skills.minorUltCost();
-        }
         return switch (Skills.getType(skillId)) {
             case BASE -> { // 线性消耗累加：1+2+3+...+n（double 防 64 位溢出，2026-08-12 统一）
                 double total = 0;
@@ -413,6 +428,13 @@ public class PlayerSkillRecord {
                 double total = 0;
                 for (int i = 0; i < points; i++) {
                     total += Skills.getAuraCost(skillId, i);
+                }
+                yield total;
+            }
+            case GLOBAL -> { // 寰宇法则：时之环/晴空环固定 100；无限回路阶梯 200/500/1000/2000
+                double total = 0;
+                for (int i = 0; i < points; i++) {
+                    total += Skills.getGlobalCost(skillId, i);
                 }
                 yield total;
             }
@@ -455,6 +477,8 @@ public class PlayerSkillRecord {
             modeList.add(modeTag);
         }
         tag.put("AuraTargetModes", modeList);
+        // 晴空环天气模式（2026-08-27：0=晴 1=雨 2=雷暴）
+        tag.putInt("WeatherMode", weatherMode);
         // 旧字段兼容（旧存档读取用）
         tag.putInt("AuraTargetMode", auraTargetModes.getOrDefault(Skills.AURA_DAMAGE, 0));
         tag.putBoolean("AuraEnabled", auraEnabled);
@@ -527,6 +551,8 @@ public class PlayerSkillRecord {
         } else if (tag.contains("AuraTargetMode", Tag.TAG_INT)) {
             record.auraTargetModes.put(Skills.AURA_DAMAGE, tag.getInt("AuraTargetMode"));
         }
+        // 晴空环天气模式（旧存档无此字段默认 0=晴）
+        record.weatherMode = tag.contains("WeatherMode", Tag.TAG_INT) ? Math.max(0, Math.min(2, tag.getInt("WeatherMode"))) : 0;
         record.auraEnabled = !tag.contains("AuraEnabled") || tag.getBoolean("AuraEnabled");
         record.totalConvertedPoints = tag.getLong("TotalConvertedPoints"); // 旧存档无此字段默认 0
         if (tag.contains("ActiveLevels", Tag.TAG_LIST)) {

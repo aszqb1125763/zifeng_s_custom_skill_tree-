@@ -122,6 +122,13 @@ public class ModKeyBindingEvents {
                         PacketDistributor.sendToServer(new org.zifeng.skilltree.network.AuraTargetC2SPacket(skillId, next));
                         continue;
                     }
+                    // 晴空环（寰宇法则）：循环天气模式（0 晴 → 1 雨 → 2 雷暴 → 0 晴，2026-08-27）
+                    if (Skills.AURA_WEATHER.equals(skillId)) {
+                        int next = (weatherModeClient + 1) % 3;
+                        weatherModeClient = next;
+                        PacketDistributor.sendToServer(new org.zifeng.skilltree.network.WeatherModeC2SPacket(next));
+                        continue;
+                    }
                     // 可调等级技能：生效等级循环（2026-08-13 需求：支持步进 + Alt 反向）
                     //  按键：+1 级；Shift：+10；Ctrl+Shift：+100；Alt：反向（-1/-10/-100）；到界回 0
                     int learnedPoints = learnedPointsOf(skillId);
@@ -173,6 +180,19 @@ public class ModKeyBindingEvents {
         }
         auraTargetModes.clear();
         auraTargetModes.putAll(modes);
+    }
+
+    /** 晴空环天气模式客户端缓存（2026-08-27：0=晴 1=雨 2=雷暴） */
+    private static int weatherModeClient = 0;
+
+    /** 由服务端回发的技能数据校准晴空环天气模式 */
+    public static void setWeatherModeClient(int mode) {
+        weatherModeClient = Math.max(0, Math.min(2, mode));
+    }
+
+    /** 晴空环当前天气模式（客户端缓存，供界面显示） */
+    public static int getWeatherModeClient() {
+        return weatherModeClient;
     }
     /** 由服务端回发的技能数据校准光环总开关（供圆环渲染器使用） */
     public static void setAuraEnabledClient(boolean auraEnabled) {

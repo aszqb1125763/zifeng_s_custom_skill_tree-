@@ -25,5 +25,7 @@ public class ModNetwork {
         registrar.playToServer(ResetSkillC2SPacket.TYPE, ResetSkillC2SPacket.STREAM_CODEC, ResetSkillC2SPacket::handle);
         registrar.playToServer(ConverterUnlimitedC2SPacket.TYPE, ConverterUnlimitedC2SPacket.STREAM_CODEC, ConverterUnlimitedC2SPacket::handle);
         registrar.playToServer(ConverterRateC2SPacket.TYPE, ConverterRateC2SPacket.STREAM_CODEC, ConverterRateC2SPacket::handle);
+        registrar.playToServer(WeatherModeC2SPacket.TYPE, WeatherModeC2SPacket.STREAM_CODEC, WeatherModeC2SPacket::handle);
+        registrar.playToClient(GlobalStateS2CPacket.TYPE, GlobalStateS2CPacket.STREAM_CODEC, GlobalStateS2CPacket::handle);
     }
 }
