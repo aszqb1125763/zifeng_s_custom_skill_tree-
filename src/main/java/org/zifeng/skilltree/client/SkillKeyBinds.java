@@ -55,12 +55,14 @@ public class SkillKeyBinds {
         } else {
             BINDS.put(skillId, key);
         }
+        invalidateViews();
         save();
     }
 
     /** 清除绑定 */
     public static void clearKey(String skillId) {
         BINDS.remove(skillId);
+        invalidateViews();
         save();
     }
 
@@ -81,11 +83,13 @@ public class SkillKeyBinds {
         } else {
             LEVEL_BINDS.put(skillId, key);
         }
+        invalidateViews();
         save();
     }
 
     public static void clearLevelKey(String skillId) {
         LEVEL_BINDS.remove(skillId);
+        invalidateViews();
         save();
     }
 
@@ -142,12 +146,31 @@ public class SkillKeyBinds {
                 Minecraft.getInstance().getWindow().getWindow(), key.getValue());
     }
 
+    /** 缓存视图（2026-08-27 性能优化）：allBinds/allLevelBinds 每 tick 调用，原 Map.copyOf 每 tick 分配新 Map */
+    private static volatile Map<String, InputConstants.Key> bindsView;
+    private static volatile Map<String, InputConstants.Key> levelBindsView;
+
+    private static void invalidateViews() {
+        bindsView = null;
+        levelBindsView = null;
+    }
+
     public static Map<String, InputConstants.Key> allBinds() {
-        return Map.copyOf(BINDS);
+        Map<String, InputConstants.Key> v = bindsView;
+        if (v == null) {
+            v = Map.copyOf(BINDS);
+            bindsView = v;
+        }
+        return v;
     }
 
     public static Map<String, InputConstants.Key> allLevelBinds() {
-        return Map.copyOf(LEVEL_BINDS);
+        Map<String, InputConstants.Key> v = levelBindsView;
+        if (v == null) {
+            v = Map.copyOf(LEVEL_BINDS);
+            levelBindsView = v;
+        }
+        return v;
     }
 
     public static double getLastPanX() {
@@ -230,6 +253,7 @@ public class SkillKeyBinds {
             lastScale = data.scale > 0 ? data.scale : 0.4;
             hudOffsetX = data.hudOffsetX;
             hudOffsetY = data.hudOffsetY;
+            invalidateViews(); // 首次加载填充 BINDS 后失效视图缓存
         } catch (Exception ignored) {
             // 读取失败（文件损坏等）→ 用默认值，不崩溃
         }

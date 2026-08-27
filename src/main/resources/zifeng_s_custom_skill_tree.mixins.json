@@ -8,7 +8,8 @@
     "RangedAttributeMixin",
     "ItemStackMixin",
     "BlockStateMixin",
-    "EntityFireImmuneMixin"
+    "EntityFireImmuneMixin",
+    "VillagerMixin"
   ],
   "client": [
     "FogRendererMixin"

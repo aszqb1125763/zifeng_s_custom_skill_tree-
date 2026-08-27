@@ -49,15 +49,16 @@ public class MagnetEvents {
         if (record.getLearnedPoints(Skills.AURA_MAGNET) <= 0 || !record.isEnabled(Skills.AURA_MAGNET)) {
             return;
         }
-        // ⚠️ 性能优化（2026-08-15）：磁铁恢复原效果（全半径全量吸取），改为每 2 tick（0.1 秒）扫描一次——
-        //    比原版每 tick 更省开销，比 10 tick 更灵敏（吸取响应快，不卡顿）。
-        if (player.tickCount % 2 != 0) {
-            return;
-        }
         // 虚空之矛：已学即提供磁铁范围增幅（55 格，Config 可调，经验和掉落物都生效）
         boolean voidSpear = record.getLearnedPoints(Skills.AURA_VOID) > 0;
         double itemRadius = voidSpear ? Config.VOID_MAGNET_RADIUS.get() : Config.MAGNET_ITEM_RADIUS.get();
         double xpRadius = voidSpear ? Config.VOID_MAGNET_RADIUS.get() : Config.MAGNET_XP_RADIUS.get();
+        // ⚠️ 性能优化（2026-08-27）：大半径（虚空之矛 55 格，体积 110³）时降频到每 5 tick 扫描，
+        //    小半径保持每 2 tick（响应灵敏）。实体密集场景（刷怪塔/农场）显著降低扫描开销。
+        int scanEvery = (itemRadius > 32 || xpRadius > 32) ? 5 : 2;
+        if (player.tickCount % scanEvery != 0) {
+            return;
+        }
         attractItems(player, itemRadius);
         attractXp(player, xpRadius);
     }

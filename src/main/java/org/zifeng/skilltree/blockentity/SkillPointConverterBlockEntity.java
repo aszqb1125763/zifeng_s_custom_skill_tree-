@@ -314,14 +314,26 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
      * 之后固定为最终消耗。
      * <p>⚠️ 2026-08-07 改为【玩家整体计算】：已转换点数取玩家全部机器累计（跨机器共享），
      * 不再是单台机器的 totalConverted——多台机器共享同一个阶梯进度，符合挂机多机玩法预期。
+     * <p>⚠️ 2026-08-27 性能优化：阶梯成本变化缓慢（基于玩家累计转换点），每 20 tick 缓存一次，
+     * 避免每 tick 每台机器查 SavedData（挂机 20 台机器 = 每 tick 20 次查询）。
      */
+    private long cachedThreshold = -1;
+    private long cachedThresholdTick = -1;
+
     private long getThreshold() {
+        long gameTime = level != null ? level.getGameTime() : 0;
+        if (cachedThreshold >= 0 && gameTime - cachedThresholdTick < 20) {
+            return cachedThreshold;
+        }
         long finalCost = Math.max(1, Config.ENERGY_PER_SKILL_POINT.get());
         long startCost = Math.max(1, Math.min(finalCost, Config.ENERGY_START_COST.get()));
         int step = Math.max(1, Config.ENERGY_STEP_POINTS.get());
         long converted = Math.min(getPlayerConvertedPoints(), step);
         long increment = (finalCost - startCost) / step; // 每点增量（线性递增）
-        return startCost + converted * increment;
+        long result = startCost + converted * increment;
+        cachedThreshold = result;
+        cachedThresholdTick = gameTime;
+        return result;
     }
 
     /**

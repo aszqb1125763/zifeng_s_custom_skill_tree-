@@ -1243,10 +1243,23 @@ public class SkillTreeScreen extends Screen {
         return new int[]{width / 2 - (int) Math.ceil(halfW), top, width / 2 + (int) Math.ceil(halfW), bottom};
     }
 
+    /** 属性行缓存（2026-08-27 性能优化：原每帧 collectRows → 每个 getComputedValue 遍历 29 个 BaseSkill 条目，
+     *  84 技能满配时每帧数千次查询；改为每 20 tick（1 秒）重建一次——界面打开时数据变化频率低） */
+    private java.util.List<String[]> cachedRows;
+    private long lastRowsTick = -1;
+
     /** 属性行收集（共用逻辑，右侧/底部布局都展示同一份数据） */
     private java.util.List<String[]> collectRows() {
+        long tick = minecraft != null && minecraft.level != null ? minecraft.level.getGameTime() : 0;
+        if (cachedRows != null && tick - lastRowsTick < 20) {
+            return cachedRows;
+        }
+        lastRowsTick = tick;
         var player = minecraft != null ? minecraft.player : null;
-        if (player == null) return java.util.List.of();
+        if (player == null) {
+            cachedRows = java.util.List.of();
+            return cachedRows;
+        }
         // 本地技能记录（含生效等级），属性值全部本地计算 → 加点立即实时刷新，不依赖服务端属性同步
         org.zifeng.skilltree.data.PlayerSkillRecord rec = learnedAsRecord();
         java.util.List<String[]> rows = new java.util.ArrayList<>();
@@ -1435,6 +1448,7 @@ public class SkillTreeScreen extends Screen {
             }
         }
         rows.add(new String[]{"技能点", String.format("%.1f", Math.max(0, skillPoints)), "#FFFFD700"});
+        cachedRows = rows; // 缓存到下次重建（1 秒）
         return rows;
     }
 

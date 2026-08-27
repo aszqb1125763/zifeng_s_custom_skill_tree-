@@ -100,7 +100,7 @@ public class PlayerRingLayer extends RenderLayer<AbstractClientPlayer, PlayerMod
         if (!auraOn) {
             return;
         }
-        org.zifeng.skilltree.SkillTreeMod.LOGGER.debug("[zifeng] 星空环渲染中 (player={})", player.getName().getString());
+        // 2026-08-27 性能优化：删除每帧 debug 日志（参数 getName().getString() 每帧分配字符串）
 
         Matrix4f matrix = poseStack.last().pose();
         // ⚠️ 不强制转 BufferSource（Iris 会包装成 BufferSourceWrapper，强转崩溃）；

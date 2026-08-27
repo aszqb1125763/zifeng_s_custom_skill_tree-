@@ -46,10 +46,11 @@ public class ConverterRateC2SPacket {
             if (player.containerMenu instanceof SkillPointConverterMenu menu) {
                 converter = menu.getBlockEntity();
             }
-            // ② BlockPos 兜底（限距离校验，防远程改他人机器）
+            // ② BlockPos 兜底（限距离 + owner 校验，防远程/他人改机器）
             if (converter == null) {
                 if (player.distanceToSqr(packet.pos.getCenter()) <= 25 * 25
-                        && player.level().getBlockEntity(packet.pos) instanceof SkillPointConverterBlockEntity be) {
+                        && player.level().getBlockEntity(packet.pos) instanceof SkillPointConverterBlockEntity be
+                        && (be.getOwnerUUID() == null || be.getOwnerUUID().equals(player.getUUID()))) {
                     converter = be;
                 }
             }

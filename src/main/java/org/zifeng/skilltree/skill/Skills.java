@@ -323,16 +323,27 @@ public final class Skills {
         addAll(GIFT_SKILLS);
     }};
 
+    /**
+     * 技能类型映射（2026-08-27 性能优化：原 getType 用 8 次 List.contains 线性查找，
+     * 学习/重置/渲染按钮高频调用 → 改为一次性 HashMap O(1)）。
+     */
+    private static final java.util.Map<String, SkillType> TYPE_MAP = buildTypeMap();
+
+    private static java.util.Map<String, SkillType> buildTypeMap() {
+        java.util.Map<String, SkillType> map = new java.util.HashMap<>();
+        for (String s : MAGIC_SKILLS) map.put(s, SkillType.MAGIC);
+        for (String s : MACHINE_SKILLS) map.put(s, SkillType.MACHINE);
+        for (String s : GIFT_SKILLS) map.put(s, SkillType.GIFT);
+        for (String s : BASE_SKILLS) map.put(s, SkillType.BASE);
+        for (String s : AMPLIFY_SKILLS) map.put(s, SkillType.AMPLIFY);
+        for (String s : ULTIMATE_SKILLS) map.put(s, SkillType.ULTIMATE);
+        for (String s : SPECIAL_SKILLS) map.put(s, SkillType.SPECIAL);
+        for (String s : AURA_SKILLS) map.put(s, SkillType.AURA);
+        return map;
+    }
+
     public static SkillType getType(String skillId) {
-        if (MAGIC_SKILLS.contains(skillId)) return SkillType.MAGIC;
-        if (MACHINE_SKILLS.contains(skillId)) return SkillType.MACHINE;
-        if (GIFT_SKILLS.contains(skillId)) return SkillType.GIFT;
-        if (BASE_SKILLS.contains(skillId)) return SkillType.BASE;
-        if (AMPLIFY_SKILLS.contains(skillId)) return SkillType.AMPLIFY;
-        if (ULTIMATE_SKILLS.contains(skillId)) return SkillType.ULTIMATE;
-        if (SPECIAL_SKILLS.contains(skillId)) return SkillType.SPECIAL;
-        if (AURA_SKILLS.contains(skillId)) return SkillType.AURA;
-        return SkillType.BASE;
+        return TYPE_MAP.getOrDefault(skillId, SkillType.BASE);
     }
 
     /**

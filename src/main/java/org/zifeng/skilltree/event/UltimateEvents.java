@@ -728,6 +728,23 @@ public class UltimateEvents {
     private static final Field ENTRY_FUNCTIONS;
     private static final Field COMPOSITE_CHILDREN;
 
+    /**
+     * 按类型查找字段（2026-08-27 修复）：Forge 1.20.1 发布版运行时字段名是 SRG 名（f_79xxx_ 等），
+     * getDeclaredField("pools") 找不到 → 掉落增幅整个禁用。类型在 SRG 重命名时不变 → 用类型匹配最稳。
+     */
+    private static Field findFieldByType(Class<?> cls, Class<?> type) {
+        for (java.lang.reflect.Field f : cls.getDeclaredFields()) {
+            if (f.getType() == type) {
+                try {
+                    f.setAccessible(true);
+                    return f;
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
     static {
         Field tablePools = null;
         Field poolEntries = null;
@@ -735,16 +752,19 @@ public class UltimateEvents {
         Field entryFunctions = null;
         Field compositeChildren = null;
         try {
-            tablePools = LootTable.class.getDeclaredField("pools");
-            tablePools.setAccessible(true);
-            poolEntries = LootPool.class.getDeclaredField("entries");
-            poolEntries.setAccessible(true);
-            entryConditions = LootPoolEntryContainer.class.getDeclaredField("conditions");
-            entryConditions.setAccessible(true);
-            entryFunctions = LootPoolSingletonContainer.class.getDeclaredField("functions");
-            entryFunctions.setAccessible(true);
-            compositeChildren = net.minecraft.world.level.storage.loot.entries.CompositeEntryBase.class.getDeclaredField("children");
-            compositeChildren.setAccessible(true);
+            // 1.20.1 的 Loot 字段是数组类型（LootPoolEntryContainer[] 等；1.21 才是 List）→ 类型匹配
+            tablePools = findFieldByType(LootTable.class, java.util.List.class); // List<LootPool>（LootTable 唯一 List）
+            poolEntries = findFieldByType(LootPool.class,
+                    net.minecraft.world.level.storage.loot.entries.LootPoolEntryContainer[].class);
+            entryConditions = findFieldByType(
+                    net.minecraft.world.level.storage.loot.entries.LootPoolEntryContainer.class,
+                    net.minecraft.world.level.storage.loot.predicates.LootItemCondition[].class);
+            entryFunctions = findFieldByType(
+                    net.minecraft.world.level.storage.loot.entries.LootPoolSingletonContainer.class,
+                    net.minecraft.world.level.storage.loot.functions.LootItemFunction[].class);
+            compositeChildren = findFieldByType(
+                    net.minecraft.world.level.storage.loot.entries.CompositeEntryBase.class,
+                    net.minecraft.world.level.storage.loot.entries.LootPoolEntryContainer[].class);
         } catch (Exception e) {
             // ⚠️ 2026-08-24：原 throw RuntimeException 会让整个 UltimateEvents 类加载失败 → 模组加载崩溃。
             //    大型整合包中其他模组可能改 LootTable/LootPool 类结构 → 反射失败 → 这里降级为禁用掉落增幅。
@@ -976,7 +996,11 @@ public class UltimateEvents {
         BlockEntity be = level.getBlockEntity(pos);
         ItemStack tool = sp.getMainHandItem();
         // 原版掉落（含原版时运附魔；getDrops 由 IForgeBlock 提供）
-        java.util.List<ItemStack> drops = state.getBlock().getDrops(state, level, pos, be, sp, tool);
+        // ⚠️ 2026-08-27 修复：getDrops() 对空掉落表方块（基岩/屏障等）返回【不可变空列表】，
+        //    直接 drops.add() 抛 UnsupportedOperationException → 事件中断 → 幽灵方块 + 无掉落。
+        //    必须用可变 ArrayList 包装后再 add。
+        java.util.List<ItemStack> drops = new java.util.ArrayList<>(
+                state.getBlock().getDrops(state, level, pos, be, sp, tool));
         // 万物挖掘（ULT_BREAK_ALL）：不可破坏方块（基岩/屏障等，原版掉落表为空）挖掘后掉落对应方块。
         // 判断依据 getDestroySpeed < 0（基岩 -1.0F，原版"不可破坏"标准，不受 BlockStateMixin 影响）
         // ⚠️ 不能用 getDestroyProgress <= 0：Mixin 已把它改成黑曜石进度（>0），条件恒不成立！
@@ -1085,15 +1109,20 @@ public class UltimateEvents {
         if (blacklist.contains(item)) {
             return true;
         }
-        // 2. 熔炼产物关联：掉落物需有熔炼产物（不可熔炼的直接不算同类）
-        ItemStack dropResult = smeltMap.get(item);
+        // 2. 熔炼产物关联（双向，2026-08-27 修复"加木炭拦不住原木"）：
+        ItemStack dropResult = smeltMap.get(item); // 掉落物的熔炼产物（如 log → charcoal）
         if (dropResult == null || dropResult.isEmpty()) {
-            return false;
+            return false; // 掉落物本身不可熔炼 → 无需拦截
         }
         for (Item blackItem : blacklist) {
             if (blackItem == item) {
                 continue;
             }
+            // 2a. 黑名单项就是掉落物的熔炼产物（黑名单=charcoal，掉落=log，log 烧成 charcoal）→ 拦截
+            if (blackItem == dropResult.getItem()) {
+                return true;
+            }
+            // 2b. 黑名单项与掉落物熔炼出同一种产物（黑名单=gold_ore，掉落=raw_gold → 都是 gold_ingot）→ 拦截
             ItemStack blackResult = smeltMap.get(blackItem);
             if (blackResult != null && !blackResult.isEmpty() && blackResult.is(dropResult.getItem())) {
                 return true;
@@ -1177,12 +1206,14 @@ public class UltimateEvents {
                 return false;
             }
             for (Object pool : pools) {
-                List<?> entries = (List<?>) POOL_ENTRIES.get(pool);
+                // 1.20.1：LootPool.entries 是数组（LootPoolEntryContainer[]），1.21 才是 List
+                Object entries = POOL_ENTRIES.get(pool);
                 if (entries == null) {
                     continue;
                 }
-                for (Object entry : entries) {
-                    if (checkEntry(entry, target, checkFortuneFunction)) {
+                int len = java.lang.reflect.Array.getLength(entries);
+                for (int i = 0; i < len; i++) {
+                    if (checkEntry(java.lang.reflect.Array.get(entries, i), target, checkFortuneFunction)) {
                         return true;
                     }
                 }
@@ -1196,19 +1227,23 @@ public class UltimateEvents {
     /** 递归检查单个掉落条目（含 AlternativesEntry 的 children 展开） */
     private static boolean checkEntry(Object entry, Enchantment target, boolean checkFortuneFunction) throws IllegalAccessException {
         // 1. 条件：LootItemRandomChanceWithLootingCondition（1.20.1 该类固定绑定抢夺附魔，无 Registry 字段可反射）
-        List<?> conditions = (List<?>) ENTRY_CONDITIONS.get(entry);
+        //    1.20.1 是数组（LootItemCondition[]），1.21 才是 List
+        Object conditions = ENTRY_CONDITIONS.get(entry);
         if (conditions != null) {
-            for (Object c : conditions) {
-                if (c instanceof LootItemRandomChanceWithLootingCondition) {
+            int cLen = java.lang.reflect.Array.getLength(conditions);
+            for (int i = 0; i < cLen; i++) {
+                if (java.lang.reflect.Array.get(conditions, i) instanceof LootItemRandomChanceWithLootingCondition) {
                     return true;
                 }
             }
         }
-        // 2. 函数（仅 LootPoolSingletonContainer 有 functions 字段）：
+        // 2. 函数（仅 LootPoolSingletonContainer 有 functions 字段；1.20.1 是数组 LootItemFunction[]）：
         if (entry instanceof LootPoolSingletonContainer) {
-            List<?> functions = (List<?>) ENTRY_FUNCTIONS.get(entry);
+            Object functions = ENTRY_FUNCTIONS.get(entry);
             if (functions != null) {
-                for (Object f : functions) {
+                int fLen = java.lang.reflect.Array.getLength(functions);
+                for (int i = 0; i < fLen; i++) {
+                    Object f = java.lang.reflect.Array.get(functions, i);
                     // 2a. ApplyBonusCount 时运加成（方块矿物专用：apply_bonus）
                     if (checkFortuneFunction && f instanceof ApplyBonusCount) {
                         return true;
@@ -1221,12 +1256,13 @@ public class UltimateEvents {
                 }
             }
         }
-        // 3. 复合条目（AlternativesEntry）：递归检查 children
+        // 3. 复合条目（AlternativesEntry）：递归检查 children（1.20.1 是数组 LootPoolEntryContainer[]）
         if (entry instanceof net.minecraft.world.level.storage.loot.entries.CompositeEntryBase) {
-            List<?> children = (List<?>) COMPOSITE_CHILDREN.get(entry);
+            Object children = COMPOSITE_CHILDREN.get(entry);
             if (children != null) {
-                for (Object child : children) {
-                    if (checkEntry(child, target, checkFortuneFunction)) {
+                int chLen = java.lang.reflect.Array.getLength(children);
+                for (int i = 0; i < chLen; i++) {
+                    if (checkEntry(java.lang.reflect.Array.get(children, i), target, checkFortuneFunction)) {
                         return true;
                     }
                 }
@@ -1396,29 +1432,21 @@ public class UltimateEvents {
         // ⚠️ 修复（2026-08-27 v2）：原实现 overrideOffers(null) 会清空原有交易，且 updateTrades 只加
         //    "当前等级"的交易集 → 2/3/4 级交易全丢。改为模拟原版 increaseMerchantCareer 逐级升级：
         //    每升一级 setLevel + updateTrades() 追加该级交易（原有 1 级交易保留，2-5 级依次追加）。
+        // ⚠️ 修复（2026-08-27 v3）：updateTrades 是 protected 且运行时是 SRG 名，getDeclaredMethod
+        //    反射找不到 → 交易不追加（满级但无交易）。改用 Mixin @Invoker（VillagerMixin）自动映射。
         if (record.getLearnedPoints(Skills.VILLAGER_MASTER) > 0 && record.isEnabled(Skills.VILLAGER_MASTER)) {
             if (event.getAbstractVillager() instanceof net.minecraft.world.entity.npc.Villager villager) {
                 int currentLevel = villager.getVillagerData().getLevel();
                 if (currentLevel < 5) {
                     // 先确保现有 offers 已生成（updateTrades 内部调 getOffers，需非 null 避免递归）
                     villager.getOffers();
-                    // 反射调用 protected updateTrades()（编译环境无参签名）
-                    java.lang.reflect.Method updateTrades = null;
-                    try {
-                        updateTrades = net.minecraft.world.entity.npc.AbstractVillager.class
-                                .getDeclaredMethod("updateTrades");
-                        updateTrades.setAccessible(true);
-                    } catch (Exception ignored) {
-                        // 反射失败（API 变动）→ 至少保证等级提升，交易下次打开菜单重建
-                    }
+                    // 逐级升级：2→3→4→5，每级追加该级交易配方
                     for (int lv = currentLevel + 1; lv <= 5; lv++) {
                         villager.setVillagerData(villager.getVillagerData().setLevel(lv));
-                        if (updateTrades != null) {
-                            try {
-                                updateTrades.invoke(villager); // 追加该级交易（2→3→4→5）
-                            } catch (Exception ignored) {
-                                break;
-                            }
+                        try {
+                            ((org.zifeng.skilltree.mixin.VillagerMixin) villager).zifeng$updateTrades();
+                        } catch (Exception ignored) {
+                            break; // Mixin 注入失败（极端情况）→ 至少等级已提升
                         }
                     }
                     villager.setVillagerXp(1000000); // 经验远超过量
@@ -1566,6 +1594,9 @@ public class UltimateEvents {
     /**
      * 附魔突破（ENCHANT_BREAK）/ 超限附魔（ENCHANT_OVER）：所有已有附魔一起升级
      * （突破 +1 / 超限 +2），单个附魔等级上限 maxLevel（突破=20，超限=100）。
+     * ⚠️ 2026-08-27：不能用 out.enchant() 逐条追加——1.20.1 的 ItemStack.enchant() 是把新附魔
+     * 追加进 Enchantments 列表，不检查是否已有同附魔 → 升级变"复制一份更高等级"。必须用
+     * EnchantmentHelper.setEnchantments() 整体覆盖升级后的 Map。
      */
     private static void handleLevelUpEnchant(net.minecraftforge.event.AnvilUpdateEvent event,
                                              ItemStack left, int materialCost, int cost, int maxLevel, int addLevel) {
@@ -1574,6 +1605,7 @@ public class UltimateEvents {
             return; // 没有附魔可突破
         }
         ItemStack out = left.copy();
+        java.util.Map<Enchantment, Integer> upgraded = new java.util.HashMap<>(enchants);
         boolean changed = false;
         for (java.util.Map.Entry<Enchantment, Integer> entry : enchants.entrySet()) {
             Enchantment ench = entry.getKey();
@@ -1581,12 +1613,14 @@ public class UltimateEvents {
             if (current >= maxLevel) {
                 continue; // 已达上限，跳过
             }
-            out.enchant(ench, Math.min(current + addLevel, maxLevel));
+            upgraded.put(ench, Math.min(current + addLevel, maxLevel));
             changed = true;
         }
         if (!changed) {
             return; // 所有附魔都已达上限
         }
+        // 整体覆盖写回（1.20.1：setEnchantments 会替换整个 Enchantments/StoredEnchantments 列表）
+        EnchantmentHelper.setEnchantments(upgraded, out);
         event.setOutput(out);
         event.setCost(cost);
         event.setMaterialCost(materialCost);

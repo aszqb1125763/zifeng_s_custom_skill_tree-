@@ -89,13 +89,14 @@ public class AuraEvents {
             // 只要学了 + 技能开关开启就生效（修复整合包中不开总开关时不生效的问题）
             boolean timeOn = record.getLearnedPoints(Skills.AURA_TIME) > 0 && record.isEnabled(Skills.AURA_TIME);
             updateTimeLock(player, timeOn);
-            if (timeOn) {
+            // ⚠️ 2026-08-27 性能优化：enforce 每 5 tick 检查一次（gamerule 读取/比较是每玩家每 tick 开销）
+            if (timeOn && player.tickCount % 5 == 0) {
                 enforceTimeLock(player);
             }
             // 晴空环：同理
             boolean weatherOn = record.getLearnedPoints(Skills.AURA_WEATHER) > 0 && record.isEnabled(Skills.AURA_WEATHER);
             updateWeatherLock(player, weatherOn);
-            if (weatherOn) {
+            if (weatherOn && player.tickCount % 5 == 0) {
                 enforceWeatherLock(player);
             }
             // 攻击/治疗光环：直接按各技能开关执行（不再有总开关；K 键只控制伤害/速度）
@@ -171,9 +172,6 @@ public class AuraEvents {
             return; // 状态未变，零开销
         }
         weatherLockState.put(player.getUUID(), on);
-        if (prev != null && prev == on) {
-            return; // 状态未变，零开销
-        }
         if (on) {
             weatherLockCount++;
         } else {
@@ -298,6 +296,10 @@ public class AuraEvents {
         }
         // 手持武器（主手）：光环伤害附带该武器全部附魔（锋利/亡灵杀手/节肢杀手/火焰附加/冰霜之刃等，伤害与效果全部生效）
         ItemStack weapon = player.getMainHandItem();
+        // ⚠️ 性能优化（2026-08-27）：附魔列表循环外解析一次（NBT 解析昂贵），循环内只按目标 MobType 算加成
+        java.util.Map<net.minecraft.world.item.enchantment.Enchantment, Integer> weaponEnch =
+                weapon.isEmpty() ? java.util.Collections.emptyMap()
+                        : net.minecraft.world.item.enchantment.EnchantmentHelper.getEnchantments(weapon);
         // 对范围内全部有效目标逐个造成伤害（Draconic/ProjectE 全打思路），每个目标独立命中判定
         for (Entity targetEntity : targets) {
             // 破盾（光环·强化）：目标举盾格挡 → 解除格挡 + 盾牌冷却（参考 Draconic 穿透箭破盾逻辑）
@@ -342,8 +344,13 @@ public class AuraEvents {
             float healthBefore = target.getHealth();
             DamageSource source = player.damageSources().playerAttack(player);
             // 附魔加成：1.20.1 的 EnchantmentHelper.getDamageBonus 把武器附魔伤害增幅算入（锋利/亡灵杀手/节肢杀手等）
-            float finalDamage = weapon.isEmpty() ? damage
-                    : damage + net.minecraft.world.item.enchantment.EnchantmentHelper.getDamageBonus(weapon, target.getMobType());
+            // ⚠️ 性能优化（2026-08-27）：用循环外已解析的 weaponEnch，避免每目标重复 NBT 解析
+            float finalDamage = damage;
+            if (!weaponEnch.isEmpty()) {
+                for (java.util.Map.Entry<net.minecraft.world.item.enchantment.Enchantment, Integer> e : weaponEnch.entrySet()) {
+                    finalDamage += e.getKey().getDamageBonus(e.getValue(), target.getMobType());
+                }
+            }
             // Boss 分支（2026-08-15 需求：虚空之矛伤害挂 Boss 判定）：
             //   · 学了虚空之矛 → 先用混沌伤害源对 Boss 尝试虚空秒杀（混沌秒杀挂 Boss 判定，可穿透 Boss 护盾/免疫）
             //   · 未学虚空之矛 或 混沌秒杀未击杀（DE 守卫水晶护盾格挡）→ 降级混沌连击削盾
@@ -381,11 +388,8 @@ public class AuraEvents {
             if (target.hurt(source, finalDamage)) {
                 // 触发武器附魔的命中效果（火焰附加点燃、冰霜之刃减速等）
                 // 1.20.1：EnchantmentHelper 无 doPostAttackEffects，手动遍历武器附魔调用 Enchantment.doPostAttack
-                if (!weapon.isEmpty()) {
-                    for (java.util.Map.Entry<net.minecraft.world.item.enchantment.Enchantment, Integer> entry :
-                            net.minecraft.world.item.enchantment.EnchantmentHelper.getEnchantments(weapon).entrySet()) {
-                        entry.getKey().doPostAttack(target, player, entry.getValue());
-                    }
+                for (java.util.Map.Entry<net.minecraft.world.item.enchantment.Enchantment, Integer> entry : weaponEnch.entrySet()) {
+                    entry.getKey().doPostAttack(target, player, entry.getValue());
                 }
                 // 混沌伤害（光环·强化）：光环攻击附带无视护甲的真实伤害（参考龙之研究混沌武器——混沌能量无视护甲/无敌帧）
                 // 比例 Config 可调（默认主伤害的 20%），独立于护甲/减伤结算
@@ -425,18 +429,26 @@ public class AuraEvents {
         };
     }
 
+    /** DE 类名匹配缓存（2026-08-27 性能优化）：刷怪塔海量实体时避免每目标每 tick 分配类名字符串 */
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, Boolean> DRACONIC_CRYSTAL_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, Boolean> DRACONIC_GUARDIAN_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
     /** DE 守卫水晶特判（GuardianCrystalEntity 是 Entity 不是 LivingEntity，用类名匹配不依赖 DE 编译） */
     private static boolean isDraconicCrystal(Entity target) {
-        String name = target.getClass().getName();
-        return name.startsWith("com.brandon3055.draconicevolution.entity.")
-                && (name.contains("GuardianCrystal") || name.contains("ChaosCrystal"));
+        return DRACONIC_CRYSTAL_CACHE.computeIfAbsent(target.getClass(), cls -> {
+            String name = cls.getName();
+            return name.startsWith("com.brandon3055.draconicevolution.entity.")
+                    && (name.contains("GuardianCrystal") || name.contains("ChaosCrystal"));
+        });
     }
 
     /** DE 混沌守卫本体特判（类名匹配，不依赖 DE 编译） */
     private static boolean isDraconicGuardian(LivingEntity target) {
-        String name = target.getClass().getName();
-        return name.startsWith("com.brandon3055.draconicevolution.entity.")
-                && (name.contains("DraconicGuardian") || name.contains("ChaosGuardian"));
+        return DRACONIC_GUARDIAN_CACHE.computeIfAbsent(target.getClass(), cls -> {
+            String name = cls.getName();
+            return name.startsWith("com.brandon3055.draconicevolution.entity.")
+                    && (name.contains("DraconicGuardian") || name.contains("ChaosGuardian"));
+        });
     }
 
     /** 反射缓存：DE 守卫的 protected attackDragonFrom(DamageSource, float) 方法 */

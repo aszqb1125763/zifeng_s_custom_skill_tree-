@@ -55,6 +55,7 @@ public final class GiftEvents {
     /** 检测洗礼开关状态变化：关闭时清空该玩家对应累计（防重新开启立即触发残留） */
     private static void checkToggleChanged(PlayerSkillRecord record, UUID uuid) {
         Map<String, Boolean> last = lastEnabled.computeIfAbsent(uuid, k -> new HashMap<>());
+        // 全部洗礼技能（含时间三件套）：从开到关 → 清累计
         for (String skill : ALL_BAPTISM_SKILLS) {
             boolean on = record.getLearnedPoints(skill) > 0 && record.isEnabled(skill);
             Boolean prev = last.put(skill, on);
@@ -67,8 +68,8 @@ public final class GiftEvents {
                 killAcc.remove(uuid);
             }
         }
-        // 时间系列也清理（风暴/洪流若关闭）
-        for (String skill : List.of(Skills.GIFT_TIME_BAPTISM, Skills.GIFT_TIME_STORM, Skills.GIFT_TIME_FLOOD)) {
+        // 时间三件套（风暴/洪流若关闭也清理；用常量 TIME_SKILLS 避免每 tick List.of 分配）
+        for (String skill : TIME_SKILLS) {
             boolean on = record.getLearnedPoints(skill) > 0 && record.isEnabled(skill);
             Boolean prev = last.put(skill, on);
             if (prev != null && prev && !on) {
@@ -97,8 +98,10 @@ public final class GiftEvents {
         PlayerSkillRecord record = getRecord(player);
         UUID uuid = player.getUUID();
 
-        // 开关状态检测：关闭洗礼 → 清累计（防重新开启立即触发）
-        checkToggleChanged(record, uuid);
+        // 开关状态检测：关闭洗礼 → 清累计（防重新开启立即触发）；每 20 tick 检测一次（性能优化）
+        if (player.tickCount % 20 == 0) {
+            checkToggleChanged(record, uuid);
+        }
 
         // ============ 时间类（在线 tick 累计；2026-08-25：风暴每次 +5 点，洪流每次 +10 点，洗礼 +1 点保底） ============
         for (String skill : TIME_SKILLS) {
