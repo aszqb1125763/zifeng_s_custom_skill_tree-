@@ -251,8 +251,9 @@ public class SkillKeyBinds {
             lastPanX = data.panX;
             lastPanY = data.panY;
             lastScale = data.scale > 0 ? data.scale : 0.4;
-            hudOffsetX = data.hudOffsetX;
-            hudOffsetY = data.hudOffsetY;
+            // 2026-08-28：加载时 clamp 到新调整范围（X ±400 / Y ±200），防止旧配置残留超范围值
+            hudOffsetX = Math.max(-400, Math.min(400, data.hudOffsetX));
+            hudOffsetY = Math.max(-200, Math.min(200, data.hudOffsetY));
             invalidateViews(); // 首次加载填充 BINDS 后失效视图缓存
         } catch (Exception ignored) {
             // 读取失败（文件损坏等）→ 用默认值，不崩溃

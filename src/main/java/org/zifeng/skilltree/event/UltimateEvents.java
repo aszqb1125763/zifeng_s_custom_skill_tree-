@@ -63,6 +63,8 @@ public class UltimateEvents {
 
     // ============ 凤凰涅槃状态 ============
     private static final Map<UUID, Long> reviveCooldownUntil = new HashMap<>(); // 世界时间 tick
+    /** 已发送过"就绪"状态的玩家（2026-08-28 性能：就绪态不随 tick 变化，只发一次，避免每秒重复发包） */
+    private static final Set<UUID> reviveReadySent = new HashSet<>();
 
     // ============ 全能精通免死状态 ============
     private static final Map<UUID, Long> masterUndyingUntil = new HashMap<>(); // 免死保底冷却
@@ -85,6 +87,7 @@ public class UltimateEvents {
     public static void clearPlayer(ServerPlayer player) {
         UUID uuid = player.getUUID();
         reviveCooldownUntil.remove(uuid);
+        reviveReadySent.remove(uuid);
         masterUndyingUntil.remove(uuid);
         masterInvulnUntil.remove(uuid);
         SKILL_FLIGHT_GRANTED.remove(uuid);
@@ -343,16 +346,20 @@ public class UltimateEvents {
             // 无限回路：AE2 频道倍增/无限（软集成，未装 AE2 时无操作；全局生效，玩家集合管理）
             // 4 级：1=X2 2=X3 3=X4 4=INFINITE；多人取所有开启玩家中的最高等级
             // ⚠️ 2026-08-27 修复：生效等级 0（技能完全不生效）→ 走 disable 恢复默认，勿 Math.max(1,0)=X2
-            boolean aeOn = record.getLearnedPoints(Skills.AE_INFINITE_CHANNEL) > 0 && record.isEnabled(Skills.AE_INFINITE_CHANNEL);
-            if (aeOn) {
-                int aeLevel = record.getActiveLevel(Skills.AE_INFINITE_CHANNEL); // 可低于已学；未设置默认=已学
-                if (aeLevel <= 0) {
-                    org.zifeng.skilltree.compat.Ae2Compat.disable(player.getUUID());
+            // ⚠️ 2026-08-28 性能：未学 AE 技能 → 直接跳过（disable 只在开→关/登出时调用一次即可，未学玩家无需每 tick 进入 synchronized）
+            int aeLearned = record.getLearnedPoints(Skills.AE_INFINITE_CHANNEL);
+            if (aeLearned > 0) {
+                boolean aeOn = record.isEnabled(Skills.AE_INFINITE_CHANNEL);
+                if (aeOn) {
+                    int aeLevel = record.getActiveLevel(Skills.AE_INFINITE_CHANNEL); // 可低于已学；未设置默认=已学
+                    if (aeLevel <= 0) {
+                        org.zifeng.skilltree.compat.Ae2Compat.disable(player.getUUID());
+                    } else {
+                        org.zifeng.skilltree.compat.Ae2Compat.enable(player.getUUID(), aeLevel);
+                    }
                 } else {
-                    org.zifeng.skilltree.compat.Ae2Compat.enable(player.getUUID(), aeLevel);
+                    org.zifeng.skilltree.compat.Ae2Compat.disable(player.getUUID());
                 }
-            } else {
-                org.zifeng.skilltree.compat.Ae2Compat.disable(player.getUUID());
             }
             // 凤凰涅槃：每秒同步冷却状态到客户端（HUD 图标提示冷却倒计时/就绪）
             // ⚠️ 性能优化（2026-08-27）：未学/未开启技能 → 不发包（避免全员每秒收无意义小包）
@@ -363,8 +370,17 @@ public class UltimateEvents {
                 }
                 long cdUntil = reviveCooldownUntil.getOrDefault(player.getUUID(), 0L);
                 int remaining = (int) Math.max(0, cdUntil - player.level().getGameTime());
-                org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
-                        new org.zifeng.skilltree.network.ReviveCooldownS2CPacket(true, remaining));
+                // ⚠️ 2026-08-28 性能：就绪态（remaining==0）不随 tick 变化 → 只发一次；冷却中每秒发倒计时
+                if (remaining <= 0) {
+                    if (reviveReadySent.add(player.getUUID())) {
+                        org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
+                                new org.zifeng.skilltree.network.ReviveCooldownS2CPacket(true, 0));
+                    }
+                } else {
+                    reviveReadySent.remove(player.getUUID()); // 冷却开始 → 重置就绪标记（下次就绪再发一次）
+                    org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
+                            new org.zifeng.skilltree.network.ReviveCooldownS2CPacket(true, remaining));
+                }
             }
         }
     }
@@ -546,7 +562,8 @@ public class UltimateEvents {
     public static void onPlayerLogout(net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer sp) {
             org.zifeng.skilltree.compat.Ae2Compat.disable(sp.getUUID());
-            org.zifeng.skilltree.GlobalStateSync.removeWatcher(sp.getUUID());
+            org.zifeng.skilltree.GlobalStateSync.removeSubscription(sp.getUUID());
+            org.zifeng.skilltree.PlayerPushState.remove(sp.getUUID());
         }
     }
 
@@ -556,6 +573,7 @@ public class UltimateEvents {
     public static void onServerStopped(net.minecraftforge.event.server.ServerStoppedEvent event) {
         org.zifeng.skilltree.compat.Ae2Compat.onServerStopped();
         org.zifeng.skilltree.GlobalStateSync.clear();
+        org.zifeng.skilltree.PlayerPushState.clearAll();
     }
 
     // 防刷物品（2026-08-26）：生物死亡瞬间装备栏物品快照（玩家给予的装备）。
@@ -1117,7 +1135,7 @@ public class UltimateEvents {
         if (blacklist.contains(item)) {
             return true;
         }
-        // 2. 熔炼产物关联（双向，2026-08-27 修复"加木炭拦不住原木"）：
+        // 2. 熔炼产物关联（双向，2026-08-28 通用化，支持【用产物 ID 加黑名单】）：
         ItemStack dropResult = smeltMap.get(item); // 掉落物的熔炼产物（如 log → charcoal）
         if (dropResult == null || dropResult.isEmpty()) {
             return false; // 掉落物本身不可熔炼 → 无需拦截
@@ -1127,7 +1145,7 @@ public class UltimateEvents {
                 continue;
             }
             // 2a. 黑名单项就是掉落物的熔炼产物（黑名单=charcoal，掉落=log，log 烧成 charcoal）→ 拦截
-            if (blackItem == dropResult.getItem()) {
+            if (dropResult.is(blackItem)) {
                 return true;
             }
             // 2b. 黑名单项与掉落物熔炼出同一种产物（黑名单=gold_ore，掉落=raw_gold → 都是 gold_ingot）→ 拦截

@@ -104,6 +104,11 @@ public class ModNetwork {
                 .decoder(GlobalStateS2CPacket::decode)
                 .consumerMainThread(GlobalStateS2CPacket::handle)
                 .add();
+        CHANNEL.messageBuilder(SkillPointDeltaS2CPacket.class, id++)
+                .encoder(SkillPointDeltaS2CPacket::encode)
+                .decoder(SkillPointDeltaS2CPacket::decode)
+                .consumerMainThread(SkillPointDeltaS2CPacket::handle)
+                .add();
     }
 
     /** 服务端 → 指定玩家 */

@@ -310,12 +310,12 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
     }
 
     /**
-     * 阶梯阈值：前 ENERGY_STEP_POINTS 点内，每点消耗从 ENERGY_START_COST 线性递增到 ENERGY_PER_SKILL_POINT；
-     * 之后固定为最终消耗。
-     * <p>⚠️ 2026-08-07 改为【玩家整体计算】：已转换点数取玩家全部机器累计（跨机器共享），
-     * 不再是单台机器的 totalConverted——多台机器共享同一个阶梯进度，符合挂机多机玩法预期。
-     * <p>⚠️ 2026-08-27 性能优化：阶梯成本变化缓慢（基于玩家累计转换点），每 20 tick 缓存一次，
-     * 避免每 tick 每台机器查 SavedData（挂机 20 台机器 = 每 tick 20 次查询）。
+     * 阶梯阈值：当前每点消耗（FE）。
+     * ⚠️ 2026-08-28 架构升级：折扣计算收进玩家子系统（PlayerPushState.getCurrentCostPerPoint），
+     * 前 {@link Config#ENERGY_STEP_POINTS}（2000）点是【玩家所有机器合计】的共享折扣——
+     * 防"每台机器各有 2000 点折扣"漏洞；机器只查询结果，不各自计算。
+     * 未绑定 owner 时降级用本机累计计算（保持显示/计算不崩）。
+     * <p>⚠️ 2026-08-27 性能优化：阶梯成本变化缓慢（基于玩家累计转换点），每 20 tick 缓存一次。
      */
     private long cachedThreshold = -1;
     private long cachedThresholdTick = -1;
@@ -325,28 +325,35 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
         if (cachedThreshold >= 0 && gameTime - cachedThresholdTick < 20) {
             return cachedThreshold;
         }
-        long finalCost = Math.max(1, Config.ENERGY_PER_SKILL_POINT.get());
-        long startCost = Math.max(1, Math.min(finalCost, Config.ENERGY_START_COST.get()));
-        int step = Math.max(1, Config.ENERGY_STEP_POINTS.get());
-        long converted = Math.min(getPlayerConvertedPoints(), step);
-        long increment = (finalCost - startCost) / step; // 每点增量（线性递增）
-        long result = startCost + converted * increment;
+        long result;
+        if (ownerUUID == null || !(level instanceof ServerLevel serverLevel)) {
+            // 未绑定 owner：本机累计降级计算
+            long finalCost = Math.max(1, Config.ENERGY_PER_SKILL_POINT.get());
+            long startCost = Math.max(1, Math.min(finalCost, Config.ENERGY_START_COST.get()));
+            int step = Math.max(1, Config.ENERGY_STEP_POINTS.get());
+            long converted = Math.min(totalConverted, step);
+            long increment = (finalCost - startCost) / step;
+            result = startCost + converted * increment;
+        } else {
+            // 绑定 owner：玩家子系统统一折扣（所有机器共享同一档位）
+            result = org.zifeng.skilltree.PlayerPushState.get(ownerUUID).getCurrentCostPerPoint(serverLevel);
+        }
         cachedThreshold = result;
         cachedThresholdTick = gameTime;
         return result;
     }
 
     /**
-     * 玩家整体累计转换的技能点数（阶梯消耗依据）。
+     * 玩家整体累计转换的技能点数（阶梯消耗依据，前 2000 点打折进度）。
+     * ⚠️ 2026-08-28 架构升级：读玩家子系统共享缓存（20 tick 刷新），
+     * 挂机 20 台机器 = 每 tick 1 次缓存读取（原来每台机器都查 SavedData）。
      * 未绑定 owner 或服务端不可用时降级用本机累计（保持显示/计算不崩）。
      */
     private long getPlayerConvertedPoints() {
         if (ownerUUID == null || !(level instanceof ServerLevel serverLevel)) {
             return totalConverted;
         }
-        PlayerSkillSavedData data = PlayerSkillSavedData.get(serverLevel);
-        PlayerSkillRecord record = data.getOrCreatePlayer(ownerUUID);
-        return record.getTotalConvertedPoints();
+        return org.zifeng.skilltree.PlayerPushState.get(ownerUUID).getConvertedPoints(serverLevel);
     }
 
     /** 由方块 getTicker 驱动的服务端每 tick 逻辑 */
@@ -421,12 +428,8 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
     }
 
     /** 给绑定玩家发放技能点（玩家离线也照常累计，符合挂机玩法）
-     *  ⚠️ 2026-08-25 多人优化：发送限频（每 10 tick 合并发送一次），
-     *     防止无限制模式每 tick 转换时全量重发 SkillTreeDataS2CPacket（多人带宽优化）。 */
-    private static final long SYNC_INTERVAL_TICKS = 10;
-    private long lastSyncTick = -1;
-    private long pendingGranted = 0;
-
+     *  ⚠️ 2026-08-28 架构升级：走玩家子系统增量推送（SkillPointDeltaS2CPacket 16 字节），
+     *     替代原来每 10 tick 全量重发 SkillTreeDataS2CPacket（多人带宽优化 + 防数据串）。 */
     private void grantSkillPoints(long amount) {
         if (ownerUUID == null || amount <= 0) {
             return;
@@ -443,21 +446,12 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
                 record.addSkillPoints(granted);
             }
             data.setDirty();
-            // ⚠️ 多人优化：限频发送——每 SYNC_INTERVAL_TICKS tick 合并发一次（pending 累计中间变更）
-            long gameTime = level.getGameTime();
-            if (granted > 0) {
-                pendingGranted += granted;
-            }
-            if (lastSyncTick < 0 || gameTime - lastSyncTick >= SYNC_INTERVAL_TICKS) {
-                lastSyncTick = gameTime;
-                net.minecraft.server.level.ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(ownerUUID);
-                if (owner != null) {
-                    org.zifeng.skilltree.network.ModNetwork.sendToPlayer(owner, SkillTreeDataS2CPacket.from(record));
-                    pendingGranted = 0;
-                } else {
-                    pendingGranted = 0; // 离线不积累 pending（下次进世界全量同步）
-                }
-            }
+            // ⚠️ 子系统联动（2026-08-28）：
+            //  ① 阶梯进度缓存失效（下一 tick 机器 getThreshold 自动重读玩家整体进度）
+            //  ② 技能点增量合并推送（每 10 tick 一个 16 字节增量包，替代全量）
+            org.zifeng.skilltree.PlayerPushState push = org.zifeng.skilltree.PlayerPushState.get(ownerUUID);
+            push.invalidateConvertedCache();
+            push.addSkillPointDelta(granted, serverLevel);
         }
     }
 
