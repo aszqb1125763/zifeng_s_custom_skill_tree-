@@ -63,8 +63,13 @@ public class AuraEvents {
     public static void setPlayerWeatherMode(ServerPlayer player, int mode) {
         weatherModeByPlayer.put(player.getUUID(), Math.max(0, Math.min(2, mode)));
         currentWeatherMode = Math.max(0, Math.min(2, mode));
-        // 事件驱动：天气模式实际变化 → 推送全局状态给关注玩家（客户端 tooltip 显示更新）
-        org.zifeng.skilltree.GlobalStateSync.pushToWatchers();
+        // 事件驱动：标记全局状态变化 → tick 末合并推送（2026-08-28 架构升级，避免每次发包）
+        org.zifeng.skilltree.GlobalStateSync.markDirty();
+    }
+
+    /** 服务器当前晴空环天气模式码（GlobalStateSync 推送用，2026-08-28） */
+    public static int getCurrentWeatherMode() {
+        return currentWeatherMode;
     }
 
     /** 玩家登出/切换存档时清理锁定计数（防跨会话残留计数，导致 gamerule 永远锁死） */
@@ -101,23 +106,18 @@ public class AuraEvents {
             // 只要学了 + 技能开关开启就生效（修复整合包中不开总开关时不生效的问题）
             boolean timeOn = record.getLearnedPoints(Skills.AURA_TIME) > 0 && record.isEnabled(Skills.AURA_TIME);
             updateTimeLock(player, timeOn);
-            if (timeOn) {
+            // ⚠️ 2026-08-28 性能：enforce 每 5 tick 检查一次（gamerule 读取/比较是每玩家每 tick 开销；与 1.20.1 对齐）
+            if (timeOn && player.tickCount % 5 == 0) {
                 enforceTimeLock(player);
             }
             // 晴空环：同理
             boolean weatherOn = record.getLearnedPoints(Skills.AURA_WEATHER) > 0 && record.isEnabled(Skills.AURA_WEATHER);
             updateWeatherLock(player, weatherOn);
-            if (weatherOn) {
+            if (weatherOn && player.tickCount % 5 == 0) {
                 enforceWeatherLock(player);
             }
-            // ⚠️ 事件驱动关注注册（2026-08-27）：开了任一全局技能（时环/晴空环/AE无限回路）→ 注册全局状态关注；
-            //    关闭全部 → 取消关注。状态变化时 GlobalStateSync 事件推送，平时零网络流量。
-            if (timeOn || weatherOn || (record.getLearnedPoints(Skills.AE_INFINITE_CHANNEL) > 0
-                    && record.isEnabled(Skills.AE_INFINITE_CHANNEL))) {
-                org.zifeng.skilltree.GlobalStateSync.addWatcher(player.getUUID());
-            } else {
-                org.zifeng.skilltree.GlobalStateSync.removeWatcher(player.getUUID());
-            }
+            // ⚠️ 2026-08-28 订阅改界面驱动（见 OpenSkillTreeC2SPacket）：打开技能树 → 订阅全部全局状态；
+            //    关闭界面 → 取消订阅。此处不再按技能开关订阅（原先关闭/重置后订阅被清 → 全局状态不再推送）。
             // 攻击/治疗光环：直接按各技能开关执行（不再有总开关；K 键只控制伤害/速度）
             auraAttack(player, record);
             auraHeal(player, record);
@@ -147,8 +147,8 @@ public class AuraEvents {
                 restoreTimeLock(player); // 全部关闭：恢复时间自然流动
             }
         }
-        // 事件驱动：时之环开关实际变化 → 推送全局状态给关注玩家（客户端读 gamerule 校准显示）
-        org.zifeng.skilltree.GlobalStateSync.pushToWatchers();
+        // 事件驱动：时之环开关实际变化 → 标记全局状态变化（tick 末合并推送）
+        org.zifeng.skilltree.GlobalStateSync.markDirty();
     }
 
     /** 锁定期间每 tick 确保：doDaylightCycle=false + 时间=锁定值（仅被睡觉//time 破坏时才纠正，平时只读零开销） */
@@ -174,9 +174,9 @@ public class AuraEvents {
         }
     }
 
-    /** 恢复时间自然流动（doDaylightCycle=true） */
+    /** 恢复时间自然流动（doDaylightCycle=true）；⚠️ 登出瞬间 serverLevel 可能 null，用 player.getServer() 兜底 */
     private static void restoreTimeLock(ServerPlayer player) {
-        MinecraftServer server = player.serverLevel() != null ? player.serverLevel().getServer() : null;
+        MinecraftServer server = player.serverLevel() != null ? player.serverLevel().getServer() : player.getServer();
         if (server == null) {
             return;
         }
@@ -201,8 +201,8 @@ public class AuraEvents {
                 restoreWeatherLock(player); // 全部关闭：恢复天气自然循环
             }
         }
-        // 事件驱动：晴空环开关实际变化 → 推送全局状态给关注玩家
-        org.zifeng.skilltree.GlobalStateSync.pushToWatchers();
+        // 事件驱动：晴空环开关实际变化 → 标记全局状态变化（tick 末合并推送）
+        org.zifeng.skilltree.GlobalStateSync.markDirty();
     }
 
     /** 锁定期间每 tick 确保：doWeatherCycle=false + 锁定玩家选择的天气模式（仅被 /weather 命令破坏时才纠正） */
@@ -224,9 +224,9 @@ public class AuraEvents {
         }
     }
 
-    /** 恢复天气自然循环（doWeatherCycle=true） */
+    /** 恢复天气自然循环（doWeatherCycle=true）；⚠️ 登出瞬间 serverLevel 可能 null，用 player.getServer() 兜底 */
     private static void restoreWeatherLock(ServerPlayer player) {
-        MinecraftServer server = player.serverLevel() != null ? player.serverLevel().getServer() : null;
+        MinecraftServer server = player.serverLevel() != null ? player.serverLevel().getServer() : player.getServer();
         if (server == null) {
             return;
         }
@@ -442,18 +442,26 @@ public class AuraEvents {
         };
     }
 
+    /** DE 类名缓存（2026-08-28 性能：按 Class 缓存判断结果，避免触发 tick 时对每个目标 getClass().getName() 分配字符串；与 1.20.1 对齐） */
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, Boolean> DRACONIC_CRYSTAL_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, Boolean> DRACONIC_GUARDIAN_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
     /** DE 守卫水晶特判（GuardianCrystalEntity 是 Entity 不是 LivingEntity，用类名匹配不依赖 DE 编译） */
     private static boolean isDraconicCrystal(Entity target) {
-        String name = target.getClass().getName();
-        return name.startsWith("com.brandon3055.draconicevolution.entity.")
-                && (name.contains("GuardianCrystal") || name.contains("ChaosCrystal"));
+        return DRACONIC_CRYSTAL_CACHE.computeIfAbsent(target.getClass(), cls -> {
+            String name = cls.getName();
+            return name.startsWith("com.brandon3055.draconicevolution.entity.")
+                    && (name.contains("GuardianCrystal") || name.contains("ChaosCrystal"));
+        });
     }
 
     /** DE 混沌守卫本体特判（类名匹配，不依赖 DE 编译） */
     private static boolean isDraconicGuardian(LivingEntity target) {
-        String name = target.getClass().getName();
-        return name.startsWith("com.brandon3055.draconicevolution.entity.")
-                && (name.contains("DraconicGuardian") || name.contains("ChaosGuardian"));
+        return DRACONIC_GUARDIAN_CACHE.computeIfAbsent(target.getClass(), cls -> {
+            String name = cls.getName();
+            return name.startsWith("com.brandon3055.draconicevolution.entity.")
+                    && (name.contains("DraconicGuardian") || name.contains("ChaosGuardian"));
+        });
     }
 
     /** 反射缓存：DE 守卫的 protected attackDragonFrom(DamageSource, float) 方法 */

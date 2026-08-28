@@ -163,7 +163,7 @@ public class ModKeyBindingEvents {
             if (!(mc.screen instanceof SkillTreeScreen)) {
                 mc.setScreen(new SkillTreeScreen(0, Map.of(), Map.of(), Map.of(), true, Map.of()));
             }
-            PacketDistributor.sendToServer(new OpenSkillTreeC2SPacket());
+            PacketDistributor.sendToServer(new OpenSkillTreeC2SPacket(true));
         }
         // 2026-08-13：原版 设置→控制 只保留打开技能树；
         // 光环总开关/目标模式/磁铁/光环锁定/光环独立开关的原版快捷键全部移除，

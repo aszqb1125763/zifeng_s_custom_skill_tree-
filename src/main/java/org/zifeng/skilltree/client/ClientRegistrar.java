@@ -29,6 +29,7 @@ public class ClientRegistrar {
             org.zifeng.skilltree.client.SkillPointHudRenderer.onDisconnect();
             org.zifeng.skilltree.client.ReviveHudRenderer.setCooldown(false, 0);
             org.zifeng.skilltree.client.ModKeyBindingEvents.onDisconnect();
+            org.zifeng.skilltree.client.ClientGlobalState.reset(); // 2026-08-28：全局状态缓存重置（防跨服残留）
         });
     }
 }

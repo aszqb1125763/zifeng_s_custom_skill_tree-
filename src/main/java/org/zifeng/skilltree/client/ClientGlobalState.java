@@ -16,9 +16,43 @@ public final class ClientGlobalState {
 
     /** AE2 频道模式码（-1 = 未知/未装 AE2；0=默认 1=X2 2=X3 3=X4 4=无限） */
     private static volatile int aeChannelMode = -1;
+    /** 晴空环全局天气模式码（-1 = 未知；0=晴 1=雨 2=雷暴；2026-08-28 随 GlobalStateS2CPacket 同步） */
+    private static volatile int weatherMode = -1;
+    /** 时间锁定状态（-1 = 未知；0=未锁 1=锁定；2026-08-28 随 GlobalStateS2CPacket 同步） */
+    private static volatile int timeLocked = -1;
 
     public static void setAeChannelMode(int mode) {
         aeChannelMode = mode;
+    }
+
+    public static void setWeatherMode(int mode) {
+        weatherMode = mode;
+    }
+
+    public static void setTimeLocked(boolean locked) {
+        timeLocked = locked ? 1 : 0;
+    }
+
+    /** 断开连接重置全部缓存（2026-08-28：防跨服残留——上次服务器的 AE/天气/时间状态不能带到下个服务器） */
+    public static void reset() {
+        aeChannelMode = -1;
+        weatherMode = -1;
+        timeLocked = -1;
+    }
+
+    /** 服务器当前晴空环天气模式码（-1 未知时回退本地缓存） */
+    public static int getWeatherMode() {
+        return weatherMode;
+    }
+
+    /** 服务器当前天气模式文字 */
+    public static String getWeatherModeText() {
+        return switch (weatherMode) {
+            case 1 -> "🌧 雨天";
+            case 2 -> "⛈ 雷暴";
+            case 0 -> "☀ 晴天";
+            default -> "未知";
+        };
     }
 
     /** AE 频道模式文字（tooltip 显示用） */
@@ -33,8 +67,11 @@ public final class ClientGlobalState {
         };
     }
 
-    /** 时之环：服务器时间是否已锁定（doDaylightCycle=false = 锁定中；客户端本地读取零开销） */
+    /** 时之环：服务器时间是否已锁定（优先推送值；未同步时本地读 gamerule 零开销） */
     public static boolean isTimeLocked() {
+        if (timeLocked >= 0) {
+            return timeLocked == 1;
+        }
         var level = Minecraft.getInstance().level;
         return level != null && !level.getGameRules().getBoolean(GameRules.RULE_DAYLIGHT);
     }

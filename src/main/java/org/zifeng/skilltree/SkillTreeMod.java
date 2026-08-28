@@ -55,6 +55,10 @@ public class SkillTreeMod {
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.LockEvents.class);
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.LootVacuumEvents.class);
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.GiftEvents.class);
+        // 主系统 Tick 末合并推送（2026-08-28 架构升级：一 tick 内多次 markDirty → 末尾合并成一次）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) -> {
+            org.zifeng.skilltree.GlobalStateSync.onServerTickEnd();
+        });
 
         if (FMLLoader.getDist().isClient()) {
             ClientRegistrar.register(modEventBus);

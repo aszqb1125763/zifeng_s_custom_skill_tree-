@@ -155,12 +155,19 @@ public class SkillPointHudRenderer {
     }
 
     public static void adjustOffsetX(int delta) {
-        hudOffsetX = Math.max(-200, Math.min(400, hudOffsetX + delta));
+        hudOffsetX = Math.max(-800, Math.min(800, hudOffsetX + delta));
         saveOffset();
     }
 
     public static void adjustOffsetY(int delta) {
-        hudOffsetY = Math.max(-300, Math.min(200, hudOffsetY + delta));
+        hudOffsetY = Math.max(-400, Math.min(400, hudOffsetY + delta));
+        saveOffset();
+    }
+
+    /** 重置位置偏移（X/Y 归零） */
+    public static void resetOffset() {
+        hudOffsetX = 0;
+        hudOffsetY = 0;
         saveOffset();
     }
 

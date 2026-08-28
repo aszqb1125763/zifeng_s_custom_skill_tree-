@@ -51,6 +51,10 @@ public record WeatherModeC2SPacket(int mode) implements CustomPacketPayload {
                 };
                 player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
                         icons[mode] + " 晴空环天气：" + modeText));
+                // ⚠️ 2026-08-28 修复：回发技能数据（含 weatherMode）→ 客户端 weatherModeClient 校准，
+                //    tooltip 天气文字立即刷新（此前 1.21.1 缺回发导致不显示新天气）
+                net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                        SkillTreeDataS2CPacket.from(record));
             }
         });
     }

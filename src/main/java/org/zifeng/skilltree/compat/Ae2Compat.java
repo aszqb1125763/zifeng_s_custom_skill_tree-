@@ -174,8 +174,8 @@ public final class Ae2Compat {
             SAVE.invoke(instance);
             repathAllGrids();
             currentModeCode = codeOf(target);
-            // 事件驱动：状态实际变化 → 推送全局状态给关注玩家（性能最优，非轮询）
-            org.zifeng.skilltree.GlobalStateSync.pushToWatchers();
+            // 事件驱动：状态实际变化 → 标记全局状态变化（tick 末合并推送，2026-08-28）
+            org.zifeng.skilltree.GlobalStateSync.markDirty();
             return true;
         } catch (Throwable ignored) {
             // AE2 API 变动等 → 静默跳过（技能仍可学习，只是不生效）
@@ -208,7 +208,7 @@ public final class Ae2Compat {
                     repathAllGrids();
                 }
                 currentModeCode = codeOf(target);
-                org.zifeng.skilltree.GlobalStateSync.pushToWatchers();
+                org.zifeng.skilltree.GlobalStateSync.markDirty();
                 return;
             }
             // ⚠️ 幂等（2026-08-27 性能）：集合空且已恢复过 → 每 tick 调用直接返回，不重复恢复/repath/推送
@@ -226,12 +226,11 @@ public final class Ae2Compat {
             repathAllGrids();
             currentModeCode = codeOf(target);
             restoredDefault = true; // 标记已恢复默认
-            // 事件驱动：状态实际变化 → 推送全局状态给关注玩家
-            org.zifeng.skilltree.GlobalStateSync.pushToWatchers();
+            previousMode = null;    // ⚠️ 2026-08-28 修复：只有全部关闭并恢复后才清空，防止多人轮流开关时丢失初始模式
+            // 事件驱动：状态实际变化 → 标记全局状态变化（tick 末合并推送，2026-08-28）
+            org.zifeng.skilltree.GlobalStateSync.markDirty();
         } catch (Throwable ignored) {
             // 恢复失败静默跳过（AE 保持当前模式）
-        } finally {
-            previousMode = null; // 已处理，重置记录
         }
     }
 

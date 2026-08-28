@@ -3,10 +3,12 @@ package org.zifeng.skilltree.block;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -103,5 +105,15 @@ public class SkillPointConverterBlock extends HorizontalDirectionalBlock impleme
             }
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    /**
+     * 挖掘掉落：标准 loot table（data/zifeng_s_custom_skill_tree/loot_table/blocks/star_energy_converter.json）。
+     * ⚠️ 2026-08-28：勿加 onRemove 兜底掉落——会与 loot table 重复掉两个。
+     * 标准破坏流程（Player.destroyBlock → getDrops 用 loot table）已生成掉落实体，onRemove 只需交给 super。
+     */
+    @Override
+    protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
+        super.onRemove(state, level, pos, newState, movedByPiston);
     }
 }

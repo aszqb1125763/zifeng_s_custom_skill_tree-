@@ -96,8 +96,12 @@ public class SkillTreeScreen extends Screen {
         };
     }
 
-    /** 晴空环天气模式文字（0 晴 / 1 雨 / 2 雷暴；2026-08-27） */
+    /** 晴空环天气模式文字（0 晴 / 1 雨 / 2 雷暴；2026-08-28：优先服务器全局值，未同步回退本地缓存） */
     private String weatherTextOf() {
+        int global = org.zifeng.skilltree.client.ClientGlobalState.getWeatherMode();
+        if (global >= 0) {
+            return org.zifeng.skilltree.client.ClientGlobalState.getWeatherModeText();
+        }
         return switch (org.zifeng.skilltree.client.ModKeyBindingEvents.getWeatherModeClient()) {
             case 1 -> "🌧 雨天";
             case 2 -> "⛈ 雷暴";
@@ -140,7 +144,7 @@ public class SkillTreeScreen extends Screen {
         tickCounter++;
         if (tickCounter >= 40) {
             tickCounter = 0;
-            PacketDistributor.sendToServer(new OpenSkillTreeC2SPacket());
+            PacketDistributor.sendToServer(new OpenSkillTreeC2SPacket(true));
         }
     }
 
@@ -451,7 +455,7 @@ public class SkillTreeScreen extends Screen {
     }
 
     /** 技能点 HUD 开关按钮（顶部信息区右下角，2026-08-25：自由开关左下角技能点 HUD）
-     *  下面两行：X 位置 / Y 位置调节（点击 ±10，Shift+点击 ±1） */
+     *  下面三行：X 位置 / Y 位置调节（与技能点切换一致：点击 ±1，Shift+点击 ±10，Ctrl+点击 ±100）+ 重置归零 */
     private static final int HUD_BTN_W = 110;
     private static final int HUD_BTN_H = 14;
     private static final int HUD_POS_W = 110;
@@ -483,6 +487,14 @@ public class SkillTreeScreen extends Screen {
         int y3 = y2 + HUD_POS_H + 2;
         drawHudPosRow(guiGraphics, x, y3, "Y位置",
                 org.zifeng.skilltree.client.SkillPointHudRenderer.getHudOffsetY());
+        // 行4：重置按钮（X/Y 归零）
+        int y4 = y3 + HUD_POS_H + 2;
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y4, x + HUD_BTN_W, y4 + HUD_BTN_H, 0xFF3A2A2A);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y4, x + HUD_BTN_W, y4 + 1, 0xFFDD5555);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y4 + HUD_BTN_H - 1, x + HUD_BTN_W, y4 + HUD_BTN_H, 0xFFDD5555);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y4, x + 1, y4 + HUD_BTN_H, 0xFFDD5555);
+        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x + HUD_BTN_W - 1, y4, x + HUD_BTN_W, y4 + HUD_BTN_H, 0xFFDD5555);
+        guiGraphics.drawCenteredString(font, "↺ 重置位置", x + HUD_BTN_W / 2, y4 + 3, 0xFFFF5555);
     }
 
     private void drawHudPosRow(GuiGraphics guiGraphics, int x, int y, String label, int value) {
@@ -497,7 +509,7 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.drawCenteredString(font, "▶", x + HUD_POS_W - 10, y + 2, 0xFF87CEEB);
     }
 
-    /** 点击 HUD 区域（返回 true=已处理）：行1 开关；行2 X位置；行3 Y位置 */
+    /** 点击 HUD 区域（返回 true=已处理）：行1 开关；行2 X位置；行3 Y位置；行4 重置（2026-08-28） */
     private boolean handleHudButtonClick(double mouseX, double mouseY) {
         int x = width - HUD_BTN_W - 12;
         int y = hudPanelTop();
@@ -507,11 +519,13 @@ public class SkillTreeScreen extends Screen {
                     !org.zifeng.skilltree.client.SkillPointHudRenderer.isVisible());
             return true;
         }
-        // 行2/行3：X/Y 位置
+        // 行2/行3：X/Y 位置（与技能点切换一致：普通=1，Shift=10，Ctrl=100）
         int y2 = y + HUD_BTN_H + 2;
         int y3 = y2 + HUD_POS_H + 2;
+        int y4 = y3 + HUD_POS_H + 2;
+        boolean ctrl = isControlHeld();
         boolean shift = isShiftHeld();
-        int step = shift ? 1 : 10;
+        int step = ctrl ? 100 : (shift ? 10 : 1);
         if (mouseX >= x && mouseX <= x + HUD_POS_W && mouseY >= y2 && mouseY <= y2 + HUD_POS_H) {
             // X 位置：左箭- / 右箭+
             if (mouseX < x + 22) {
@@ -527,6 +541,11 @@ public class SkillTreeScreen extends Screen {
             } else if (mouseX > x + HUD_POS_W - 22) {
                 org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetY(step);
             }
+            return true;
+        }
+        // 行4：重置位置（X/Y 归零）
+        if (mouseX >= x && mouseX <= x + HUD_BTN_W && mouseY >= y4 && mouseY <= y4 + HUD_BTN_H) {
+            org.zifeng.skilltree.client.SkillPointHudRenderer.resetOffset();
             return true;
         }
         return false;
@@ -630,12 +649,18 @@ public class SkillTreeScreen extends Screen {
         // 2.5b 寰宇法则（全局技能）：显眼的服务器当前状态提示（2026-08-27 需求）
         if (Skills.isGlobalSkill(skillId)) {
             // 晴空环：当前锁定天气 + 按键切换提示
+            // ⚠️ 2026-08-28 修复：显示【全局天气模式】而非 gamerule 锁定状态——
+            //   currentWeatherMode 是服务器全局变量（最后切换者生效），与 gamerule 可能不一致
+            //   （有人开晴空环但另一人关掉恢复 gamerule 后，模式仍在）。
             if (Skills.AURA_WEATHER.equals(skillId)) {
                 boolean locked = org.zifeng.skilltree.client.ClientGlobalState.isWeatherLocked();
                 String weather = weatherTextOf();
-                lines.add(new TooltipLine("🌍 服务器当前：" + (locked ? "已锁定为 " + weather : "天气自然循环（未锁定）"),
-                        locked ? 0xFFFFD700 : 0xFF888888, 1.0F));
-                if (locked) {
+                // 天气模式已同步（>=0）且非未知 → 显示"已锁定为 X"；否则按 gamerule 显示
+                boolean modeKnown = org.zifeng.skilltree.client.ClientGlobalState.getWeatherMode() >= 0;
+                lines.add(new TooltipLine("🌍 服务器当前：" + (modeKnown ? "已锁定为 " + weather
+                                : (locked ? "已锁定（天气锁定中）" : "天气自然循环（未锁定）")),
+                        (modeKnown || locked) ? 0xFFFFD700 : 0xFF888888, 1.0F));
+                if (modeKnown || locked) {
                     lines.add(new TooltipLine("   按第二快捷键（🎯）切换 晴/雨/雷暴", 0xFF66CCFF, 0.9F));
                 }
             }
@@ -653,18 +678,19 @@ public class SkillTreeScreen extends Screen {
             }
         }
 
-        // 3. 消耗信息（金色，小一号）
-        String costText = switch (type) {
-            case BASE -> "[每级消耗 " + fmtCost(Skills.basePointCost()) + " 点]";
-            case AMPLIFY -> "[每级消耗 " + fmtCost(Skills.amplifyPointCost()) + " 点]";
-            case MAGIC -> "[每级消耗 " + fmtCost(Skills.getMagicCostAtLevel(skillId, 0)) + " 点，线性增长]";
-            case AURA -> "[下次消耗 " + (long) recordNextCost(skillId) + " 点]";
-            case ULTIMATE -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点]";
-            case SPECIAL -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点]";
-            case GLOBAL -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点]" + (Skills.getGlobalMaxPoints(skillId) > 1 ? "，循序升级" : "，一次性") + (Skills.isGlobalSkill(skillId) ? "，全局生效" : "");
-            case MACHINE -> "[消耗 " + fmtCost(recordNextCost(skillId)) + " 点，一次性]";
-            case GIFT -> "[按游戏时长激活，不消耗技能点]";
-        };
+        // 3. 消耗信息（金色，小一号）：满级隐藏消耗；未满级统一显示下一级真实消耗（按当前等级）
+        int maxPoints = Skills.getMaxPoints(skillId);
+        String costText;
+        if (points >= maxPoints) {
+            costText = "[已满级 " + points + "/" + maxPoints + " 级]";
+        } else if (Skills.isGiftSkill(skillId)
+                && (Skills.GIFT_TIME_BAPTISM.equals(skillId) || Skills.GIFT_TIME_STORM.equals(skillId)
+                || Skills.GIFT_TIME_FLOOD.equals(skillId))) {
+            // 子枫的馈赠·时间系列：按游戏时长激活，不消耗技能点
+            costText = "[按游戏时长激活，不消耗技能点]";
+        } else {
+            costText = "[下次消耗 " + fmtCost(recordNextCost(skillId)) + " 点]";
+        }
         lines.add(new TooltipLine(" ", 0xFF000000, 0.6F));
         lines.add(new TooltipLine(costText, 0xFFFFD700, 0.9F));
 
@@ -831,11 +857,11 @@ public class SkillTreeScreen extends Screen {
         return false;
     }
 
-    /** HUD 面板 3 行区域命中（开关 + X + Y） */
+    /** HUD 面板 4 行区域命中（开关 + X + Y + 重置） */
     private boolean isHudPanelHit(double mouseX, double mouseY) {
         int x = width - HUD_BTN_W - 12;
         int y = hudPanelTop();
-        int panelBottom = y + HUD_BTN_H + 2 + HUD_POS_H + 2 + HUD_POS_H;
+        int panelBottom = y + HUD_BTN_H + 2 + HUD_POS_H + 2 + HUD_POS_H + 2 + HUD_BTN_H;
         return mouseX >= x && mouseX <= x + HUD_BTN_W && mouseY >= y && mouseY <= panelBottom;
     }
 
@@ -1933,12 +1959,16 @@ public class SkillTreeScreen extends Screen {
         if (type == Skills.SkillType.AMPLIFY) return Skills.getAmplifyCostAtLevel(learnedSkills.getOrDefault(skillId, 0)); // 线性 +2/级
         if (type == Skills.SkillType.MAGIC) return Skills.getMagicCostAtLevel(skillId, learnedSkills.getOrDefault(skillId, 0)); // 线性（默认+2/级，吟唱缩减+5/级）
         if (type == Skills.SkillType.MACHINE) return Skills.getMachineCost(skillId); // 机械共鸣：一次性（机械之星 1000 / 其余 5000）
-        if (type == Skills.SkillType.GIFT) return 0; // 子枫的馈赠：不消耗技能点
+        if (type == Skills.SkillType.GIFT) return Skills.getGiftCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 子枫的馈赠：时间系列 0 / 洗礼阶梯 / 增幅指数
         return Skills.getUltimateLevelCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 终极节点/特殊被动（单次或节点类阶梯递增）
     }
 
     private boolean isShiftHeld() {
         return Screen.hasShiftDown();
+    }
+
+    private boolean isControlHeld() {
+        return Screen.hasControlDown();
     }
 
     @Override
@@ -1971,8 +2001,8 @@ public class SkillTreeScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         // 技能点 HUD 位置滚轮调整（2026-08-25）：悬停在 HUD 面板上时
-        // 滚轮 = 调整位置（X行滚轮改X，Y行滚轮改Y）；Shift+滚轮 = 10 点，普通 = 1 点
-        int hudStep = Screen.hasShiftDown() ? 10 : 1;
+        // 滚轮 = 调整位置（X行滚轮改X，Y行滚轮改Y）；与技能点切换一致：Ctrl=100，Shift=10，普通=1
+        int hudStep = isControlHeld() ? 100 : (Screen.hasShiftDown() ? 10 : 1);
         if (isHudPanelHit(mouseX, mouseY)) {
             int x = width - HUD_BTN_W - 12;
             int y = hudPanelTop();
@@ -2055,10 +2085,12 @@ public class SkillTreeScreen extends Screen {
         return false;
     }
 
-    /** 关闭界面时保存位置/缩放（下次打开恢复，2026-08-13 需求） */
+    /** 关闭界面时保存位置/缩放（下次打开恢复，2026-08-13 需求）+ 取消全局状态订阅（2026-08-28） */
     @Override
     public void onClose() {
         org.zifeng.skilltree.client.SkillKeyBinds.saveViewState(panX, panY, scale);
+        // 关闭技能树 → 服务端取消全局状态订阅（SUB_ALL→0，不再推送，省流量）
+        PacketDistributor.sendToServer(new OpenSkillTreeC2SPacket(false));
         super.onClose();
     }
 
