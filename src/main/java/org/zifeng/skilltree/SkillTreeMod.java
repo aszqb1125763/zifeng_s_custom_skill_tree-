@@ -47,6 +47,8 @@ public class SkillTreeMod {
                 org.zifeng.skilltree.command.ModCommands.register(event.getDispatcher()));
 
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        // Config 热重载/加载后重挂在线玩家属性（2026-08-29：属性每点加成进 Config 后需即时生效）
+        modEventBus.addListener(Config::onConfigChanged);
 
         NeoForge.EVENT_BUS.register(SkillEvents.class);
         NeoForge.EVENT_BUS.register(UltimateEvents.class);

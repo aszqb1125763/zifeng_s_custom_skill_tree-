@@ -634,8 +634,8 @@ public class UltimateEvents {
                     long invuln = org.zifeng.skilltree.Config.MASTER_UNDYING_INVULN.get();
                     masterUndyingUntil.put(uuid, now + cd);
                     masterInvulnUntil.put(uuid, now + invuln);
-                    player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                            "🛡 全能精通防御生效，免死一次！（冷却 " + (cd / 20 / 60) + " 分钟）"));
+                    player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                            "chat.zifeng_s_custom_skill_tree.master_undying", (cd / 20 / 60)));
                     return;
                 }
                 // 冷却中：保 1 血不死（真正的"保证玩家不死"，除非冷却已过）
@@ -667,8 +667,8 @@ public class UltimateEvents {
             long cooldown = org.zifeng.skilltree.Config.REVIVE_COOLDOWN_TICKS.get();
             reviveCooldownUntil.put(uuid, now + cooldown);
             int seconds = (int) (cooldown / 20);
-            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                    "🔥 凤凰涅槃！你已原地复活（冷却 " + seconds + " 秒）"));
+            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                    "chat.zifeng_s_custom_skill_tree.revive", seconds));
         }
     }
 

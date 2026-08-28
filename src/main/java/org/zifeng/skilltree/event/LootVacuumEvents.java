@@ -76,15 +76,15 @@ public final class LootVacuumEvents {
         if (same) {
             record.clearLootVacuumBind();
             markDirty(player);
-            player.displayClientMessage(Component.literal("§7[凋落物挪移] 已解除容器绑定"), false);
+            player.displayClientMessage(Component.translatable("chat.zifeng_s_custom_skill_tree.lootvac_unbind"), false);
             level.playSound(null, player.blockPosition(), SoundEvents.ENDER_EYE_DEATH, SoundSource.PLAYERS, 1.0F, 1.0F);
             return;
         }
         record.setLootVacuumBind(dim, pos.getX(), pos.getY(), pos.getZ(),
                 face != null ? face.ordinal() : 0, getContainerName(level, pos));
         markDirty(player);
-        player.displayClientMessage(Component.literal("§a[凋落物挪移] 已绑定容器 " + getContainerName(level, pos)
-                + " [" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + "]，击杀/挖掘掉落物将直传容器"), false);
+        player.displayClientMessage(Component.translatable("chat.zifeng_s_custom_skill_tree.lootvac_bind",
+                getContainerName(level, pos), pos.getX(), pos.getY(), pos.getZ()), false);
         level.playSound(null, player.blockPosition(), SoundEvents.END_PORTAL_FRAME_FILL, SoundSource.PLAYERS, 1.0F, 1.0F);
     }
 

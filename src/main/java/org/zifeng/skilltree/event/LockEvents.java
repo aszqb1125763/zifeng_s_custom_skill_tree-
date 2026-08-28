@@ -31,8 +31,8 @@ public class LockEvents {
         Entity entity = event.getEntity();
         if (entity instanceof ServerPlayer player && isLockEnabled(player)) {
             event.setCanceled(true);
-            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                    "🛡 光环锁定：传送已被免疫（光环锁定中无法被传送）"));
+            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                    "chat.zifeng_s_custom_skill_tree.lock_tp_immune"));
         }
     }
 

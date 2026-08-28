@@ -44,13 +44,14 @@ public record WeatherModeC2SPacket(int mode) implements CustomPacketPayload {
                 AuraEvents.setPlayerWeatherMode(player, mode);
                 // 聊天提示（图标区分天气）
                 String[] icons = {"☀", "🌧", "⛈"};
-                String modeText = switch (mode) {
-                    case 1 -> "雨天";
-                    case 2 -> "雷暴";
-                    default -> "晴天";
+                String modeKey = switch (mode) {
+                    case 1 -> "weather_rain";
+                    case 2 -> "weather_thunder";
+                    default -> "weather_sunny";
                 };
-                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                        icons[mode] + " 晴空环天气：" + modeText));
+                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                        "chat.zifeng_s_custom_skill_tree.weather_set", icons[mode],
+                        net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree." + modeKey)));
                 // ⚠️ 2026-08-28 修复：回发技能数据（含 weatherMode）→ 客户端 weatherModeClient 校准，
                 //    tooltip 天气文字立即刷新（此前 1.21.1 缺回发导致不显示新天气）
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,

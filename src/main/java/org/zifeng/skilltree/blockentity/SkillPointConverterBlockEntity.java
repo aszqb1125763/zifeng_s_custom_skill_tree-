@@ -373,7 +373,7 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
                 if (delta > 0) {
                     double perSec = delta / 2.0; // 每 2 秒窗口 → 每秒速率
                     java.util.Map<String, Double> rates = new java.util.HashMap<>();
-                    rates.put("⚡星能转换机", perSec);
+                    rates.put("converter:", perSec);
                     net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(owner,
                             new org.zifeng.skilltree.network.SkillPointRateS2CPacket(
                                     org.zifeng.skilltree.data.PlayerSkillSavedData.get((net.minecraft.server.level.ServerLevel) level)

@@ -1,0 +1,12 @@
+{
+  "criteria": {
+    "auto_unlock": {
+      "trigger": "minecraft:tick"
+    }
+  },
+  "rewards": {
+    "recipes": [
+      "zifeng_s_custom_skill_tree:star_energy_converter"
+    ]
+  }
+}

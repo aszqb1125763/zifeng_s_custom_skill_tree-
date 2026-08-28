@@ -11,6 +11,7 @@ import org.zifeng.skilltree.SkillTreeMod;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 
 import java.util.List;
+import java.util.function.DoubleSupplier;
 
 /**
  * 技能效果应用（统一公式）：
@@ -60,58 +61,58 @@ public final class SkillEffects {
     /** 浴血奋战：常驻最大生命增幅（ADD_MULTIPLIED_TOTAL） */
     public static final ResourceLocation BLOOD_HEALTH_MOD = ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "blood_health_bonus");
 
-    // ============ 基础技能：技能ID → [属性, 单点固定值] ============
+    // ============ 基础技能：技能ID → [属性, 单点固定值]（每点数值全部走 Config，可热重载） ============
     private static final List<BaseSkill> BASE_SKILLS = List.of(
             // 生命强化：每点 +2 生命（从原体魄拆出，纯生命成长）
-            new BaseSkill(Skills.BODY_HP, Attributes.MAX_HEALTH, 2.0),
+            new BaseSkill(Skills.BODY_HP, Attributes.MAX_HEALTH, () -> org.zifeng.skilltree.Config.BODY_HP_PER_POINT.get()),
             // 体魄强化：护甲 + 物理减伤（生命已拆出，护甲增幅保持原样）
-            new BaseSkill(Skills.BODY, Attributes.ARMOR, 0.2),
+            new BaseSkill(Skills.BODY, Attributes.ARMOR, () -> org.zifeng.skilltree.Config.BODY_ARMOR_PER_POINT.get()),
             // 物理减伤：护甲减伤原版封顶 80% 后继续叠的独立减伤层（替代原 CombatRulesMixin，零冲突）
-            new BaseSkill(Skills.BODY, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION, 0.0005),
-            new BaseSkill(Skills.TOUGH, Attributes.ARMOR_TOUGHNESS, 0.3),
-            new BaseSkill(Skills.TOUGH, Attributes.KNOCKBACK_RESISTANCE, 0.001),
-            new BaseSkill(Skills.BLADE, Attributes.ATTACK_DAMAGE, 0.4),
-            new BaseSkill(Skills.ATTACK_SPEED, Attributes.ATTACK_SPEED, 0.02),
+            new BaseSkill(Skills.BODY, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION, () -> org.zifeng.skilltree.Config.BODY_DR_PER_POINT.get()),
+            new BaseSkill(Skills.TOUGH, Attributes.ARMOR_TOUGHNESS, () -> org.zifeng.skilltree.Config.TOUGH_TOUGHNESS_PER_POINT.get()),
+            new BaseSkill(Skills.TOUGH, Attributes.KNOCKBACK_RESISTANCE, () -> org.zifeng.skilltree.Config.TOUGH_KB_PER_POINT.get()),
+            new BaseSkill(Skills.BLADE, Attributes.ATTACK_DAMAGE, () -> org.zifeng.skilltree.Config.BLADE_DAMAGE_PER_POINT.get()),
+            new BaseSkill(Skills.ATTACK_SPEED, Attributes.ATTACK_SPEED, () -> org.zifeng.skilltree.Config.ATTACK_SPEED_PER_POINT.get()),
             // 挖掘速度用原版 Attributes.MINING_EFFICIENCY（NeoForge 合入的加数属性，直接加到工具速度上；BLOCK_BREAK_SPEED 是乘数语义不对）
-            new BaseSkill(Skills.MINING, Attributes.MINING_EFFICIENCY, 0.3),
-            new BaseSkill(Skills.MOVE, Attributes.MOVEMENT_SPEED, 0.005),
-            new BaseSkill(Skills.LUCK, Attributes.LUCK, 0.1),
-            new BaseSkill(Skills.JUMP, Attributes.JUMP_STRENGTH, 0.01),
-            new BaseSkill(Skills.FLY, Attributes.FLYING_SPEED, 0.005),
-            new BaseSkill(Skills.SWIM, net.neoforged.neoforge.common.NeoForgeMod.SWIM_SPEED, 0.005), // 游泳用 NeoForge SWIM_SPEED
+            new BaseSkill(Skills.MINING, Attributes.MINING_EFFICIENCY, () -> org.zifeng.skilltree.Config.MINING_SPEED_PER_POINT.get()),
+            new BaseSkill(Skills.MOVE, Attributes.MOVEMENT_SPEED, () -> org.zifeng.skilltree.Config.MOVE_SPEED_PER_POINT.get()),
+            new BaseSkill(Skills.LUCK, Attributes.LUCK, () -> org.zifeng.skilltree.Config.LUCK_PER_POINT.get()),
+            new BaseSkill(Skills.JUMP, Attributes.JUMP_STRENGTH, () -> org.zifeng.skilltree.Config.JUMP_PER_POINT.get()),
+            new BaseSkill(Skills.FLY, Attributes.FLYING_SPEED, () -> org.zifeng.skilltree.Config.FLY_SPEED_PER_POINT.get()),
+            new BaseSkill(Skills.SWIM, net.neoforged.neoforge.common.NeoForgeMod.SWIM_SPEED, () -> org.zifeng.skilltree.Config.SWIM_SPEED_PER_POINT.get()), // 游泳用 NeoForge SWIM_SPEED
             // 杀戮光环·速度：不再加成攻速属性（改由 AuraEvents 直接控制光环攻击间隔，性能优化）
             // 防御强化：护甲倍率在护甲原版上限（30）内无意义 → 改为直接加物理减伤（每点 +0.5%，1.2.3 ×10），独立乘算层不依赖护甲
-            new BaseSkill(Skills.AMP_ARMOR, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION, 0.005)
+            new BaseSkill(Skills.AMP_ARMOR, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION, () -> org.zifeng.skilltree.Config.AMP_ARMOR_DR_PER_POINT.get())
     );
 
-    // ============ 多级终极（节点类）属性技能：技能ID → [属性, 单点固定值] ============
+    // ============ 多级终极（节点类）属性技能：技能ID → [属性, 单点固定值]（每级数值走 Config） ============
     // 接触距离：每级 +1 格触摸距离（方块交互）+ 攻击距离（实体交互），走 ADD_VALUE 直接叠加上限 50
     // 击退抗性：每级 +10% 击退抗性（KNOCKBACK_RESISTANCE，原版上限 1.0 = 100% 免疫击退），上限 10
     // ⚠️ 横扫范围（ULT_SWEEP）：改为 AOE 横扫（主目标周围 N 格敌人同受伤害，参考龙之研究武器范围升级），
     //    不走属性（属性加的是"攻击距离"，与接触距离重复，用户明确要求加的是"攻击范围"）
     private static final List<BaseSkill> MULTI_ULTIMATE_ATTRS = List.of(
-            new BaseSkill(Skills.REACH, Attributes.ENTITY_INTERACTION_RANGE, 1.0),
-            new BaseSkill(Skills.REACH, Attributes.BLOCK_INTERACTION_RANGE, 1.0),
-            new BaseSkill(Skills.ULT_KB_RESIST, Attributes.KNOCKBACK_RESISTANCE, 0.1)
+            new BaseSkill(Skills.REACH, Attributes.ENTITY_INTERACTION_RANGE, () -> org.zifeng.skilltree.Config.REACH_PER_LEVEL.get()),
+            new BaseSkill(Skills.REACH, Attributes.BLOCK_INTERACTION_RANGE, () -> org.zifeng.skilltree.Config.REACH_PER_LEVEL.get()),
+            new BaseSkill(Skills.ULT_KB_RESIST, Attributes.KNOCKBACK_RESISTANCE, () -> org.zifeng.skilltree.Config.KB_RESIST_PER_LEVEL.get())
     );
 
-    // ============ 增幅技能：技能ID → [属性, 单点百分比(小数)]（与基础技能一一对应） ============
+    // ============ 增幅技能：技能ID → [属性, 单点百分比(小数)]（与基础技能一一对应；每点数值走 Config） ============
     // 1.2.3：增幅属性原设计 +0.5% 太弱，翻倍后再 ×10（+1% → +10%、+0.8% → +8%、+1.2% → +12%）
     private static final List<BaseSkill> AMPLIFY_SKILLS = List.of(
-            new BaseSkill(Skills.AMP_HP, Attributes.MAX_HEALTH, 0.1),
-            new BaseSkill(Skills.AMP_TOUGH, Attributes.ARMOR_TOUGHNESS, 0.1),
-            new BaseSkill(Skills.AMP_TOUGH, Attributes.KNOCKBACK_RESISTANCE, 0.1),
-            new BaseSkill(Skills.AMP_LUCK, Attributes.LUCK, 0.1),
-            new BaseSkill(Skills.AMP_DAMAGE, Attributes.ATTACK_DAMAGE, 0.1),
-            new BaseSkill(Skills.AMP_ATTACK_SPEED, Attributes.ATTACK_SPEED, 0.08),
-            new BaseSkill(Skills.AMP_MINING, Attributes.MINING_EFFICIENCY, 0.12),
-            new BaseSkill(Skills.AMP_MOVE, Attributes.MOVEMENT_SPEED, 0.1),
-            new BaseSkill(Skills.AMP_JUMP, Attributes.JUMP_STRENGTH, 0.1),
-            new BaseSkill(Skills.AMP_FLY, Attributes.FLYING_SPEED, 0.1),
-            new BaseSkill(Skills.AMP_SWIM, net.neoforged.neoforge.common.NeoForgeMod.SWIM_SPEED, 0.1)
+            new BaseSkill(Skills.AMP_HP, Attributes.MAX_HEALTH, () -> org.zifeng.skilltree.Config.AMP_HP_PER_POINT.get()),
+            new BaseSkill(Skills.AMP_TOUGH, Attributes.ARMOR_TOUGHNESS, () -> org.zifeng.skilltree.Config.AMP_TOUGH_PER_POINT.get()),
+            new BaseSkill(Skills.AMP_TOUGH, Attributes.KNOCKBACK_RESISTANCE, () -> org.zifeng.skilltree.Config.AMP_TOUGH_PER_POINT.get()),
+            new BaseSkill(Skills.AMP_LUCK, Attributes.LUCK, () -> org.zifeng.skilltree.Config.AMP_LUCK_PER_POINT.get()),
+            new BaseSkill(Skills.AMP_DAMAGE, Attributes.ATTACK_DAMAGE, () -> org.zifeng.skilltree.Config.AMP_DAMAGE_PER_POINT.get()),
+            new BaseSkill(Skills.AMP_ATTACK_SPEED, Attributes.ATTACK_SPEED, () -> org.zifeng.skilltree.Config.AMP_ATTACK_SPEED_PER_POINT.get()),
+            new BaseSkill(Skills.AMP_MINING, Attributes.MINING_EFFICIENCY, () -> org.zifeng.skilltree.Config.AMP_MINING_PER_POINT.get()),
+            new BaseSkill(Skills.AMP_MOVE, Attributes.MOVEMENT_SPEED, () -> org.zifeng.skilltree.Config.AMP_MOVE_PER_POINT.get()),
+            new BaseSkill(Skills.AMP_JUMP, Attributes.JUMP_STRENGTH, () -> org.zifeng.skilltree.Config.AMP_JUMP_PER_POINT.get()),
+            new BaseSkill(Skills.AMP_FLY, Attributes.FLYING_SPEED, () -> org.zifeng.skilltree.Config.AMP_FLY_PER_POINT.get()),
+            new BaseSkill(Skills.AMP_SWIM, net.neoforged.neoforge.common.NeoForgeMod.SWIM_SPEED, () -> org.zifeng.skilltree.Config.AMP_SWIM_PER_POINT.get())
     );
 
-    private record BaseSkill(String skillId, Holder<Attribute> attribute, double perPoint) {
+    private record BaseSkill(String skillId, Holder<Attribute> attribute, DoubleSupplier perPoint) {
     }
 
     /**
@@ -129,20 +130,20 @@ public final class SkillEffects {
         for (BaseSkill b : BASE_SKILLS) {
             if (b.attribute().equals(attribute)) {
                 int points = record.isEnabled(b.skillId()) ? record.getActiveLevel(b.skillId()) : 0;
-                add += points * b.perPoint();
+                add += points * b.perPoint().getAsDouble();
             }
         }
         for (BaseSkill a : AMPLIFY_SKILLS) {
             if (a.attribute().equals(attribute)) {
                 int points = record.isEnabled(a.skillId()) ? record.getActiveLevel(a.skillId()) : 0;
-                mult += points * a.perPoint();
+                mult += points * a.perPoint().getAsDouble();
             }
         }
         // 接触距离（节点类多级终极）：每级 +1 格触摸/攻击距离（ADD_VALUE）
         for (BaseSkill r : MULTI_ULTIMATE_ATTRS) {
             if (r.attribute().equals(attribute)) {
                 int points = record.isEnabled(r.skillId()) ? record.getActiveLevel(r.skillId()) : 0;
-                add += points * r.perPoint();
+                add += points * r.perPoint().getAsDouble();
             }
         }
         boolean master = record.getLearnedPoints(Skills.ULT_MASTER) > 0 && record.isEnabled(Skills.ULT_MASTER);
@@ -175,17 +176,17 @@ public final class SkillEffects {
         // 1. 基础固定值（ADD_VALUE）——关闭的技能 points=0 自动移除残留
         for (BaseSkill base : BASE_SKILLS) {
             int points = record.isEnabled(base.skillId()) ? record.getActiveLevel(base.skillId()) : 0;
-            applyAddValue(player, base.attribute(), baseId(base.skillId()), points * base.perPoint());
+            applyAddValue(player, base.attribute(), baseId(base.skillId()), points * base.perPoint().getAsDouble());
         }
         // 2. 增幅百分比（ADD_MULTIPLIED_TOTAL）——同上
         for (BaseSkill amp : AMPLIFY_SKILLS) {
             int points = record.isEnabled(amp.skillId()) ? record.getActiveLevel(amp.skillId()) : 0;
-            applyMultiplier(player, amp.attribute(), ampId(amp.skillId()), points * amp.perPoint());
+            applyMultiplier(player, amp.attribute(), ampId(amp.skillId()), points * amp.perPoint().getAsDouble());
         }
         // 2.5 接触距离（节点类多级终极）：每级 +1 格触摸/攻击距离（ADD_VALUE；关闭/未学 → amount=0 自动移除）
         for (BaseSkill reach : MULTI_ULTIMATE_ATTRS) {
             int points = record.isEnabled(reach.skillId()) ? record.getActiveLevel(reach.skillId()) : 0;
-            applyAddValue(player, reach.attribute(), baseId(reach.skillId()), points * reach.perPoint());
+            applyAddValue(player, reach.attribute(), baseId(reach.skillId()), points * reach.perPoint().getAsDouble());
         }
         // 3. 全能精通：所有受影响的属性 +增幅（Config 可调，默认 25%；未解锁/关闭 → amount=0 移除）
         boolean master = record.getLearnedPoints(Skills.ULT_MASTER) > 0 && record.isEnabled(Skills.ULT_MASTER);

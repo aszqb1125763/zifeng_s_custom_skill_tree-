@@ -41,22 +41,24 @@ public record SetSkillLevelC2SPacket(String skillId, int level) implements Custo
                 data.setDirty();
                 SkillEffects.applyAll(player, record);
                 // 聊天提示（2026-08-13 需求：等级循环快捷键调整时显示当前生效等级）
-                String name = Skills.getDisplayName(packet.skillId());
                 int learned = record.getLearnedPoints(packet.skillId());
                 int active = packet.level();
-                String msg = "📶 " + name + " 生效等级：" + active + (learned > 0 ? " / " + learned + " 级" : "");
+                var msgComp = net.minecraft.network.chat.Component.translatable(
+                        "chat.zifeng_s_custom_skill_tree.level_set",
+                        Skills.getDisplayNameComponent(packet.skillId()), active, learned);
                 // 无限回路：附加当前频道倍率提示（2026-08-27：0=默认 1=X2 2=X3 3=X4 4=无限）
                 if (Skills.AE_INFINITE_CHANNEL.equals(packet.skillId())) {
-                    String mode = switch (active) {
-                        case 1 -> "X2（2倍）";
-                        case 2 -> "X3（3倍）";
-                        case 3 -> "X4（4倍）";
-                        case 4 -> "INFINITE（无限）";
-                        default -> "默认（原版频道）";
+                    String modeKey = switch (active) {
+                        case 1 -> "ae_x2";
+                        case 2 -> "ae_x3";
+                        case 3 -> "ae_x4";
+                        case 4 -> "ae_infinite";
+                        default -> "ae_default";
                     };
-                    msg += " → 频道" + mode;
+                    msgComp = msgComp.copy().append(" → ")
+                            .append(net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree." + modeKey));
                 }
-                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(msg));
+                player.sendSystemMessage(msgComp);
                 PacketDistributor.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
             }

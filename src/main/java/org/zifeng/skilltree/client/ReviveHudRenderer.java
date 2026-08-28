@@ -66,7 +66,7 @@ public class ReviveHudRenderer {
             int flash = (int) ((System.currentTimeMillis() / 500) % 2);
             gui.fill(x - 1, y - 1, x + 17, y + 17, flash == 0 ? 0xFFFFFF55 : 0xFFFFAA00);
             gui.fill(x, y, x + 16, y + 16, 0x22000000);
-            gui.drawString(mc.font, "就绪", x + 18, y + 4, flash == 0 ? 0xFFFFFF55 : 0xFFFFAA00);
+            gui.drawString(mc.font, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.revive_ready").getString(), x + 18, y + 4, flash == 0 ? 0xFFFFFF55 : 0xFFFFAA00);
         }
     }
 }

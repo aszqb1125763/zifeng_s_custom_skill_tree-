@@ -65,6 +65,16 @@ public class SkillEvents {
             // 回发技能数据：客户端缓存（万物挖掘等技能状态判断）进世界即有，无需先打开技能树
             net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
                     org.zifeng.skilltree.network.SkillTreeDataS2CPacket.from(record));
+            // 进服欢迎推送（2026-08-29）：模组版本 + 简短简介 + 作者署名（中文名不翻译）+ Modern UI 推荐
+            // 仅推送给真玩家（ServerPlayer），机器 FakePlayer 不推送
+            String version = net.neoforged.fml.ModList.get().getModContainerById(org.zifeng.skilltree.SkillTreeMod.MOD_ID)
+                    .map(c -> c.getModInfo().getVersion().toString()).orElse("?");
+            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                    "chat.zifeng_s_custom_skill_tree.welcome_intro", version));
+            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                    "chat.zifeng_s_custom_skill_tree.welcome_author"));
+            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                    "chat.zifeng_s_custom_skill_tree.welcome_modern_ui"));
         }
     }
 

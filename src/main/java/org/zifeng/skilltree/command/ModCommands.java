@@ -58,7 +58,7 @@ public class ModCommands {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         net.minecraft.world.item.ItemStack held = player.getMainHandItem();
         if (held.isEmpty()) {
-            ctx.getSource().sendFailure(Component.literal("请手持要加入黑名单的物品，再输入 /hmd"));
+            ctx.getSource().sendFailure(Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_empty"));
             return 0;
         }
         Item item = held.getItem();
@@ -66,9 +66,9 @@ public class ModCommands {
         PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
         PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
         if (record.addAutoSmeltBlacklist(item)) {
-            ctx.getSource().sendSuccess(() -> Component.literal("🚫 已加入自动熔炼黑名单：" + id), false);
+            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_added", id), false);
         } else {
-            ctx.getSource().sendSuccess(() -> Component.literal("⚠ 已在黑名单中：" + id), false);
+            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_exists", id), false);
         }
         data.setDirty();
         return 1;
@@ -80,15 +80,15 @@ public class ModCommands {
         ResourceLocation id = ResourceLocationArgument.getId(ctx, "id");
         Item item = resolveItem(id);
         if (item == null || item == Items.AIR) {
-            ctx.getSource().sendFailure(Component.literal("找不到对应物品：" + id));
+            ctx.getSource().sendFailure(Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_not_found", id));
             return 0;
         }
         PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
         PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
         if (record.addAutoSmeltBlacklist(item)) {
-            ctx.getSource().sendSuccess(() -> Component.literal("🚫 已加入自动熔炼黑名单：" + id), false);
+            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_added", id), false);
         } else {
-            ctx.getSource().sendSuccess(() -> Component.literal("⚠ 已在黑名单中：" + id), false);
+            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_exists", id), false);
         }
         data.setDirty();
         return 1;
@@ -100,15 +100,15 @@ public class ModCommands {
         ResourceLocation id = ResourceLocationArgument.getId(ctx, "id");
         Item item = resolveItem(id);
         if (item == null || item == Items.AIR) {
-            ctx.getSource().sendFailure(Component.literal("找不到对应物品：" + id));
+            ctx.getSource().sendFailure(Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_not_found", id));
             return 0;
         }
         PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
         PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
         if (record.removeAutoSmeltBlacklist(item)) {
-            ctx.getSource().sendSuccess(() -> Component.literal("✅ 已移出自动熔炼黑名单：" + id), false);
+            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_removed", id), false);
         } else {
-            ctx.getSource().sendSuccess(() -> Component.literal("⚠ 不在黑名单中：" + id), false);
+            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_not_in", id), false);
         }
         data.setDirty();
         return 1;

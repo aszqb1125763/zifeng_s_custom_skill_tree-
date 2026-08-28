@@ -40,14 +40,16 @@ public record AuraTargetC2SPacket(String skillId, int mode) implements CustomPac
                 data.setDirty();
                 // 聊天提示（图标区分模式，与目标类型强相关：敌对💀 / 友好🐑 / 所有🌍）
                 String[] icons = {"💀", "🐑", "🌍"};
-                String modeText = switch (packet.mode()) {
-                    case 1 -> "友好生物";
-                    case 2 -> "所有生物";
-                    default -> "敌对生物";
+                String modeKey = switch (packet.mode()) {
+                    case 1 -> "mode_friendly";
+                    case 2 -> "mode_all";
+                    default -> "mode_hostile";
                 };
                 String icon = icons[Math.max(0, Math.min(2, packet.mode()))];
-                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                        icon + " " + Skills.getDisplayName(packet.skillId()) + "目标：" + modeText));
+                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                        "chat.zifeng_s_custom_skill_tree.aura_target", icon,
+                        Skills.getDisplayNameComponent(packet.skillId()),
+                        net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree." + modeKey)));
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
             }
