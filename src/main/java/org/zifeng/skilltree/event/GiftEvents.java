@@ -248,8 +248,9 @@ public final class GiftEvents {
         int total = perGrant * times;
         record.addSkillPoints(total);
         // ⚠️ 2026-08-25：每次发放立即显示（覆盖式，不合并）——馈赠来源专用行每次增加都显示
+        // ⚠️ 2026-08-29：key 改为结构化（gift:skillId），客户端 HUD 按 key 转译（不再传中文名，支持多语言）
         java.util.Map<String, Double> rates = new HashMap<>();
-        rates.put("🎁" + Skills.getDisplayName(baptismSkill), (double) total);
+        rates.put("gift:" + baptismSkill, (double) total);
         org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                 new org.zifeng.skilltree.network.SkillPointRateS2CPacket(record.getSkillPoints(), rates));
         org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,

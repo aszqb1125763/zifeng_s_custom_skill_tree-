@@ -626,254 +626,331 @@ public final class Skills {
     public static String getDisplayName(String skillId) {
         return switch (skillId) {
             // ===== 魔法增幅（纵列0，法术流派，轻度中二） =====
-            case MANA_AMP -> "聚元心法";          // 新生魔艺魔力增幅
-            case ARS_MANA_REGEN -> "回灵吐纳";    // 新生魔艺魔力恢复
-            case IRON_MANA_AMP -> "铁元聚灵";     // 铁魔法魔力增幅
-            case IRON_MANA_REGEN -> "铁元回灵";   // 铁魔法魔力恢复
-            case IRON_CAST_TIME -> "疾咏之术";    // 铁魔法吟唱缩减
-            case IRON_COOLDOWN -> "法脉通达";     // 铁魔法法术冷却缩减
-            case IRON_FIRE -> "焚天烈焰";         // 火焰法术强度
-            case IRON_ICE -> "寒冰刺骨";          // 冰霜法术强度
-            case IRON_LIGHTNING -> "九霄雷动";    // 雷电法术强度
-            case IRON_HOLY -> "圣光降临";         // 神圣法术强度
-            case IRON_ENDER -> "虚空遁形";        // 末影法术强度
-            case IRON_BLOOD -> "血祭狂潮";        // 鲜血法术强度
-            case IRON_EVOCATION -> "百灵听令";    // 召唤法术强度
-            case IRON_NATURE -> "自然之息";       // 自然法术强度
-            case IRON_ELDRITCH -> "异界低语";     // 异界法术强度
+            case MANA_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ARS_MANA_REGEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_MANA_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_MANA_REGEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_CAST_TIME -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_COOLDOWN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_FIRE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_ICE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_LIGHTNING -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_HOLY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_ENDER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_BLOOD -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_EVOCATION -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_NATURE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case IRON_ELDRITCH -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             // ===== 基础属性（纵列1，直白易懂 + 趣味） =====
-            case BODY_HP -> "血魄淬炼";           // 生命强化
-            case BODY -> "铁壁金身";              // 体魄强化
-            case TOUGH -> "磐石之躯";             // 坚韧之躯
-            case BLADE -> "剑心通明";             // 锋刃精通
-            case ATTACK_SPEED -> "疾风连击";      // 疾攻术
-            case MINING -> "破岩神工";            // 采掘熟稔
-            case MOVE -> "健步如飞";              // 疾行步法
-            case REGEN -> "生生不息";             // 再生体魄
-            case LUCK -> "鸿运当头";              // 幸运眷顾
-            case JUMP -> "一蹦三尺";              // 跃升体术
-            case FLY -> "御空翱翔";               // 御空术
-            case SWIM -> "如鱼得水";              // 潜游术
-            case CRIT -> "暴击要害";              // 暴击精通
-            case LIFESTEAL -> "噬血之刃";         // 生命汲取
-            case THORNS -> "荆棘护体";            // 荆棘反伤
-            case ARMOR_PEN -> "破甲利刃";         // 破甲精通
+            case BODY_HP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case BODY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case TOUGH -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case BLADE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ATTACK_SPEED -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MINING -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MOVE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case REGEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case LUCK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case JUMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case FLY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case SWIM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case CRIT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case LIFESTEAL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case THORNS -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ARMOR_PEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             // ===== 特殊增幅（纵列2，真解系列，与基础对应） =====
-            case AMP_HP -> "血魄真解";
-            case AMP_DAMAGE -> "剑心真解";
-            case AMP_ATTACK_SPEED -> "疾风真解";
-            case AMP_MINING -> "破岩真解";
-            case AMP_REGEN -> "生生真解";
-            case AMP_ARMOR -> "金身真解";
-            case AMP_MOVE -> "健步真解";
-            case AMP_JUMP -> "蹦跳真解";
-            case AMP_FLY -> "御空真解";
-            case AMP_SWIM -> "游鱼真解";
-            case AMP_TOUGH -> "磐石真解";
-            case AMP_LUCK -> "鸿运真解";
-            case AMP_CRIT -> "暴击真解";
-            case AMP_LIFESTEAL -> "噬血真解";
-            case AMP_THORNS -> "荆棘真解";
-            case AMP_ARMOR_PEN -> "破甲真解";
+            case AMP_HP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_DAMAGE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_ATTACK_SPEED -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_MINING -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_REGEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_ARMOR -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_MOVE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_JUMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_FLY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_SWIM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_TOUGH -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_LUCK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_CRIT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_LIFESTEAL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_THORNS -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AMP_ARMOR_PEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             // ===== 终极节点（纵列3，子枫招牌技） =====
-            case ULT_BLOOD -> "子枫的燃血狂战";    // 浴血奋战
-            case ULT_GOLDEN -> "子枫的金刚不坏";   // 不坏金身
-            case ULT_MASTER -> "子枫的全能精通";   // 全能精通
-            case ULT_FAVOR -> "子枫的苍穹之翼";    // 宇宙的青睐（飞行）
-            case NIGHT_VISION -> "星瞳夜视";      // 星瞳·夜视
-            case SATURATION -> "饱食无忧";        // 星食·饱腹
-            case ULT_REVIVE -> "子枫的浴火重生";   // 凤凰涅槃
-            case ULT_REAPER -> "死神凝视";        // 死神凝视
-            case ULT_VOID_BODY -> "子枫的虚空神体"; // 虚空之躯
+            case ULT_BLOOD -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ULT_GOLDEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ULT_MASTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ULT_FAVOR -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case NIGHT_VISION -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case SATURATION -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ULT_REVIVE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ULT_REAPER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ULT_VOID_BODY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             // 终极节点·生存辅助（2026-08-27）
-            case FLY_NO_INERTIA -> "御风止步";         // 取消飞行惯性
-            case FLY_MINING -> "凌空采掘";             // 取消挖掘惩罚
-            case FIRE_PROTECT -> "烈焰不侵";           // 火焰防护
-            case WATER_BREATH -> "鲛人之息";           // 水下呼吸
-            case DARK_VISION -> "破暗之瞳";           // 黑暗视觉
-            case UNDERWATER_VISION -> "碧波清眸";     // 水下视觉
-            case AE_INFINITE_CHANNEL -> "无限回路";   // AE无限频道
-            case AUTO_SMELT -> "自动熔炼术";      // 自动熔炼
-            case ULT_BREAK_ALL -> "子枫的万物可掘"; // 万物挖掘
-            case ULT_UNBREAK_TAG -> "不朽铭文";   // 不毁词条
-            case ULT_SWEEP -> "横扫千军";         // 横扫范围
-            case ULT_KB_RESIST -> "稳如泰山";     // 击退抗性
-            case VILLAGE_HERO -> "万民敬仰";      // 村庄英雄
-            case REACH -> "长臂善舞";             // 接触距离
-            case GLOW -> "星光点缀";              // 发光
-            case LOOT_BOMB -> "财源滚滚";         // 战利品爆炸
-            case UNBREAKABLE -> "万载不磨";       // 工具不毁
-            case MOB_DROP -> "猎魂丰收";          // 生物掉落倍率
-            case BLOCK_DROP -> "点石成金";        // 方块掉落倍率
-            case XP_GAIN -> "经验飞涨";           // 经验获取倍率
-            case MOB_SPAWN_EGG -> "妖魂凝卵";     // 刷怪蛋掉落
-            case MOB_HEAD -> "斩首夺颅";          // 头颅掉落
-            case AURA_EMPOWER -> "子枫的修罗杀域"; // 杀戮光环·强化
+            case FLY_NO_INERTIA -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case FLY_MINING -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case FIRE_PROTECT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case WATER_BREATH -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case DARK_VISION -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case UNDERWATER_VISION -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AE_INFINITE_CHANNEL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AUTO_SMELT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ULT_BREAK_ALL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ULT_UNBREAK_TAG -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ULT_SWEEP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ULT_KB_RESIST -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case VILLAGE_HERO -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case REACH -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GLOW -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case LOOT_BOMB -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case UNBREAKABLE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MOB_DROP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case BLOCK_DROP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case XP_GAIN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MOB_SPAWN_EGG -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MOB_HEAD -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AURA_EMPOWER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             // ===== 机械共鸣（纵列5） =====
-            case MACHINE_STAR -> "机关道祖";      // 机械之星
-            case MACHINE_LOOT_BOMB -> "财源滚滚·机关共鸣";   // 战利品爆炸·共鸣
-            case MACHINE_UNBREAKABLE -> "万载不磨·机关共鸣"; // 工具不毁·共鸣
-            case MACHINE_MOB_DROP -> "猎魂丰收·机关共鸣";    // 生物掉落·共鸣
-            case MACHINE_BLOCK_DROP -> "点石成金·机关共鸣";  // 方块掉落·共鸣
-            case MACHINE_XP_GAIN -> "经验飞涨·机关共鸣";     // 经验获取·共鸣
-            case MACHINE_SPAWN_EGG -> "妖魂凝卵·机关共鸣";   // 刷怪蛋掉落·共鸣
-            case MACHINE_MOB_HEAD -> "斩首夺颅·机关共鸣";    // 头颅掉落·共鸣
-            case MACHINE_AUTO_SMELT -> "自动熔炼·机关共鸣";  // 自动熔炼·共鸣
+            case MACHINE_STAR -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MACHINE_LOOT_BOMB -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MACHINE_UNBREAKABLE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MACHINE_MOB_DROP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MACHINE_BLOCK_DROP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MACHINE_XP_GAIN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MACHINE_SPAWN_EGG -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MACHINE_MOB_HEAD -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MACHINE_AUTO_SMELT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             // ===== 光环（纵列4，领域神通风） =====
-            case AURA_DAMAGE -> "子枫的杀戮领域";   // 杀戮光环·伤害
-            case AURA_SPEED -> "疾攻之势";         // 杀戮光环·速度
-            case AURA_HEAL -> "回春妙手";          // 治愈光环
-            case AURA_MAGNET -> "吸星大法";        // 磁力光环
-            case AURA_TIME -> "时之环·刹那永恒";   // 时之环·时间停止
-            case AURA_WEATHER -> "晴空环·艳阳高照"; // 晴空环·永恒晴天
-            case AURA_LOCK -> "定身神域";          // 光环锁定
-            case AURA_VOID -> "子枫的虚空诛灭";     // 杀戮光环·虚空之矛
-            case AURA_LOOT_VACUUM -> "子枫挪移术"; // 凋落物挪移
+            case AURA_DAMAGE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AURA_SPEED -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AURA_HEAL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AURA_MAGNET -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AURA_TIME -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AURA_WEATHER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AURA_LOCK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AURA_VOID -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AURA_LOOT_VACUUM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             // ===== 子枫的馈赠（纵列7，2026-08-25 新增） =====
-            case GIFT_TIME_BAPTISM -> "时间洗礼";
-            case GIFT_TIME_STORM -> "时间风暴";
-            case GIFT_TIME_FLOOD -> "时间洪流";
-            case GIFT_MOVE_BAPTISM -> "移动洗礼";
-            case GIFT_MOVE_AMP -> "移动洗礼增幅";
-            case GIFT_FLY_BAPTISM -> "飞行洗礼";
-            case GIFT_FLY_AMP -> "飞行洗礼增幅";
-            case GIFT_MINE_BAPTISM -> "挖掘洗礼";
-            case GIFT_MINE_AMP -> "挖掘洗礼增幅";
-            case GIFT_KILL_BAPTISM -> "击杀馈赠";
-            case GIFT_KILL_AMP -> "击杀馈赠增幅";
+            case GIFT_TIME_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GIFT_TIME_STORM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GIFT_TIME_FLOOD -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GIFT_MOVE_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GIFT_MOVE_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GIFT_FLY_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GIFT_FLY_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GIFT_MINE_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GIFT_MINE_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GIFT_KILL_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GIFT_KILL_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             // ===== 铁砧附魔（纵列4，2026-08-27 新增） =====
-            case ENCHANT_RANDOM -> "随机附魔";
-            case ENCHANT_BREAK -> "附魔突破";
-            case ENCHANT_OVER -> "超限附魔";
-            case UNLIMITED_TRADES -> "无限交易";
-            case VILLAGER_MASTER -> "村民大师";
-            case TREASURE_HUNTER -> "寻宝大师";
-            default -> "未知技能";
+            case ENCHANT_RANDOM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ENCHANT_BREAK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case ENCHANT_OVER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case UNLIMITED_TRADES -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case VILLAGER_MASTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case TREASURE_HUNTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            default -> "skill.zifeng_s_custom_skill_tree.unknown.name";
         };
     }
 
     public static String getDescription(String skillId) {
         return switch (skillId) {
-            case MANA_AMP -> "聚元心法：\n增幅新生魔艺（Ars Nouveau）最大魔力\n每级 +10%，上限 1000 级\n（1000 级 = 最大魔力 ×101）";
-            case ARS_MANA_REGEN -> "回灵吐纳：\n增幅新生魔艺（Ars Nouveau）魔力恢复速度\n每级 +40%，上限 1000 级\n（1000 级 = 恢复 ×401）";
-            case IRON_MANA_AMP -> "铁元聚灵：\n增幅铁魔法（Iron's Spells）最大魔力\n每级 +10%，上限 1000 级\n（1000 级 = 最大魔力 ×101）";
-            case IRON_MANA_REGEN -> "铁元回灵：\n增幅铁魔法（Iron's Spells）魔力恢复速度\n每级 +40%，上限 1000 级\n（1000 级 = 恢复 ×401）";
-            case IRON_CAST_TIME -> "疾咏之术：\n减少铁魔法（Iron's Spells）法术吟唱时间\n每级 -10%，上限 100 级\n（100 级 = 吟唱时间大幅缩短）";
-            case IRON_COOLDOWN -> "法脉通达：\n减少铁魔法（Iron's Spells）法术冷却时间\n每级 -10%，上限 100 级\n（100 级 = 冷却时间大幅缩短）";
-            case IRON_FIRE -> "焚天烈焰：\n增幅铁魔法火焰（Fire）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 火焰法术强度 ×101）";
-            case IRON_ICE -> "寒冰刺骨：\n增幅铁魔法冰霜（Ice）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 冰霜法术强度 ×101）";
-            case IRON_LIGHTNING -> "九霄雷动：\n增幅铁魔法雷电（Lightning）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 雷电法术强度 ×101）";
-            case IRON_HOLY -> "圣光降临：\n增幅铁魔法神圣（Holy）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 神圣法术强度 ×101）";
-            case IRON_ENDER -> "虚空遁形：\n增幅铁魔法末影（Ender）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 末影法术强度 ×101）";
-            case IRON_BLOOD -> "血祭狂潮：\n增幅铁魔法鲜血（Blood）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 鲜血法术强度 ×101）";
-            case IRON_EVOCATION -> "百灵听令：\n增幅铁魔法召唤（Evocation）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 召唤法术强度 ×101）";
-            case IRON_NATURE -> "自然之息：\n增幅铁魔法自然（Nature）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 自然法术强度 ×101）";
-            case IRON_ELDRITCH -> "异界低语：\n增幅铁魔法异界（Eldritch）流派法术伤害\n每级 +10%，上限 1000 级\n（1000 级 = 异界法术强度 ×101）";
-            case BODY_HP -> "血魄淬炼：每点 +2 最大生命";
-            case BODY -> "铁壁金身：每点 +0.2 护甲、\n+0.05% 物理减伤（超原版 80% 护甲上限后继续成长）";
-            case TOUGH -> "磐石之躯：每点 +0.3 护甲韧性、\n+0.1% 击退抗性";
-            case BLADE -> "剑心通明：每点 +0.4 近战攻击伤害";
-            case ATTACK_SPEED -> "疾风连击：每点 +0.02 攻击速度";
-            case MINING -> "破岩神工：每点 +0.3 挖掘速度";
-            case MOVE -> "健步如飞：每点 +0.005 移动速度";
-            case REGEN -> "生生不息：每点 +0.1/秒 生命恢复";
-            case LUCK -> "鸿运当头：每点 +0.1 幸运值";
-            case JUMP -> "一蹦三尺：每点 +0.01 跳跃高度";
-            case FLY -> "御空翱翔：每点 +0.005 飞行速度";
-            case SWIM -> "如鱼得水：每点 +0.005 游泳速度";
-            case CRIT -> "暴击要害：每点 +0.1% 暴击几率\n（上限 100%，暴击造成 1.5 倍伤害）";
-            case LIFESTEAL -> "噬血之刃：每点 +0.1% 吸血\n（按造成的伤害恢复生命）";
-            case THORNS -> "荆棘护体：每点 +0.05 反伤\n（受击时反弹伤害给攻击者）";
-            case ARMOR_PEN -> "破甲利刃：每点 +0.15% 最终伤害\n（无视目标护甲）";
-            case VILLAGE_HERO -> "万民敬仰：每级 +4 级村庄英雄效果\n（10级满=村庄英雄40级，交易折扣极大）";
-            case REACH -> "长臂善舞：每级 +1 格触摸距离\n和攻击距离（上限50级）";
-            case GLOW -> "星光点缀：给 35 格半径内所有生物\n施加发光效果（除玩家自身）\n一次性解锁";
-            case LOOT_BOMB -> "财源滚滚：击杀所有生物含Boss\n100%触发战利品爆炸，掉落翻倍\n1级1倍，100级=100倍（线性增长）";
-            case UNBREAKABLE -> "万载不磨：每级 +20% 工具耐久损耗减免\n（5级封顶=100%，工具不再消耗耐久）";
-            case MOB_DROP -> "猎魂丰收：每级 +1 倍生物掉落\n（1级=2倍，10级=11倍）\n仅对可受抢夺影响的生物生效";
-            case BLOCK_DROP -> "点石成金：每级 +1 倍方块掉落\n（1级=2倍，10级=11倍）\n仅对可受时运影响的方块生效";
-            case XP_GAIN -> "经验飞涨：每级 +2 倍经验获取\n（1级=3倍，10级=21倍）\n杀怪/挖矿/烧炼经验都生效";
-            case MOB_SPAWN_EGG -> "妖魂凝卵：击杀生物时每级 10% 概率\n掉落对应刷怪蛋（满5级=50%）\n对所有生物生效，固定掉 1 个\n不受任何技能增幅（不吃战利品爆炸/生物掉落倍率）";
-            case MOB_HEAD -> "斩首夺颅：击杀生物时每级 10% 概率\n掉落对应头颅（满5级=50%）\n僵尸/骷髅/凋灵骷髅/苦力怕/猪灵\n掉对应头颅\n击杀玩家掉对方皮肤的头颅\n无对应头颅的生物不掉\n不受任何技能增幅（不吃战利品爆炸/生物掉落倍率）";
-            case AURA_EMPOWER -> "子枫的修罗杀域：\n杀戮光环获得强化伤害：\n混沌伤害（无视护甲）/Boss混沌连击/\n破盾/守卫水晶特判";
-            case AMP_HP -> "血魄真解：每点 +10% 最大生命倍率";
-            case AMP_DAMAGE -> "剑心真解：每点 +10% 近战伤害倍率";
-            case AMP_ATTACK_SPEED -> "疾风真解：每点 +8% 攻击速度倍率";
-            case AMP_MINING -> "破岩真解：每点 +12% 挖掘速度倍率";
-            case AMP_REGEN -> "生生真解：每点 +16% 生命恢复倍率";
-            case AMP_ARMOR -> "金身真解：每点 +0.5% 物理减伤\n（独立减伤层，护甲 80% 封顶后继续防护）";
-            case AMP_MOVE -> "健步真解：每点 +10% 移动速度倍率";
-            case AMP_JUMP -> "蹦跳真解：每点 +10% 跳跃高度倍率";
-            case AMP_FLY -> "御空真解：每点 +10% 飞行速度倍率";
-            case AMP_SWIM -> "游鱼真解：每点 +10% 游泳速度倍率";
-            case AMP_TOUGH -> "磐石真解：每点 +10% 护甲韧性与击退抗性倍率";
-            case AMP_LUCK -> "鸿运真解：每点 +10% 幸运值倍率";
-            case AMP_CRIT -> "暴击真解：每点 +5% 暴击伤害倍率\n（在暴击 1.5 倍基础上叠加）";
-            case AMP_LIFESTEAL -> "噬血真解：每点 +8% 吸血量倍率";
-            case AMP_THORNS -> "荆棘真解：每点 +8% 反伤倍率";
-            case AMP_ARMOR_PEN -> "破甲真解：每点 +8% 破甲增伤倍率";
-            case ULT_BLOOD -> "子枫的燃血狂战：\n常驻攻击力 +50%、最大生命 +50%\n（燃血强化）";
-            case ULT_GOLDEN -> "子枫的金刚不坏：\n常驻抗性提升10级、伤害吸收100级、\n抗火5级";
-            case ULT_MASTER -> "子枫的全能精通：\n全方位防御（全伤害减免/护盾/免死/\n负面免疫）";
-            case ULT_FAVOR -> "子枫的苍穹之翼：一次性点亮，解锁真正的创造飞行";
-            case NIGHT_VISION -> "星瞳夜视：一次性点亮，永久夜视（不闪烁）";
-            case SATURATION -> "饱食无忧：一次性点亮，饱食度永远满值";
-            case ULT_REVIVE -> "子枫的浴火重生：\n死亡原地复活一次，恢复50%生命\n并清除负面效果，冷却1分钟";
-            case ULT_REAPER -> "死神凝视：\n攻击生命<15%的非玩家生物时\n30%概率直接处决";
-            case ULT_VOID_BODY -> "子枫的虚空神体：\n三层无敌：免伤/免死/血量只增不减\n抗击退/免摔落/免火焰/清负面";
+            case MANA_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ARS_MANA_REGEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_MANA_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_MANA_REGEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_CAST_TIME -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_COOLDOWN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_FIRE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_ICE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_LIGHTNING -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_HOLY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_ENDER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_BLOOD -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_EVOCATION -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_NATURE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case IRON_ELDRITCH -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case BODY_HP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case BODY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case TOUGH -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case BLADE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ATTACK_SPEED -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MINING -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MOVE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case REGEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case LUCK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case JUMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case FLY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case SWIM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case CRIT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case LIFESTEAL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case THORNS -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ARMOR_PEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case VILLAGE_HERO -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case REACH -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GLOW -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case LOOT_BOMB -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case UNBREAKABLE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MOB_DROP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case BLOCK_DROP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case XP_GAIN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MOB_SPAWN_EGG -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MOB_HEAD -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AURA_EMPOWER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_HP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_DAMAGE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_ATTACK_SPEED -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_MINING -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_REGEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_ARMOR -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_MOVE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_JUMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_FLY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_SWIM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_TOUGH -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_LUCK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_CRIT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_LIFESTEAL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_THORNS -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AMP_ARMOR_PEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ULT_BLOOD -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ULT_GOLDEN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ULT_MASTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ULT_FAVOR -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case NIGHT_VISION -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case SATURATION -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ULT_REVIVE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ULT_REAPER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ULT_VOID_BODY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             // ===== 终极节点·生存辅助（2026-08-27） =====
-            case FLY_NO_INERTIA -> "御风止步：一次性点亮，飞行中松开空格\n立即停止垂直移动（无飞行惯性）\n创造飞行与鞘翅飞行均生效";
-            case FLY_MINING -> "凌空采掘：一次性点亮，飞行中挖掘方块\n无视原版空中 5 倍挖掘惩罚\n（空中挖掘速度与地面相同）";
-            case FIRE_PROTECT -> "烈焰不侵：一次性点亮，完全免疫火焰：\n不会着火、身上无火焰视觉遮挡\n不受火焰/岩浆伤害";
-            case WATER_BREATH -> "鲛人之息：一次性点亮，水下无限呼吸\n（氧气条永远保持满值）";
-            case DARK_VISION -> "破暗之瞳：一次性点亮，免疫黑暗效果\n（坚守者/古城区域的黑暗视觉影响\n不再让视野变暗闪烁）";
-            case UNDERWATER_VISION -> "碧波清眸：一次性点亮，在水底/岩浆中\n拥有清晰视野（雾效大幅减弱）";
-            case AE_INFINITE_CHANNEL -> "无限回路：AE2 频道倍增/无限（4级，全局）\n1级=X2（2倍频道，200点）\n2级=X3（3倍频道，500点）\n3级=X4（4倍频道，1000点）\n4级=无限频道（INFINITE，2000点）\n全局生效：服务器 AE 频道取开启玩家最高等级";
-            case AUTO_SMELT -> "自动熔炼术：挖掘方块时自动熔炼掉落物\n（铁矿石→铁锭、金矿石→金锭等）\n按熔炉配方判断能否熔炼（先熔炉再时运）\n一次性点亮\n黑名单：手持熔炼产物输入 /hmd 设置，/delhmd 查看";
-            case ULT_BREAK_ALL -> "子枫的万物可掘：一次性点亮，激活后可以挖掘任何方块\n包括基岩这类无法破坏的方块\n挖掘后会掉落对应方块\n（左键点击即可挖掘，无需等待）";
-            case ULT_UNBREAK_TAG -> "不朽铭文：一次性点亮，激活后\n在铁砧中放入两个相同的物品\n可以合成出带有【无法破坏】词条的工具\n（工具不再消耗耐久）";
-            case ULT_SWEEP -> "横扫千军：每级 +1 格攻击范围\n（近战攻击命中时，目标周围\nN 格内其他敌人同受伤害）\n10级 = 横扫半径 10 格";
-            case ULT_KB_RESIST -> "稳如泰山：每级 +10% 击退抗性\n10级 = 100%，玩家不会被击退";
-            case MACHINE_STAR -> "机关道祖：一次性点亮，机械共鸣的核心\n学习后才能学习其他共鸣技能\n（共鸣技能让模拟玩家机器\n如数字采矿机继承对应效果）";
-            case MACHINE_LOOT_BOMB -> "财源滚滚·机关共鸣：一次性点亮，学习并开启后\n模拟玩家机器（假玩家）击杀生物\n才能继承战利品爆炸效果\n关闭/重置后立即失效";
-            case MACHINE_UNBREAKABLE -> "万载不磨·机关共鸣：一次性点亮，学习并开启后\n模拟玩家机器使用工具时\n才能继承工具不毁（耐久减免）效果\n关闭/重置后立即失效";
-            case MACHINE_MOB_DROP -> "猎魂丰收·机关共鸣：一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承生物掉落倍率效果\n关闭/重置后立即失效";
-            case MACHINE_BLOCK_DROP -> "点石成金·机关共鸣：一次性点亮，学习并开启后\n模拟玩家机器挖掘方块\n才能继承方块掉落倍率效果\n关闭/重置后立即失效";
-            case MACHINE_XP_GAIN -> "经验飞涨·机关共鸣：一次性点亮，学习并开启后\n模拟玩家机器击杀/挖掘产生的经验\n才能继承经验获取倍率效果\n关闭/重置后立即失效";
-            case MACHINE_SPAWN_EGG -> "妖魂凝卵·机关共鸣：一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承刷怪蛋掉落效果\n关闭/重置后立即失效";
-            case MACHINE_MOB_HEAD -> "斩首夺颅·机关共鸣：一次性点亮，学习并开启后\n模拟玩家机器击杀生物\n才能继承头颅掉落效果\n关闭/重置后立即失效";
-            case MACHINE_AUTO_SMELT -> "自动熔炼·机关共鸣：一次性点亮，学习并开启后\n模拟玩家机器挖掘方块\n才能继承自动熔炼效果\n关闭/重置后立即失效";
-            case AURA_DAMAGE -> "子枫的杀戮领域：每级+10%伤害倍率，\n360°范围伤害，默认10秒攻击一次\n上限1000级";
-            case AURA_SPEED -> "疾攻之势：提高光环攻击频率\n（每级攻击间隔×0.9，20级=每秒约1.2次）\n上限20级";
-            case AURA_HEAL -> "回春妙手：每级给周围10格内\n友方单位对应等级的生命恢复效果\n（50级 = 生命恢复50级）\n上限50级";
-            case AURA_MAGNET -> "吸星大法：一次性解锁\n按 H 键开关，自动吸取经验与掉落物\n（潜行时暂停）";
-            case AURA_TIME -> "时之环·刹那永恒：一次性点亮，开启后锁定世界时间\n为开启瞬间的时间（不再强制正午）\n不被睡觉/时间命令影响\n关闭后立即恢复正常时间流动";
-            case AURA_WEATHER -> "晴空环·艳阳高照：一次性点亮，开启后锁定晴天\n不被下雨/天气命令影响\n关闭后立即恢复正常天气";
-            case AURA_LOCK -> "定身神域：\n一次性点亮，开启后免疫 TP 与击退\n（传送/瞬移/击退均无效）\n只有自己移动/飞行才能真正移动";
-            case AURA_VOID -> "子枫的虚空诛灭：\n一次性点亮，杀戮光环获得虚空之矛力量\n（绝对秒杀+范围扩大至50格，K键控制）\n（磁铁范围扩至55格，H键控制）";
-            case AURA_LOOT_VACUUM -> "子枫挪移术：\n一次性点亮，手持原版木棍\n蹲下右键任意容器（箱子/漏斗等）绑定\n绑定后击杀生物/挖掘方块的掉落物\n直接传送进容器（不生成掉落物实体\n不卡顿，刷怪塔/挖矿机必备）\n跨维度生效（末地/下界杀怪也传回容器）\n再次蹲下右键同一容器解除绑定";
+            case FLY_NO_INERTIA -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case FLY_MINING -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case FIRE_PROTECT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case WATER_BREATH -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case DARK_VISION -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case UNDERWATER_VISION -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AE_INFINITE_CHANNEL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AUTO_SMELT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ULT_BREAK_ALL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ULT_UNBREAK_TAG -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ULT_SWEEP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ULT_KB_RESIST -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MACHINE_STAR -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MACHINE_LOOT_BOMB -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MACHINE_UNBREAKABLE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MACHINE_MOB_DROP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MACHINE_BLOCK_DROP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MACHINE_XP_GAIN -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MACHINE_SPAWN_EGG -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MACHINE_MOB_HEAD -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MACHINE_AUTO_SMELT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AURA_DAMAGE -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AURA_SPEED -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AURA_HEAL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AURA_MAGNET -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AURA_TIME -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AURA_WEATHER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AURA_LOCK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AURA_VOID -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AURA_LOOT_VACUUM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             // ===== 子枫的馈赠（纵列7，按游戏时长激活，免费获得技能点） =====
-            case GIFT_TIME_BAPTISM -> "时间洗礼：激活后每 10 分钟获得 1 技能点\n激活后需开启开关才生效";
-            case GIFT_TIME_STORM -> "时间风暴：激活后每 5 分钟获得 5 技能点\n与时间洗礼叠加\n激活后需开启开关才生效";
-            case GIFT_TIME_FLOOD -> "时间洪流：激活后每 1 分钟获得 10 技能点\n与时间洗礼/时间风暴叠加\n激活后需开启开关才生效";
-            case GIFT_MOVE_BAPTISM -> "移动洗礼：统计行走+疾跑距离\n1级：每 1000 米获得 1 技能点（消耗 10 点）\n2级：每 500 米获得 1 技能点（消耗 1000 点）\n3级：每 100 米获得 1 技能点（消耗 10000 点）\n4级：每 50 米获得 1 技能点（消耗 50000 点）\n5级：每 10 米获得 1 技能点（消耗 100000 点）\n开启后按累计距离自动发放";
-            case GIFT_MOVE_AMP -> "移动洗礼增幅：上限 5 级\n每级让移动洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%";
-            case GIFT_FLY_BAPTISM -> "飞行洗礼：统计飞行距离\n1级：每 1000 米获得 1 技能点（消耗 10 点）\n2级：每 500 米获得 1 技能点（消耗 1000 点）\n3级：每 100 米获得 1 技能点（消耗 10000 点）\n4级：每 50 米获得 1 技能点（消耗 50000 点）\n5级：每 10 米获得 1 技能点（消耗 100000 点）\n开启后按累计距离自动发放";
-            case GIFT_FLY_AMP -> "飞行洗礼增幅：上限 5 级\n每级让飞行洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%";
-            case GIFT_MINE_BAPTISM -> "挖掘洗礼：统计挖掘方块数\n1级：每 1000 个方块获得 1 技能点（消耗 10 点）\n2级：每 500 个方块获得 1 技能点（消耗 1000 点）\n3级：每 100 个方块获得 1 技能点（消耗 10000 点）\n4级：每 50 个方块获得 1 技能点（消耗 50000 点）\n5级：每 10 个方块获得 1 技能点（消耗 100000 点）\n开启后按累计挖掘自动发放";
-            case GIFT_MINE_AMP -> "挖掘洗礼增幅：上限 5 级\n每级让挖掘洗礼每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%";
-            case GIFT_KILL_BAPTISM -> "击杀馈赠：统计击杀生物数\n1级：每 1000 个击杀获得 1 技能点（消耗 10 点）\n2级：每 500 个击杀获得 1 技能点（消耗 1000 点）\n3级：每 100 个击杀获得 1 技能点（消耗 10000 点）\n4级：每 50 个击杀获得 1 技能点（消耗 50000 点）\n5级：每 10 个击杀获得 1 技能点（消耗 100000 点）\n开启后按累计击杀自动发放";
-            case GIFT_KILL_AMP -> "击杀馈赠增幅：上限 5 级\n每级让击杀馈赠每次获得 +1 技能点\n每级消耗 1000 技能点，指数增长 30%";
+            case GIFT_TIME_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GIFT_TIME_STORM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GIFT_TIME_FLOOD -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GIFT_MOVE_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GIFT_MOVE_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GIFT_FLY_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GIFT_FLY_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GIFT_MINE_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GIFT_MINE_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GIFT_KILL_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GIFT_KILL_AMP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             // ===== 铁砧附魔（2026-08-27） =====
-            case ENCHANT_RANDOM -> "随机附魔：一次性点亮，在铁砧中：\n左槽放任意可附魔物品\n右槽放 4 个青金石\n花费 1 级经验\n随机获得一个该物品可拥有的正面附魔\n（不含诅咒附魔，不限制工具/物品兼容性）\n（时运与精准采集互斥，只能有一种）";
-            case ENCHANT_BREAK -> "附魔突破：一次性点亮，在铁砧中：\n左槽放已附魔物品\n右槽放 2 个青金石块\n花费 4 级经验\n所有已有附魔 +1 级（单个上限 20 级）";
-            case ENCHANT_OVER -> "超限附魔：一次性点亮，在铁砧中：\n左槽放已附魔物品\n右槽放 2 个下界之星\n花费 10 级经验\n所有已有附魔 +2 级（单个上限 100 级）";
-            case UNLIMITED_TRADES -> "无限交易：一次性点亮，与村民交易后\n交易次数不减少、永不售罄\n村民不用补货也能无限交易";
-            case VILLAGER_MASTER -> "村民大师：一次性点亮，与村民交易后\n该村民直接升到满级（5 级）\n解锁全部高级交易配方";
-            case TREASURE_HUNTER -> "寻宝大师：一次性点亮，64 格内所有\n战利品容器与考古刷扫点\n显示白色发光轮廓\n（兼容所有模组的战利品容器）";
-            default -> "";
+            case ENCHANT_RANDOM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ENCHANT_BREAK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case ENCHANT_OVER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case UNLIMITED_TRADES -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case VILLAGER_MASTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case TREASURE_HUNTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            default -> "skill.zifeng_s_custom_skill_tree.unknown.desc";
         };
     }
+
+    /** 技能显示名（聊天/提示用，按客户端语言渲染） */
+    public static net.minecraft.network.chat.Component getDisplayNameComponent(String skillId) {
+        return net.minecraft.network.chat.Component.translatable(getDisplayName(skillId));
+    }
+
+    /** 数字格式化：去掉无意义尾零且不用科学计数法（2.0 → "2"，0.005 → "0.005"，0.05 → "0.05"） */
+    private static String fmt(double v) {
+        return java.math.BigDecimal.valueOf(v).stripTrailingZeros().toPlainString();
+    }
+
+    /**
+     * 技能描述（按客户端语言渲染）。
+     * 2026-08-29：基础/增幅/多级终极的"每点数值"全部从 Config 动态读取（P1 全量可配置），
+     * lang 模板里的 %s 按配置填充，改配置后无需改翻译文件。
+     */
+    public static net.minecraft.network.chat.Component getDescriptionComponent(String skillId) {
+        return switch (skillId) {
+            // ===== 基础属性（每点数值走 Config） =====
+            case BODY_HP -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.BODY_HP_PER_POINT.get()));
+            case BODY -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.BODY_ARMOR_PER_POINT.get()),
+                    fmt(org.zifeng.skilltree.Config.BODY_DR_PER_POINT.get() * 100) + "%");
+            case TOUGH -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.TOUGH_TOUGHNESS_PER_POINT.get()),
+                    fmt(org.zifeng.skilltree.Config.TOUGH_KB_PER_POINT.get() * 100) + "%");
+            case BLADE -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.BLADE_DAMAGE_PER_POINT.get()));
+            case ATTACK_SPEED -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.ATTACK_SPEED_PER_POINT.get()));
+            case MINING -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.MINING_SPEED_PER_POINT.get()));
+            case MOVE -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.MOVE_SPEED_PER_POINT.get()));
+            case LUCK -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.LUCK_PER_POINT.get()));
+            case JUMP -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.JUMP_PER_POINT.get()));
+            case FLY -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.FLY_SPEED_PER_POINT.get()));
+            case SWIM -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.SWIM_SPEED_PER_POINT.get()));
+            // ===== 增幅属性（每点百分比走 Config） =====
+            case AMP_HP -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.AMP_HP_PER_POINT.get() * 100) + "%");
+            case AMP_TOUGH -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.AMP_TOUGH_PER_POINT.get() * 100) + "%");
+            case AMP_LUCK -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.AMP_LUCK_PER_POINT.get() * 100) + "%");
+            case AMP_DAMAGE -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.AMP_DAMAGE_PER_POINT.get() * 100) + "%");
+            case AMP_ATTACK_SPEED -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.AMP_ATTACK_SPEED_PER_POINT.get() * 100) + "%");
+            case AMP_MINING -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.AMP_MINING_PER_POINT.get() * 100) + "%");
+            case AMP_MOVE -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.AMP_MOVE_PER_POINT.get() * 100) + "%");
+            case AMP_JUMP -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.AMP_JUMP_PER_POINT.get() * 100) + "%");
+            case AMP_FLY -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.AMP_FLY_PER_POINT.get() * 100) + "%");
+            case AMP_SWIM -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.AMP_SWIM_PER_POINT.get() * 100) + "%");
+            // 防御强化（金身真解）：物理减伤百分比（Config 是小数 0.005 = 0.5%）
+            case AMP_ARMOR -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.AMP_ARMOR_DR_PER_POINT.get() * 100) + "%");
+            // ===== 多级终极（每级数值走 Config） =====
+            case REACH -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.REACH_PER_LEVEL.get()));
+            case ULT_KB_RESIST -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
+                    fmt(org.zifeng.skilltree.Config.KB_RESIST_PER_LEVEL.get() * 100) + "%");
+            // ===== 其余技能：静态描述 =====
+            default -> net.minecraft.network.chat.Component.translatable(getDescription(skillId));
+        };
+    }
+
 
     /**
      * 通用前置系统：技能 → [(前置技能, 所需等级), ...]

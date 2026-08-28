@@ -47,10 +47,9 @@ public class ToggleAuraC2SPacket {
             record.setEnabled(Skills.AURA_DAMAGE, now);
             data.setDirty();
             // 聊天提示
-            String name = Skills.getDisplayName(Skills.AURA_DAMAGE);
-            player.sendSystemMessage(Component.literal(now
-                    ? "⚔ " + name + "已开启"
-                    : "× " + name + "已关闭"));
+            player.sendSystemMessage(Component.translatable(
+                    now ? "chat.zifeng_s_custom_skill_tree.aura_on" : "chat.zifeng_s_custom_skill_tree.aura_off",
+                    now ? "⚔" : "×", Skills.getDisplayNameComponent(Skills.AURA_DAMAGE)));
             ModNetwork.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
         });
         ctx.setPacketHandled(true);

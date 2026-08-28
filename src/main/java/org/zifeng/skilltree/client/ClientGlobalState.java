@@ -48,22 +48,22 @@ public final class ClientGlobalState {
     /** 服务器当前天气模式文字 */
     public static String getWeatherModeText() {
         return switch (weatherMode) {
-            case 1 -> "🌧 雨天";
-            case 2 -> "⛈ 雷暴";
-            case 0 -> "☀ 晴天";
-            default -> "未知";
+            case 1 -> net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.weather_rain").getString();
+            case 2 -> net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.weather_thunder").getString();
+            case 0 -> net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.weather_sunny").getString();
+            default -> net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.weather_unknown").getString();
         };
     }
 
     /** AE 频道模式文字（tooltip 显示用） */
     public static String getAeChannelModeText() {
         return switch (aeChannelMode) {
-            case 0 -> "默认（原版 8 频道）";
-            case 1 -> "2 倍频道（X2）";
-            case 2 -> "3 倍频道（X3）";
-            case 3 -> "4 倍频道（X4）";
-            case 4 -> "无限频道（INFINITE）";
-            default -> "未知（未装 AE2 或未同步）";
+            case 0 -> net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.ae_default").getString();
+            case 1 -> net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.ae_x2").getString();
+            case 2 -> net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.ae_x3").getString();
+            case 3 -> net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.ae_x4").getString();
+            case 4 -> net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.ae_infinite").getString();
+            default -> net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.ae_unknown").getString();
         };
     }
 

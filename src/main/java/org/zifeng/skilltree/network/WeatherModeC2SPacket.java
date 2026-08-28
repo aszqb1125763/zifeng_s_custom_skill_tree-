@@ -49,13 +49,14 @@ public class WeatherModeC2SPacket {
             AuraEvents.setPlayerWeatherMode(player, mode);
             // 聊天提示（图标区分天气）
             String[] icons = {"☀", "🌧", "⛈"};
-            String modeText = switch (mode) {
-                case 1 -> "雨天";
-                case 2 -> "雷暴";
-                default -> "晴天";
+            String modeKey = switch (mode) {
+                case 1 -> "weather_rain";
+                case 2 -> "weather_thunder";
+                default -> "weather_sunny";
             };
-            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                    icons[mode] + " 晴空环天气：" + modeText));
+            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                    "chat.zifeng_s_custom_skill_tree.weather_set", icons[mode],
+                    net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree." + modeKey)));
             org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                     SkillTreeDataS2CPacket.from(record));
         });

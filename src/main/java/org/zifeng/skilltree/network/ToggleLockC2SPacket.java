@@ -38,26 +38,35 @@ public class ToggleLockC2SPacket {
                 if (record.getLearnedPoints(Skills.AURA_LOCK) <= 0) {
                     // 未学习：消耗技能点学习并开启
                     double cost = Config.LOCK_COST.get();
-                    String name = Skills.getDisplayName(Skills.AURA_LOCK);
                     if (record.getSkillPoints() < cost - 1e-9) {
-                        player.sendSystemMessage(Component.literal("⚠ 技能点不足，学习" + name + "需要 " + String.format("%.0f", cost) + " 技能点"));
+                        player.sendSystemMessage(Component.translatable(
+                                "chat.zifeng_s_custom_skill_tree.no_point_learn",
+                                Skills.getDisplayNameComponent(Skills.AURA_LOCK),
+                                String.format("%.0f", cost)));
                         return;
                     }
                     if (!record.learnSkill(Skills.AURA_LOCK)) {
-                        player.sendSystemMessage(Component.literal("⚠ 无法学习" + name));
+                        player.sendSystemMessage(Component.translatable(
+                                "chat.zifeng_s_custom_skill_tree.cannot_learn",
+                                Skills.getDisplayNameComponent(Skills.AURA_LOCK)));
                         return;
                     }
                     record.setEnabled(Skills.AURA_LOCK, true);
                     data.setDirty();
-                    player.sendSystemMessage(Component.literal("🛡 " + name + "已学习并开启（消耗 " + String.format("%.0f", cost) + " 技能点；免疫 TP 与击退）"));
+                    player.sendSystemMessage(Component.translatable(
+                            "chat.zifeng_s_custom_skill_tree.lock_learned",
+                            Skills.getDisplayNameComponent(Skills.AURA_LOCK),
+                            String.format("%.0f", cost)));
                 } else {
                     // 已学习：切换开关
                     boolean now = !record.isEnabled(Skills.AURA_LOCK);
                     record.setEnabled(Skills.AURA_LOCK, now);
                     data.setDirty();
-                    player.sendSystemMessage(Component.literal(now
-                            ? "🛡 " + Skills.getDisplayName(Skills.AURA_LOCK) + "已开启（免疫 TP 与击退）"
-                            : "🛡 " + Skills.getDisplayName(Skills.AURA_LOCK) + "已关闭"));
+                    player.sendSystemMessage(Component.translatable(
+                            now
+                                    ? "chat.zifeng_s_custom_skill_tree.lock_on"
+                                    : "chat.zifeng_s_custom_skill_tree.lock_off",
+                            Skills.getDisplayNameComponent(Skills.AURA_LOCK)));
                 }
                 ModNetwork.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
         });

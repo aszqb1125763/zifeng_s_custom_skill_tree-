@@ -54,7 +54,6 @@ public class SetSkillToggleC2SPacket {
                 // 重挂属性使开关生效
                 SkillEffects.applyAll(player, record);
                 // 开关提示（2026-08-13 需求：所有技能快捷键切换开关时都有提示，带图标）
-                String name = Skills.getDisplayName(packet.skillId);
                 String icon = switch (packet.skillId) {
                     case Skills.AURA_MAGNET -> "🧲";
                     case Skills.AURA_TIME -> "⏰";
@@ -64,9 +63,11 @@ public class SetSkillToggleC2SPacket {
                     case Skills.MACHINE_AUTO_SMELT -> "🔥";
                     default -> "⚙";
                 };
-                player.sendSystemMessage(Component.literal(packet.enabled
-                        ? icon + " " + name + "已开启"
-                        : icon + " " + name + "已关闭"));
+                player.sendSystemMessage(Component.translatable(
+                        packet.enabled
+                                ? "chat.zifeng_s_custom_skill_tree.skill_on"
+                                : "chat.zifeng_s_custom_skill_tree.skill_off",
+                        icon, Skills.getDisplayNameComponent(packet.skillId)));
                 // 回发最新状态
                 ModNetwork.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));

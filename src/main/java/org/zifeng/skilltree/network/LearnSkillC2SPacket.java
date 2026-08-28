@@ -62,9 +62,10 @@ public class LearnSkillC2SPacket {
                     long have = player.getStats().getValue(net.minecraft.stats.Stats.CUSTOM, net.minecraft.stats.Stats.PLAY_TIME);
                     if (have < need) {
                         long remainSec = (need - have) / 20;
-                        player.sendSystemMessage(Component.literal(
-                                "⇄ " + Skills.getDisplayName(skillId) + " 需要游戏时长 "
-                                        + (need / 72000) + " 小时（当前 " + (have / 72000) + " 小时，还需约 " + (remainSec / 60) + " 分钟）")
+                        player.sendSystemMessage(Component.literal("⇄ ")
+                                .append(Skills.getDisplayNameComponent(skillId))
+                                .append(" 需要游戏时长 " + (need / 72000) + " 小时（当前 " + (have / 72000)
+                                        + " 小时，还需约 " + (remainSec / 60) + " 分钟）")
                                 .withStyle(s -> s.withColor(net.minecraft.ChatFormatting.GOLD)));
                         ModNetwork.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
                         return;
@@ -85,8 +86,9 @@ public class LearnSkillC2SPacket {
                     SkillEffects.applyAll(player, record);
                     // 子枫的馈赠激活成功提示（不消耗技能点）
                     if (Skills.isGiftSkill(skillId)) {
-                        player.sendSystemMessage(Component.literal(
-                                "🎁 " + Skills.getDisplayName(skillId) + " 已激活！开启开关后按时间自动获得技能点"));
+                        player.sendSystemMessage(Component.translatable(
+                                "chat.zifeng_s_custom_skill_tree.gift_activated",
+                                Skills.getDisplayNameComponent(skillId)));
                     }
                 }
             }
@@ -100,9 +102,10 @@ public class LearnSkillC2SPacket {
     private static boolean checkModLoaded(String skillId, ServerPlayer player) {
         String missing = missingModName(skillId);
         if (missing != null) {
-            player.sendSystemMessage(Component.literal(
-                    "⚠ 未安装" + missing + "，学习「" + Skills.getDisplayName(skillId) + "」无效")
-                    .withStyle(s -> s.withColor(net.minecraft.ChatFormatting.RED)));
+            player.sendSystemMessage(Component.translatable(
+                            "chat.zifeng_s_custom_skill_tree.no_mod_learn",
+                            missing, Skills.getDisplayNameComponent(skillId))
+                            .withStyle(s -> s.withColor(net.minecraft.ChatFormatting.RED)));
             return false;
         }
         return true;
@@ -111,7 +114,7 @@ public class LearnSkillC2SPacket {
     /** 其余模组兼容技能：返回缺失模组的中文名；模组已装或非兼容技能 → null */
     private static String missingModName(String skillId) {
         if (Skills.MANA_AMP.equals(skillId) || Skills.ARS_MANA_REGEN.equals(skillId)) {
-            return org.zifeng.skilltree.compat.ArsNouveauCompat.isLoaded() ? null : "新生魔艺（Ars Nouveau）";
+            return org.zifeng.skilltree.compat.ArsNouveauCompat.isLoaded() ? null : Component.translatable("ui.zifeng_s_custom_skill_tree.mod_ars").getString();
         }
         if (Skills.IRON_MANA_AMP.equals(skillId) || Skills.IRON_MANA_REGEN.equals(skillId)
                 || Skills.IRON_CAST_TIME.equals(skillId) || Skills.IRON_COOLDOWN.equals(skillId)
@@ -119,7 +122,7 @@ public class LearnSkillC2SPacket {
                 || Skills.IRON_HOLY.equals(skillId) || Skills.IRON_ENDER.equals(skillId)
                 || Skills.IRON_BLOOD.equals(skillId) || Skills.IRON_EVOCATION.equals(skillId)
                 || Skills.IRON_NATURE.equals(skillId) || Skills.IRON_ELDRITCH.equals(skillId)) {
-            return org.zifeng.skilltree.compat.IronSpellsCompat.isLoaded() ? null : "铁魔法（Iron's Spells）";
+            return org.zifeng.skilltree.compat.IronSpellsCompat.isLoaded() ? null : Component.translatable("ui.zifeng_s_custom_skill_tree.mod_iron").getString();
         }
         return null;
     }

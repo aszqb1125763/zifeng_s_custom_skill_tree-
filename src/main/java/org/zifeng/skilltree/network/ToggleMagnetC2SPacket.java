@@ -38,26 +38,35 @@ public class ToggleMagnetC2SPacket {
                 if (record.getLearnedPoints(Skills.AURA_MAGNET) <= 0) {
                     // 未学习：消耗技能点学习并开启
                     double cost = Config.MAGNET_COST.get();
-                    String name = Skills.getDisplayName(Skills.AURA_MAGNET);
                     if (record.getSkillPoints() < cost - 1e-9) {
-                        player.sendSystemMessage(Component.literal("⚠ 技能点不足，学习" + name + "需要 " + String.format("%.0f", cost) + " 技能点"));
+                        player.sendSystemMessage(Component.translatable(
+                                "chat.zifeng_s_custom_skill_tree.no_point_learn",
+                                Skills.getDisplayNameComponent(Skills.AURA_MAGNET),
+                                String.format("%.0f", cost)));
                         return;
                     }
                     if (!record.learnSkill(Skills.AURA_MAGNET)) {
-                        player.sendSystemMessage(Component.literal("⚠ 无法学习" + name));
+                        player.sendSystemMessage(Component.translatable(
+                                "chat.zifeng_s_custom_skill_tree.cannot_learn",
+                                Skills.getDisplayNameComponent(Skills.AURA_MAGNET)));
                         return;
                     }
                     record.setEnabled(Skills.AURA_MAGNET, true);
                     data.setDirty();
-                    player.sendSystemMessage(Component.literal("🧲 " + name + "已学习并开启（消耗 " + String.format("%.0f", cost) + " 技能点；潜行时暂停吸取）"));
+                    player.sendSystemMessage(Component.translatable(
+                            "chat.zifeng_s_custom_skill_tree.magnet_learned",
+                            Skills.getDisplayNameComponent(Skills.AURA_MAGNET),
+                            String.format("%.0f", cost)));
                 } else {
                     // 已学习：切换开关
                     boolean now = !record.isEnabled(Skills.AURA_MAGNET);
                     record.setEnabled(Skills.AURA_MAGNET, now);
                     data.setDirty();
-                    player.sendSystemMessage(Component.literal(now
-                            ? "🧲 " + Skills.getDisplayName(Skills.AURA_MAGNET) + "已开启（潜行时暂停吸取）"
-                            : "🧲 " + Skills.getDisplayName(Skills.AURA_MAGNET) + "已关闭"));
+                    player.sendSystemMessage(Component.translatable(
+                            now
+                                    ? "chat.zifeng_s_custom_skill_tree.magnet_on"
+                                    : "chat.zifeng_s_custom_skill_tree.magnet_off",
+                            Skills.getDisplayNameComponent(Skills.AURA_MAGNET)));
                 }
                 ModNetwork.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
         });

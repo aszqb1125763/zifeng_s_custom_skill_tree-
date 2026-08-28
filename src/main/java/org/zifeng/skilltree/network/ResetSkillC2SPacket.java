@@ -44,7 +44,7 @@ public class ResetSkillC2SPacket {
                 PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
                 int learned = record.getLearnedPoints(skillId);
                 if (learned <= 0) {
-                    player.sendSystemMessage(Component.literal("⚠ 该技能未学习，无法重置"));
+                    player.sendSystemMessage(Component.translatable("chat.zifeng_s_custom_skill_tree.reset_not_learned"));
                     return;
                 }
                 // 计算该技能总消耗并返还
@@ -67,9 +67,13 @@ public class ResetSkillC2SPacket {
 
                 // 重置村庄英雄/发光/战利品爆炸/虚空之躯等被动 → 状态由事件每次 tick 按记录重判，无残留
                 double rate = org.zifeng.skilltree.Config.RESET_REFUND_RATE.get();
-                player.sendSystemMessage(Component.literal("♻ 已重置【" + Skills.getDisplayName(skillId) + "】，"
-                        + (rate >= 1.0 ? "全额返还 " : "按 " + String.format("%.0f", rate * 100) + "% 返还 ")
-                        + String.format("%.1f", spent * rate) + " 技能点"));
+                player.sendSystemMessage(Component.translatable(
+                        rate >= 1.0
+                                ? "chat.zifeng_s_custom_skill_tree.reset_full"
+                                : "chat.zifeng_s_custom_skill_tree.reset_partial",
+                        Skills.getDisplayNameComponent(skillId),
+                        String.format("%.0f", rate * 100),
+                        String.format("%.1f", spent * rate)));
                 ModNetwork.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
         });

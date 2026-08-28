@@ -75,7 +75,7 @@ public class SkillPointHudRenderer {
             if (e.getValue() <= 0) {
                 continue;
             }
-            boolean converter = e.getKey().contains("转换");
+            boolean converter = e.getKey().startsWith("converter:");
             Line line = lines.get(e.getKey());
             if (line == null) {
                 // 转换机：无动画常驻；馈赠：初始出现（带动画）
@@ -113,10 +113,10 @@ public class SkillPointHudRenderer {
         double delta = total - totalSkillPoints;
         if (delta < -1e-9) {
             // 扣点：通用行显示（红色）
-            putLine("⚡技能点", delta);
+            putLine("point:", delta);
         } else if (delta > 1e-9) {
             // 增加：专属行已显示，不重复；清通用行
-            lines.remove("⚡技能点");
+            lines.remove("point:");
         }
         totalSkillPoints = total;
     }
@@ -193,30 +193,43 @@ public class SkillPointHudRenderer {
 
         // 1. 清理过期行（馈赠/通用 1 秒；转换机 5 秒无增加隐藏）
         lines.entrySet().removeIf(e -> {
-            boolean converter = e.getKey().contains("转换");
+            boolean converter = e.getKey().startsWith("converter:");
             long limit = converter ? CONVERTER_LIFETIME_MS : LIFETIME_MS;
             return now - e.getValue().time > limit;
         });
 
         // 2. 总技能点（绿色固定，先画——速率行向上堆叠不推它）
-        gui.drawString(mc.font, "技能点：" + String.format("%.1f", totalSkillPoints), x, totalY, COLOR_TOTAL);
+        gui.drawString(mc.font, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.hud_skill_point").getString()
+                + String.format("%.1f", totalSkillPoints), x, totalY, COLOR_TOTAL);
 
         // 3. 速率行从总数行往上排列（动画：新值滑入放大）
         int rateY = totalY - 10;
         for (Map.Entry<String, Line> e : lines.entrySet()) {
             Line line = e.getValue();
             String source = e.getKey();
+            String displayName;
+            boolean converter = source.startsWith("converter:");
+            boolean point = source.startsWith("point:");
+            if (converter) {
+                displayName = net.minecraft.network.chat.Component.translatable("hud.zifeng_s_custom_skill_tree.converter").getString();
+            } else if (point) {
+                displayName = net.minecraft.network.chat.Component.translatable("hud.zifeng_s_custom_skill_tree.skill_point").getString();
+            } else if (source.startsWith("gift:")) {
+                displayName = "🎁" + org.zifeng.skilltree.skill.Skills.getDisplayNameComponent(source.substring(5)).getString();
+            } else {
+                displayName = source;
+            }
             String text;
             int color;
-            if (source.contains("转换")) {
-                text = source + " +" + String.format("%.3f", line.value) + "/秒";
+            if (converter) {
+                text = displayName + " +" + String.format("%.3f", line.value) + net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_per_sec").getString();
                 color = COLOR_CONVERTER;
-            } else if (source.contains("⚡")) {
+            } else if (point) {
                 String sign = line.value >= 0 ? "+" : "";
-                text = source + " " + sign + String.format("%.1f", line.value) + "点";
+                text = displayName + " " + sign + String.format("%.1f", line.value) + net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_pt").getString();
                 color = line.value >= 0 ? COLOR_CONVERTER : COLOR_DECREASE;
             } else {
-                text = source + " +" + String.format("%.0f", line.value) + "点";
+                text = displayName + " +" + String.format("%.0f", line.value) + net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_pt").getString();
                 color = COLOR_GIFT;
             }
 
@@ -241,7 +254,7 @@ public class SkillPointHudRenderer {
             float alphaT = Math.min(1.0f, anim / 0.3f);
             int alpha = (int) (255 * alphaT);
             // 颜色过渡：动画期高亮 → 常色（同步渐变）
-            int bright = source.contains("转换") ? 0xFFFFFFFF : 0xFFFF9AC8;
+            int bright = source.startsWith("converter:") ? 0xFFFFFFFF : 0xFFFF9AC8;
             int baseColor = anim < 1.0f ? lerpColor(color, bright, ease) : color;
             int curColor = (alpha << 24) | (baseColor & 0xFFFFFF);
 

@@ -19,6 +19,10 @@ import org.zifeng.skilltree.network.ConverterUnlimitedC2SPacket;
  * 无限制输入按钮：位于速率输入框下方，全部左对齐。
  */
 public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPointConverterMenu> {
+    /** 本地化快捷取翻译：ui.zifeng_s_custom_skill_tree.<key> */
+    private static String t(String key) {
+        return net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree." + key).getString();
+    }
 
     /** 无限制输入按钮区域（相对 GUI 左上角的局部坐标） */
     private int btnX = 0, btnY = 0, btnW = 130, btnH = 16;
@@ -51,7 +55,7 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
         rateBoxX = x + 14;
         rateBoxY = y + 118;
         rateBoxW = 120;
-        rateBox = new EditBox(font, rateBoxX, rateBoxY, rateBoxW, 14, Component.literal("输入速率"));
+        rateBox = new EditBox(font, rateBoxX, rateBoxY, rateBoxW, 14, Component.translatable("ui.zifeng_s_custom_skill_tree.conv_rate"));
         rateBox.setValue(String.valueOf(menu.getInputRate()));
         rateBox.setMaxLength(13);
         rateBox.setFilter(s -> s.matches("\\d*")); // 仅数字
@@ -90,26 +94,26 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
         if (fillW > 0) {
             guiGraphics.fill(barX, barY, barX + fillW, barY + barH, Config.MACHINE_PROGRESS_COLOR.get());
         }
-        guiGraphics.drawCenteredString(font, "能量转换进度: " + pct + "%", x + imageWidth / 2, barY + barH + 5, 0xFFFFFFFF);
+        guiGraphics.drawCenteredString(font, t("conv_progress") + " " + pct + "%", x + imageWidth / 2, barY + barH + 5, 0xFFFFFFFF);
 
         int line = barY + barH + 19;
         int lineH = 11;
         int left = x + 14;
         // 已转换技能点（玩家整体累计，跨机器共享，阶梯消耗依据）
-        guiGraphics.drawString(font, "玩家累计已转换: " + fmtBig(menu.getTotalConverted()) + " 点", left, line, 0xFFFFD700);
+        guiGraphics.drawString(font, t("conv_total") + " " + fmtBig(menu.getTotalConverted()) + " " + t("btn_pt"), left, line, 0xFFFFD700);
         line += lineH;
         // 绑定状态
-        String bindText = menu.isBound() ? "✓ 已绑定放置者" : "✗ 未绑定（请重新放置）";
+        String bindText = menu.isBound() ? t("conv_bound") : t("conv_unbound");
         int bindColor = menu.isBound() ? 0xFF55FF55 : 0xFFFF5555;
         guiGraphics.drawString(font, bindText, left, line, bindColor);
         line += lineH;
         // 红石状态
-        String redstoneText = menu.isRedstoneBlocked() ? "⛔ 红石激活: 机器已关闭" : "✓ 红石未激活: 机器运行中";
-        guiGraphics.drawString(font, redstoneText, left, line, menu.isRedstoneBlocked() ? 0xFFFF5555 : 0xFF55FF55);;
+        String redstoneText = menu.isRedstoneBlocked() ? t("conv_rs_blocked") : t("conv_rs_ok");
+        guiGraphics.drawString(font, redstoneText, left, line, menu.isRedstoneBlocked() ? 0xFFFF5555 : 0xFF55FF55);
         line += lineH + 2;
 
         // 输入速率标签 + 数字输入框（EditBox，回车提交；无限制输入开启时显示无限制）
-        guiGraphics.drawString(font, "输入速率 (FE/t):", left, line, 0xFFFFD700);
+        guiGraphics.drawString(font, t("conv_rate") + " (FE/t):", left, line, 0xFFFFD700);
         line += lineH + 2;
         // 刷新编辑框位置与当前值（菜单数据变化时同步；本地乐观值优先，避免同步延迟导致输入被重置）
         if (rateBox != null) {
@@ -144,13 +148,13 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
         } else {
             guiGraphics.fill(btnX + 4, btnY + 6, btnX + 9, btnY + 11, 0xFF666666);
         }
-        String btnText = unlimited ? "✓ 无限制输入: 开启（点击关闭）" : "无限制输入: 关闭（点击开启）";
+        String btnText = unlimited ? t("conv_ul_on") : t("conv_ul_off");
         guiGraphics.drawString(font, btnText, btnX + 13, btnY + 3, unlimited ? 0xFF55FFAA : 0xFFAAAAAA);
         // 当前生效输入速率（服务端同步实际值）
         line += btnH + 3;
-        String rateText = unlimited ? "当前速率: 无限制"
-                : "当前速率: " + fmtBig(menu.getInputRate()) + " FE/t";
-        guiGraphics.drawString(font, rateText, left, line, unlimited ? 0xFF55FFAA : 0xFFFFD700);;
+        String rateText = unlimited ? t("conv_rate_unlimited")
+                : t("conv_rate_now") + " " + fmtBig(menu.getInputRate()) + " FE/t";
+        guiGraphics.drawString(font, rateText, left, line, unlimited ? 0xFF55FFAA : 0xFFFFD700);
     }
 
     /** 提交输入速率（回车/失焦调用）：解析数字并发送 C2S */
@@ -181,19 +185,39 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
         }
     }
 
-    /** 大数字缩写显示：≥1京→"X.XX京"，≥1万亿→"X.XX万亿"，≥1亿→"X.XX亿"，≥1万→"X.XX万" */
+    /** 大数字缩写显示：中文用 京/万亿/亿/万，英文用 SI 标准 K/M/G/T/P（2026-08-29） */
     private static String fmtBig(long value) {
-        if (value >= 1_0000_0000_0000_0000L) { // 1 京 = 1e16
-            return String.format("%.2f京", value / 1_0000_0000_0000_0000.0);
+        boolean chinese = net.minecraft.client.Minecraft.getInstance().options.languageCode.startsWith("zh");
+        if (chinese) {
+            if (value >= 1_0000_0000_0000_0000L) { // 1 京 = 1e16
+                return String.format("%.2f%s", value / 1_0000_0000_0000_0000.0, t("unit_jing"));
+            }
+            if (value >= 1_000_000_000_000L) { // 1 万亿 = 1e12
+                return String.format("%.2f%s", value / 1_000_000_000_000.0, t("unit_trillion"));
+            }
+            if (value >= 100_000_000L) { // 1 亿 = 1e8
+                return String.format("%.2f%s", value / 100_000_000.0, t("unit_hundred_million"));
+            }
+            if (value >= 10_000L) { // 1 万 = 1e4
+                return String.format("%.1f%s", value / 10_000.0, t("unit_ten_thousand"));
+            }
+            return String.valueOf(value);
         }
-        if (value >= 1_000_000_000_000L) {
-            return String.format("%.2f万亿", value / 1_000_000_000_000.0);
+        // 英文（SI 标准）：K=1e3 M=1e6 G=1e9 T=1e12 P=1e15
+        if (value >= 1_000_000_000_000_000L) { // 1e15
+            return String.format("%.2fP", value / 1_000_000_000_000_000.0);
         }
-        if (value >= 100_000_000L) {
-            return String.format("%.2f亿", value / 100_000_000.0);
+        if (value >= 1_000_000_000_000L) { // 1e12
+            return String.format("%.2fT", value / 1_000_000_000_000.0);
         }
-        if (value >= 10_000L) {
-            return String.format("%.1f万", value / 10_000.0);
+        if (value >= 1_000_000_000L) { // 1e9
+            return String.format("%.2fG", value / 1_000_000_000.0);
+        }
+        if (value >= 1_000_000L) { // 1e6
+            return String.format("%.2fM", value / 1_000_000.0);
+        }
+        if (value >= 1_000L) { // 1e3
+            return String.format("%.1fK", value / 1_000.0);
         }
         return String.valueOf(value);
     }
