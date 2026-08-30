@@ -43,33 +43,33 @@ public enum SkillPointConverterProvider implements IBlockComponentProvider {
         boolean chinese = net.minecraft.client.Minecraft.getInstance().options.languageCode.startsWith("zh");
         if (chinese) {
             if (value >= 1_0000_0000_0000_0000L) { // 1 京 = 1e16
-                return String.format("%%.2f%s", value / 1_0000_0000_0000_0000.0, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_jing").getString());
+                return String.format("%.2f%s", value / 1_0000_0000_0000_0000.0, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_jing").getString());
             }
             if (value >= 1_000_000_000_000L) {
-                return String.format("%%.2f%s", value / 1_000_000_000_000.0, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_trillion").getString());
+                return String.format("%.2f%s", value / 1_000_000_000_000.0, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_trillion").getString());
             }
             if (value >= 100_000_000L) {
-                return String.format("%%.2f%s", value / 100_000_000.0, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_hundred_million").getString());
+                return String.format("%.2f%s", value / 100_000_000.0, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_hundred_million").getString());
             }
             if (value >= 10_000L) {
-                return String.format("%%.1f%s", value / 10_000.0, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_ten_thousand").getString());
+                return String.format("%.1f%s", value / 10_000.0, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_ten_thousand").getString());
             }
             return String.valueOf(value);
         }
         if (value >= 1_000_000_000_000_000L) { // 1e15
-            return String.format("%%.2fP", value / 1_000_000_000_000_000.0);
+            return String.format("%.2fP", value / 1_000_000_000_000_000.0);
         }
         if (value >= 1_000_000_000_000L) { // 1e12
-            return String.format("%%.2fT", value / 1_000_000_000_000.0);
+            return String.format("%.2fT", value / 1_000_000_000_000.0);
         }
         if (value >= 1_000_000_000L) { // 1e9
-            return String.format("%%.2fG", value / 1_000_000_000.0);
+            return String.format("%.2fG", value / 1_000_000_000.0);
         }
         if (value >= 1_000_000L) { // 1e6
-            return String.format("%%.2fM", value / 1_000_000.0);
+            return String.format("%.2fM", value / 1_000_000.0);
         }
         if (value >= 1_000L) { // 1e3
-            return String.format("%%.1fK", value / 1_000.0);
+            return String.format("%.1fK", value / 1_000.0);
         }
         return String.valueOf(value);
     }
