@@ -611,10 +611,11 @@ public class AuraEvents {
     private static void auraHeal(ServerPlayer player, PlayerSkillRecord record) {
         int level = record.isEnabled(Skills.AURA_HEAL) ? record.getActiveLevel(Skills.AURA_HEAL) : 0;
         if (level <= 0) {
-            return;
+            return; // 关闭/未点亮：不加效果（有限时长会自然过期，无需主动回收，避免遍历范围造成卡顿）
         }
-        // 每 20 tick（1 秒）刷新一次生命回复效果（等级 = 技能等级，时长 6 秒防闪烁）
-        if ((player.level().getGameTime() + player.getId()) % 20 != 0) {
+        // 2026-08-31：每 200 tick（10 秒）给范围内友方施加一次 2400 tick（2 分钟）生命回复，
+        // 效果在 2 分钟内自然过期——关闭技能/离开范围后无需主动移除，避免遍历实体的性能开销
+        if ((player.level().getGameTime() + player.getId()) % 200 != 0) {
             return;
         }
         double radius = SkillEffects.getAuraHealRadius();
@@ -634,13 +635,13 @@ public class AuraEvents {
                         default -> !hostile;     // 敌对模式（默认）：非敌对（治愈默认奶友好）
                     };
                 });
-        // 生命回复效果：amplifier = level - 1（1 级 = 生命回复I，50 级 = 生命回复50）
+        // 生命回复效果：amplifier = level - 1（1 级 = 生命回复I，50 级 = 生命回复50）；时长 2400 tick = 2 分钟
         var regen = new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.REGENERATION, 120, level - 1, false, false, true);
+                net.minecraft.world.effect.MobEffects.REGENERATION, 2400, level - 1, false, false, true);
         for (LivingEntity ally : allies) {
-            // 只在效果缺失或等级不够时补（避免每 tick 覆盖刷新造成粒子闪烁）
+            // 只在效果缺失或等级不够/剩余不足 2 分钟时补（避免每 10 秒覆盖刷新造成粒子闪烁）
             var cur = ally.getEffect(net.minecraft.world.effect.MobEffects.REGENERATION);
-            if (cur == null || cur.getAmplifier() < level - 1) {
+            if (cur == null || cur.getAmplifier() < level - 1 || cur.getDuration() < 2400) {
                 ally.addEffect(regen);
             }
         }

@@ -8,6 +8,8 @@
     "RangedAttributeMixin",
     "ItemStackMixin",
     "BlockStateMixin",
+    "ServerPlayerGameModeMixin",
+    "BlockDropsMixin",
     "EntityFireImmuneMixin",
     "VillagerMixin"
   ],

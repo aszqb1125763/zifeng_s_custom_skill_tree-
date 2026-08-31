@@ -182,6 +182,17 @@ public final class LootVacuumEvents {
     }
 
     /** ItemStack 列表版（1.20.1 方块掉落 BreakEvent 用）：全部塞进容器返回 true（调用方清空列表），部分塞进返回 false */
+
+    /** 是否可能触发凋落物挪移（技能已学开启 + 已绑定容器）——供 GLM 判断是否需要进入掉落处理 */
+    public static boolean hasBinding(ServerPlayer player, PlayerSkillRecord record) {
+        if (player == null || record == null) {
+            return false;
+        }
+        return record.getLearnedPoints(Skills.AURA_LOOT_VACUUM) > 0
+                && record.isEnabled(Skills.AURA_LOOT_VACUUM)
+                && record.hasLootVacuumBind();
+    }
+
     public static boolean tryVacuumDropsStacks(ServerPlayer player, PlayerSkillRecord record,
                                                java.util.List<ItemStack> drops) {
         if (player == null || record == null || drops == null || drops.isEmpty()) {

@@ -61,6 +61,12 @@ import java.util.UUID;
  */
 public class UltimateEvents {
 
+    /**
+     * 无限时长阈值：服务端每 tick 递减效果 duration，Integer.MAX_VALUE 挂上后第一 tick 就变小，
+     * 因此回收判断不能用 ==，改为 >= 此阈值视为"无限时长"（10 亿 tick ≈ 578 天）。
+     */
+    private static final int INFINITE_DURATION = 1_000_000_000;
+
     // ============ 凤凰涅槃状态 ============
     private static final Map<UUID, Long> reviveCooldownUntil = new HashMap<>(); // 世界时间 tick
     /** 已发送过"就绪"状态的玩家（2026-08-28 性能：就绪态不随 tick 变化，只发一次，避免每秒重复发包） */
@@ -154,6 +160,7 @@ public class UltimateEvents {
                 }
             }
             // 不坏金身：常驻 buff（抗性提升/伤害吸收/抗火），点亮且启用时每 20 tick 刷新保持
+            // 2026-08-31：改无限时长（Integer.MAX_VALUE，HUD 显示 **:** 不倒数）；关闭/未点亮时按特征回收本技能的效果
             if (record.getLearnedPoints(Skills.ULT_GOLDEN) > 0 && record.isEnabled(Skills.ULT_GOLDEN)) {
                 if (player.tickCount % 20 == 0) {
                     int resist = org.zifeng.skilltree.Config.GOLDEN_RESISTANCE_LEVEL.get();
@@ -161,25 +168,43 @@ public class UltimateEvents {
                     int fire = org.zifeng.skilltree.Config.GOLDEN_FIRE_RESISTANCE_LEVEL.get();
                     if (resist > 0) {
                         var cur = player.getEffect(net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE);
-                        if (cur == null || cur.getAmplifier() < resist - 1 || cur.getDuration() < 300) {
+                        if (cur == null || cur.getAmplifier() < resist - 1) {
                             player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                                    net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE, 400, resist - 1, false, false, false));
+                                    net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE, Integer.MAX_VALUE, resist - 1, false, false, false));
                         }
                     }
                     if (absorb > 0) {
                         var cur = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
-                        if (cur == null || cur.getAmplifier() < absorb - 1 || cur.getDuration() < 300) {
+                        if (cur == null || cur.getAmplifier() < absorb - 1) {
                             player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                                    net.minecraft.world.effect.MobEffects.ABSORPTION, 400, absorb - 1, false, false, false));
+                                    net.minecraft.world.effect.MobEffects.ABSORPTION, Integer.MAX_VALUE, absorb - 1, false, false, false));
                         }
                     }
                     if (fire > 0) {
                         var cur = player.getEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE);
-                        if (cur == null || cur.getAmplifier() < fire - 1 || cur.getDuration() < 300) {
+                        if (cur == null || cur.getAmplifier() < fire - 1) {
                             player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                                    net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE, 400, fire - 1, false, false, false));
+                                    net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE, Integer.MAX_VALUE, fire - 1, false, false, false));
                         }
                     }
+                }
+            } else {
+                // 未点亮/关闭/已重置 → 回收本技能加的无限效果（特征：无限时长 + amplifier 匹配配置等级）
+                int resist = org.zifeng.skilltree.Config.GOLDEN_RESISTANCE_LEVEL.get();
+                int absorb = org.zifeng.skilltree.Config.GOLDEN_ABSORPTION_LEVEL.get();
+                int fire = org.zifeng.skilltree.Config.GOLDEN_FIRE_RESISTANCE_LEVEL.get();
+                var r = player.getEffect(net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE);
+                if (r != null && r.getDuration() >= INFINITE_DURATION && r.getAmplifier() == resist - 1) {
+                    player.removeEffect(net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE);
+                }
+                var a = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
+                // ⚠️ 只回收金身自己的吸收（amp=absorb-1）；虚空之躯的吸收是 amp=4，不误删
+                if (a != null && a.getDuration() >= INFINITE_DURATION && a.getAmplifier() == absorb - 1) {
+                    player.removeEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
+                }
+                var f = player.getEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE);
+                if (f != null && f.getDuration() >= INFINITE_DURATION && f.getAmplifier() == fire - 1) {
+                    player.removeEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE);
                 }
             }
             // 宇宙的青睐：技能飞行权限管理（点亮→授予，关闭→回收，绝不触碰创造模式/其他模组的飞行）
@@ -222,16 +247,19 @@ public class UltimateEvents {
                 }
             }
             // 星瞳·夜视：永久夜视，永不闪烁
-            // ⚠️ 原版闪烁机制：LightTexture.getNightVisionFlashIntensity 在夜视剩余 ≤200 tick（10秒）
-            //    时亮度按正弦波 0.25~1.0 波动（倒计时闪烁）。因此刷新阈值必须 > 200 tick，
-            //    否则玩家会看到像原版快过期一样的明暗闪烁。这里阈值 300、时长 600，
-            //    剩余时长永远落在 300~600 之间，完全避开闪烁区。
+            // 2026-08-31：改无限时长（Integer.MAX_VALUE，HUD 显示 **:**）；关闭/未点亮时回收本技能的夜视
             if (player.tickCount % 20 == 0) { // 每秒检查一次（够及时，减少每 tick 开销）
                 if (record.getLearnedPoints(Skills.NIGHT_VISION) > 0 && record.isEnabled(Skills.NIGHT_VISION)) {
                     var nightVision = player.getEffect(net.minecraft.world.effect.MobEffects.NIGHT_VISION);
-                    if (nightVision == null || nightVision.getDuration() < 300) {
+                    if (nightVision == null) {
                         player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                                net.minecraft.world.effect.MobEffects.NIGHT_VISION, 600, 0, false, false, false));
+                                net.minecraft.world.effect.MobEffects.NIGHT_VISION, Integer.MAX_VALUE, 0, false, false, false));
+                    }
+                } else {
+                    // 未点亮/关闭/已重置 → 回收本技能的无限夜视
+                    var nightVision = player.getEffect(net.minecraft.world.effect.MobEffects.NIGHT_VISION);
+                    if (nightVision != null && nightVision.getDuration() >= INFINITE_DURATION) {
+                        player.removeEffect(net.minecraft.world.effect.MobEffects.NIGHT_VISION);
                     }
                 }
             }
@@ -243,14 +271,20 @@ public class UltimateEvents {
             }
             // 村庄英雄（节点类多级终极，上限10级）：每级 +4 级原版村庄英雄效果
             // 1级=村庄英雄4级(amp3)，2级=8级(amp7)，10级=40级(amp39)
-            // 实现参考夜视：每 20 tick 刷新保持（交易折扣永久生效）
+            // 2026-08-31：改无限时长（HUD 显示 **:** 不倒数），每 20 tick 只在缺失/等级不足时重挂；关闭时按特征回收
             int heroLevel = record.isEnabled(Skills.VILLAGE_HERO) ? record.getActiveLevel(Skills.VILLAGE_HERO) : 0;
             if (heroLevel > 0 && player.tickCount % 20 == 0) {
                 int heroAmp = heroLevel * 4 - 1; // 每级 +4 级村庄英雄
                 var hero = player.getEffect(net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE);
-                if (hero == null || hero.getAmplifier() < heroAmp || hero.getDuration() < 300) {
+                if (hero == null || hero.getAmplifier() < heroAmp) {
                     player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                            net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE, 400, heroAmp, false, false, false));
+                            net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE, Integer.MAX_VALUE, heroAmp, false, false, false));
+                }
+            } else if (player.tickCount % 20 == 0) {
+                // 未点亮/关闭/已重置 → 回收本技能的无限村庄英雄
+                var hero = player.getEffect(net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE);
+                if (hero != null && hero.getDuration() >= INFINITE_DURATION) {
+                    player.removeEffect(net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE);
                 }
             }
             // 发光（节点类终极）：给 35 格半径内所有生物（除玩家自身）施加发光效果
@@ -309,12 +343,12 @@ public class UltimateEvents {
                 if (player.getHealth() < player.getMaxHealth() && player.tickCount % 5 == 0) {
                     player.setHealth(player.getMaxHealth());
                 }
-                // ② 保持吸收 20 点（10 颗黄心，虚空之矛同款，防伤害穿透）；%20 节流
+                // ② 保持吸收 20 点（10 颗黄心，虚空之矛同款，防伤害穿透）；%20 节流；2026-08-31 无限时长
                 if (player.tickCount % 20 == 0) {
                     var voidAbs = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
-                    if (voidAbs == null || voidAbs.getAmplifier() < 4 || voidAbs.getDuration() < 300) {
+                    if (voidAbs == null || voidAbs.getAmplifier() < 4) {
                         player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                                net.minecraft.world.effect.MobEffects.ABSORPTION, 400, 4, false, false, false));
+                                net.minecraft.world.effect.MobEffects.ABSORPTION, Integer.MAX_VALUE, 4, false, false, false));
                     }
                 }
                 // ③ 氧气无限：永不溺水
@@ -333,6 +367,12 @@ public class UltimateEvents {
                             player.removeEffect(effect.getEffect());
                         }
                     }
+                }
+            } else if (player.tickCount % 20 == 0) {
+                // 未点亮/关闭/已重置 → 回收虚空之躯自己的吸收（amp=4 无限时长）；不误删金身吸收（amp 更高）或涅槃吸收（有限时长）
+                var voidAbs = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
+                if (voidAbs != null && voidAbs.getDuration() >= INFINITE_DURATION && voidAbs.getAmplifier() == 4) {
+                    player.removeEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
                 }
             }
             // ===== 终极节点·生存辅助（2026-08-27 新增） =====
@@ -991,85 +1031,19 @@ public class UltimateEvents {
     }
 
     /**
-     * 方块掉落（时运类）：玩家挖掘方块时按掉落增幅放大掉落物数量，
-     * 但仅限掉落表含"时运"加成函数的方块（如矿物；泥土/石头不受时运影响不放大）。
-     * ⚠️ 1.20.1 Forge 无 HarvestDropsEvent/BlockDropsEvent（1.20.2+/1.21 才有）：
-     *    用 BreakEvent（破坏前触发）取消原版流程，手动生成掉落（含原版时运加成），
-     *    再依次应用 万物挖掘补掉落 → 自动熔炼 → 方块掉落倍率 → 凋落物挪移。
-     *    创造模式不接管（原版无掉落，技能也不应产生）。
+     * 方块掉落处理（2026-09-01 重构）：
+     * 已迁移至 {@code SkillTreeLootModifier}（Global Loot Modifier，1.20.1 原生机制）。
+     * 该方法保留空壳（不取消任何事件），避免 @SubscribeEvent 注册残留影响。
      */
     @SubscribeEvent
     public static void onBlockDrops(net.minecraftforge.event.level.BlockEvent.BreakEvent event) {
-        if (!(event.getLevel() instanceof net.minecraft.server.level.ServerLevel level)) {
-            return;
-        }
-        if (!(event.getPlayer() instanceof ServerPlayer sp)) {
-            return;
-        }
-        if (sp.isCreative()) {
-            return; // 创造模式走原版流程（无掉落）
-        }
-        PlayerSkillRecord record = getRecord(sp);
-        boolean autoSmeltOn = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_AUTO_SMELT);
-        double mult = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_BLOCK_DROP)
-                ? SkillEffects.getBlockDropMultiplier(record) : 1.0;
-        boolean breakAll = canBreakUnbreakable(sp);
-        if (!autoSmeltOn && mult <= 1.0 && !breakAll) {
-            return; // 无相关技能，走原版流程
-        }
-        BlockPos pos = event.getPos();
-        net.minecraft.world.level.block.state.BlockState state = event.getState();
-        BlockEntity be = level.getBlockEntity(pos);
-        ItemStack tool = sp.getMainHandItem();
-        // 原版掉落（含原版时运附魔；getDrops 由 IForgeBlock 提供）
-        // ⚠️ 2026-08-27 修复：getDrops() 对空掉落表方块（基岩/屏障等）返回【不可变空列表】，
-        //    直接 drops.add() 抛 UnsupportedOperationException → 事件中断 → 幽灵方块 + 无掉落。
-        //    必须用可变 ArrayList 包装后再 add。
-        java.util.List<ItemStack> drops = new java.util.ArrayList<>(
-                state.getBlock().getDrops(state, level, pos, be, sp, tool));
-        // 万物挖掘（ULT_BREAK_ALL）：不可破坏方块（基岩/屏障等，原版掉落表为空）挖掘后掉落对应方块。
-        // 判断依据 getDestroySpeed < 0（基岩 -1.0F，原版"不可破坏"标准，不受 BlockStateMixin 影响）
-        // ⚠️ 不能用 getDestroyProgress <= 0：Mixin 已把它改成黑曜石进度（>0），条件恒不成立！
-        if (breakAll && state.getDestroySpeed(level, pos) < 0 && drops.isEmpty()) {
-            Item blockItem = state.getBlock().asItem();
-            if (blockItem != null && blockItem != net.minecraft.world.item.Items.AIR) {
-                drops.add(new ItemStack(blockItem, 1));
-            }
-        }
-        // 自动熔炼（终极节点）：判断顺序【先判断熔炉 → 再时运 → 再技能增幅】
-        if (autoSmeltOn) {
-            applyAutoSmelt(sp, drops, record);
-        }
-        // 方块掉落倍率：仅对掉落表含"时运"的方块生效
-        if (mult > 1.0) {
-            net.minecraft.resources.ResourceLocation lootKey = state.getBlock().getLootTable();
-            if (lootKey != null && supportsFortune(lootKey, level)) {
-                applyDropMultiplierStacks(drops, sp, mult);
-            }
-        }
-        // 凋落物挪移（光环技能，2026-08-24）：掉落物直传绑定容器，不生成实体（防卡顿）
-        boolean vacuumed = LootVacuumEvents.tryVacuumDropsStacks(sp, record, drops);
-        if (vacuumed) {
-            drops.clear();
-        }
-        // ===== 取消原版破坏流程，手动执行（掉落/经验/方块移除） =====
-        event.setCanceled(true);
-        int exp = event.getExpToDrop();
-        level.removeBlockEntity(pos);
-        level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
-        // 破碎粒子 + 音效（补回原版 destroyBlock 的效果）
-        level.levelEvent(2001, pos, net.minecraft.world.level.block.Block.getId(state));
-        for (ItemStack stack : drops) {
-            if (stack != null && !stack.isEmpty()) {
-                net.minecraft.world.entity.item.ItemEntity e = new net.minecraft.world.entity.item.ItemEntity(
-                        level, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, stack);
-                e.setDefaultPickUpDelay();
-                level.addFreshEntity(e);
-            }
-        }
-        if (exp > 0) {
-            net.minecraft.world.entity.ExperienceOrb.award(level, sp.position(), exp);
-        }
+        // 掉落处理已迁移至 SkillTreeLootModifier（GLM，不取消原版破坏）。
+        // 留空：容器物品倒出/音效/Mek 能量全部走原版正常流程。
+    }
+
+    /** 供 Mixin 调用：获取玩家技能记录（public 暴露，getRecord 私有包装） */
+    public static PlayerSkillRecord getRecordFor(ServerPlayer player) {
+        return getRecord(player);
     }
 
     /**
@@ -1084,7 +1058,7 @@ public class UltimateEvents {
      * ⚠️ 配方缓存：首次构建 Map<物品, 熔炼产物>，后续 O(1) 查找（大型整合包上千配方不卡顿）。
      * 经验不产生。不熔炼已有成品/不可熔炼物。
      */
-    private static void applyAutoSmelt(ServerPlayer sp, java.util.List<net.minecraft.world.item.ItemStack> drops,
+    public static void applyAutoSmelt(ServerPlayer sp, java.util.List<net.minecraft.world.item.ItemStack> drops,
                                        PlayerSkillRecord record) {
         // 【先判断熔炉】技能已学且启用才继续
         if (record.getLearnedPoints(Skills.AUTO_SMELT) <= 0 || !record.isEnabled(Skills.AUTO_SMELT)) {
@@ -1185,7 +1159,7 @@ public class UltimateEvents {
     }
 
     /** 方块掉落表是否含时运加成（ApplyBonusCount 函数 或 附魔=FORTUNE 的概率条件） */
-    private static boolean supportsFortune(net.minecraft.resources.ResourceLocation key, net.minecraft.server.level.ServerLevel level) {
+    public static boolean supportsFortune(net.minecraft.resources.ResourceLocation key, net.minecraft.server.level.ServerLevel level) {
         return FORTUNE_SUPPORT.computeIfAbsent(key, k -> {
             LootTable table = level.getServer().getLootData().getElement(
                     new net.minecraft.world.level.storage.loot.LootDataId<>(net.minecraft.world.level.storage.loot.LootDataType.TABLE, k));
@@ -1391,7 +1365,7 @@ public class UltimateEvents {
     }
 
     /** 方块掉落倍率（ItemStack 版，1.20.1 HarvestDropsEvent 用）：确定性数量放大，超出单堆上限拆成多份 */
-    private static void applyDropMultiplierStacks(java.util.List<net.minecraft.world.item.ItemStack> drops,
+    public static void applyDropMultiplierStacks(java.util.List<net.minecraft.world.item.ItemStack> drops,
                                                   ServerPlayer sp, double mult) {
         java.util.List<net.minecraft.world.item.ItemStack> extra = new java.util.ArrayList<>();
         for (net.minecraft.world.item.ItemStack stack : drops) {

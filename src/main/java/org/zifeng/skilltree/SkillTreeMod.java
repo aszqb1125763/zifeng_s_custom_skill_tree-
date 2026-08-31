@@ -39,6 +39,8 @@ public class SkillTreeMod {
         ModMenus.MENUS.register(modEventBus);
         ModCreativeTabs.TABS.register(modEventBus);
         ModAttributes.ATTRIBUTES.register(modEventBus);
+        // 方块掉落修改器注册（Global Loot Modifier，2026-09-01：点石成金/自动熔炼/万物挖掘/挪移）
+        org.zifeng.skilltree.loot.ModLootModifiers.register(modEventBus);
 
         modEventBus.addListener(SkillEvents::registerPlayerAttributes);
 
