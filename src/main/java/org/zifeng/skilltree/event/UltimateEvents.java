@@ -58,6 +58,12 @@ import java.util.UUID;
  */
 public class UltimateEvents {
 
+    /**
+     * 无限时长阈值：服务端每 tick 递减效果 duration，Integer.MAX_VALUE 挂上后第一 tick 就变小，
+     * 因此回收判断不能用 ==，改为 >= 此阈值视为"无限时长"（10 亿 tick ≈ 578 天）。
+     */
+    private static final int INFINITE_DURATION = 1_000_000_000;
+
     // ============ 凤凰涅槃状态 ============
     private static final Map<UUID, Long> reviveCooldownUntil = new HashMap<>(); // 世界时间 tick
     /** 已发送过"就绪"状态的玩家（2026-08-28 性能：就绪态不随 tick 变化，只发一次，避免每秒重复发包） */
@@ -151,6 +157,7 @@ public class UltimateEvents {
                 }
             }
             // 不坏金身：常驻 buff（抗性提升/伤害吸收/抗火），点亮且启用时每 20 tick 刷新保持
+            // 2026-08-31：改无限时长（Integer.MAX_VALUE，HUD 显示 **:** 不倒数）；关闭/未点亮时按特征回收本技能的效果
             if (record.getLearnedPoints(Skills.ULT_GOLDEN) > 0 && record.isEnabled(Skills.ULT_GOLDEN)) {
                 if (player.tickCount % 20 == 0) {
                     int resist = org.zifeng.skilltree.Config.GOLDEN_RESISTANCE_LEVEL.get();
@@ -158,25 +165,43 @@ public class UltimateEvents {
                     int fire = org.zifeng.skilltree.Config.GOLDEN_FIRE_RESISTANCE_LEVEL.get();
                     if (resist > 0) {
                         var cur = player.getEffect(net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE);
-                        if (cur == null || cur.getAmplifier() < resist - 1 || cur.getDuration() < 300) {
+                        if (cur == null || cur.getAmplifier() < resist - 1) {
                             player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                                    net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE, 400, resist - 1, false, false, false));
+                                    net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE, Integer.MAX_VALUE, resist - 1, false, false, false));
                         }
                     }
                     if (absorb > 0) {
                         var cur = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
-                        if (cur == null || cur.getAmplifier() < absorb - 1 || cur.getDuration() < 300) {
+                        if (cur == null || cur.getAmplifier() < absorb - 1) {
                             player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                                    net.minecraft.world.effect.MobEffects.ABSORPTION, 400, absorb - 1, false, false, false));
+                                    net.minecraft.world.effect.MobEffects.ABSORPTION, Integer.MAX_VALUE, absorb - 1, false, false, false));
                         }
                     }
                     if (fire > 0) {
                         var cur = player.getEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE);
-                        if (cur == null || cur.getAmplifier() < fire - 1 || cur.getDuration() < 300) {
+                        if (cur == null || cur.getAmplifier() < fire - 1) {
                             player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                                    net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE, 400, fire - 1, false, false, false));
+                                    net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE, Integer.MAX_VALUE, fire - 1, false, false, false));
                         }
                     }
+                }
+            } else {
+                // 未点亮/关闭/已重置 → 回收本技能加的无限效果（特征：无限时长 + amplifier 匹配配置等级）
+                int resist = org.zifeng.skilltree.Config.GOLDEN_RESISTANCE_LEVEL.get();
+                int absorb = org.zifeng.skilltree.Config.GOLDEN_ABSORPTION_LEVEL.get();
+                int fire = org.zifeng.skilltree.Config.GOLDEN_FIRE_RESISTANCE_LEVEL.get();
+                var r = player.getEffect(net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE);
+                if (r != null && r.getDuration() >= INFINITE_DURATION && r.getAmplifier() == resist - 1) {
+                    player.removeEffect(net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE);
+                }
+                var a = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
+                // ⚠️ 只回收金身自己的吸收（amp=absorb-1）；虚空之躯的吸收是 amp=4，不误删
+                if (a != null && a.getDuration() >= INFINITE_DURATION && a.getAmplifier() == absorb - 1) {
+                    player.removeEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
+                }
+                var f = player.getEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE);
+                if (f != null && f.getDuration() >= INFINITE_DURATION && f.getAmplifier() == fire - 1) {
+                    player.removeEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE);
                 }
             }
             // 宇宙的青睐：技能飞行权限管理（点亮→授予，关闭→回收，绝不触碰创造模式/其他模组的飞行）
@@ -219,16 +244,19 @@ public class UltimateEvents {
                 }
             }
             // 星瞳·夜视：永久夜视，永不闪烁
-            // ⚠️ 原版闪烁机制：LightTexture.getNightVisionFlashIntensity 在夜视剩余 ≤200 tick（10秒）
-            //    时亮度按正弦波 0.25~1.0 波动（倒计时闪烁）。因此刷新阈值必须 > 200 tick，
-            //    否则玩家会看到像原版快过期一样的明暗闪烁。这里阈值 300、时长 600，
-            //    剩余时长永远落在 300~600 之间，完全避开闪烁区。
+            // 2026-08-31：改无限时长（Integer.MAX_VALUE，HUD 显示 **:**）；关闭/未点亮时回收本技能的夜视
             if (player.tickCount % 20 == 0) { // 每秒检查一次（够及时，减少每 tick 开销）
                 if (record.getLearnedPoints(Skills.NIGHT_VISION) > 0 && record.isEnabled(Skills.NIGHT_VISION)) {
                     var nightVision = player.getEffect(net.minecraft.world.effect.MobEffects.NIGHT_VISION);
-                    if (nightVision == null || nightVision.getDuration() < 300) {
+                    if (nightVision == null) {
                         player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                                net.minecraft.world.effect.MobEffects.NIGHT_VISION, 600, 0, false, false, false));
+                                net.minecraft.world.effect.MobEffects.NIGHT_VISION, Integer.MAX_VALUE, 0, false, false, false));
+                    }
+                } else {
+                    // 未点亮/关闭/已重置 → 回收本技能的无限夜视
+                    var nightVision = player.getEffect(net.minecraft.world.effect.MobEffects.NIGHT_VISION);
+                    if (nightVision != null && nightVision.getDuration() >= INFINITE_DURATION) {
+                        player.removeEffect(net.minecraft.world.effect.MobEffects.NIGHT_VISION);
                     }
                 }
             }
@@ -240,14 +268,20 @@ public class UltimateEvents {
             }
             // 村庄英雄（节点类多级终极，上限10级）：每级 +4 级原版村庄英雄效果
             // 1级=村庄英雄4级(amp3)，2级=8级(amp7)，10级=40级(amp39)
-            // 实现参考夜视：每 20 tick 刷新保持（交易折扣永久生效）
+            // 2026-08-31：改无限时长（HUD 显示 **:** 不倒数），每 20 tick 只在缺失/等级不足时重挂；关闭时按特征回收
             int heroLevel = record.isEnabled(Skills.VILLAGE_HERO) ? record.getActiveLevel(Skills.VILLAGE_HERO) : 0;
             if (heroLevel > 0 && player.tickCount % 20 == 0) {
                 int heroAmp = heroLevel * 4 - 1; // 每级 +4 级村庄英雄
                 var hero = player.getEffect(net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE);
-                if (hero == null || hero.getAmplifier() < heroAmp || hero.getDuration() < 300) {
+                if (hero == null || hero.getAmplifier() < heroAmp) {
                     player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                            net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE, 400, heroAmp, false, false, false));
+                            net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE, Integer.MAX_VALUE, heroAmp, false, false, false));
+                }
+            } else if (player.tickCount % 20 == 0) {
+                // 未点亮/关闭/已重置 → 回收本技能的无限村庄英雄
+                var hero = player.getEffect(net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE);
+                if (hero != null && hero.getDuration() >= INFINITE_DURATION) {
+                    player.removeEffect(net.minecraft.world.effect.MobEffects.HERO_OF_THE_VILLAGE);
                 }
             }
             // 发光（节点类终极）：给 35 格半径内所有生物（除玩家自身）施加发光效果
@@ -306,12 +340,12 @@ public class UltimateEvents {
                 if (player.getHealth() < player.getMaxHealth() && player.tickCount % 5 == 0) {
                     player.setHealth(player.getMaxHealth());
                 }
-                // ② 保持吸收 20 点（10 颗黄心，虚空之矛同款，防伤害穿透）；%20 节流
+                // ② 保持吸收 20 点（10 颗黄心，虚空之矛同款，防伤害穿透）；%20 节流；2026-08-31 无限时长
                 if (player.tickCount % 20 == 0) {
                     var voidAbs = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
-                    if (voidAbs == null || voidAbs.getAmplifier() < 4 || voidAbs.getDuration() < 300) {
+                    if (voidAbs == null || voidAbs.getAmplifier() < 4) {
                         player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                                net.minecraft.world.effect.MobEffects.ABSORPTION, 400, 4, false, false, false));
+                                net.minecraft.world.effect.MobEffects.ABSORPTION, Integer.MAX_VALUE, 4, false, false, false));
                     }
                 }
                 // ③ 氧气无限：永不溺水
@@ -330,6 +364,12 @@ public class UltimateEvents {
                             player.removeEffect(effect.getEffect());
                         }
                     }
+                }
+            } else if (player.tickCount % 20 == 0) {
+                // 未点亮/关闭/已重置 → 回收虚空之躯自己的吸收（amp=4 无限时长）；不误删金身吸收（amp 更高）或涅槃吸收（有限时长）
+                var voidAbs = player.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
+                if (voidAbs != null && voidAbs.getDuration() >= INFINITE_DURATION && voidAbs.getAmplifier() == 4) {
+                    player.removeEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
                 }
             }
             // ===== 终极节点·生存辅助（2026-08-27 新增） =====
