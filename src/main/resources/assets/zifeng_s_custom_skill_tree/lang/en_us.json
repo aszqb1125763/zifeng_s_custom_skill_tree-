@@ -248,6 +248,7 @@
   "ui.zifeng_s_custom_skill_tree.col_aura": "Aura",
   "ui.zifeng_s_custom_skill_tree.col_global": "Cosmic Law",
   "ui.zifeng_s_custom_skill_tree.col_machine": "Machine",
+  "ui.zifeng_s_custom_skill_tree.machine_weak_warn": "⚠ Weak-compat warning: this skill works via simulated-player (fake player) events\nIt is weak compatibility, not strong — not guaranteed to work on every machine\nWhich machines support it is uncertain; put it on a real machine to test",
   "ui.zifeng_s_custom_skill_tree.col_gift": "Zifeng's Gift",
   "ui.zifeng_s_custom_skill_tree.key_toggle_col": "Toggle",
   "ui.zifeng_s_custom_skill_tree.key_target_col": "Target",
@@ -264,6 +265,9 @@
   "ui.zifeng_s_custom_skill_tree.type_gift": "Gift",
   "ui.zifeng_s_custom_skill_tree.hud_on": "✅ Skill Point HUD On",
   "ui.zifeng_s_custom_skill_tree.hud_off": "❌ Skill Point HUD Off",
+  "ui.zifeng_s_custom_skill_tree.hud_adjust": "⚙ HUD Adjust",
+  "ui.zifeng_s_custom_skill_tree.hud_title": "≡ Skill Point HUD Adjust",
+  "ui.zifeng_s_custom_skill_tree.hud_step_hint": "Click arrows/scroll · Shift=10 Ctrl=100",
   "ui.zifeng_s_custom_skill_tree.hud_x": "X Position",
   "ui.zifeng_s_custom_skill_tree.hud_y": "Y Position",
   "ui.zifeng_s_custom_skill_tree.hud_reset": "↺ Reset Position",
@@ -438,6 +442,7 @@
   "ui.zifeng_s_custom_skill_tree.panel_btn_hide": "Click: hide/show attribute panel",
   "ui.zifeng_s_custom_skill_tree.panel_btn_shift": "Shift+Click: toggle right/bottom position",
   "ui.zifeng_s_custom_skill_tree.panel_btn_show": "Click: show attribute panel",
+  "ui.zifeng_s_custom_skill_tree.panel_btn_open": "≡ Attribute Panel",
   "ui.zifeng_s_custom_skill_tree.panel_rbtn_hint": "RMB skill = toggle",
   "chat.zifeng_s_custom_skill_tree.aura_target": "%s %s · Target: %s",
   "chat.zifeng_s_custom_skill_tree.need_time": "⏳ %s needs playtime %s h (current %s h, about %s min left)",
@@ -475,5 +480,10 @@
   "chat.zifeng_s_custom_skill_tree.no_mod_learn": "⚠ %s not installed, learning %s is invalid",
   "chat.zifeng_s_custom_skill_tree.welcome_intro": "§6[Zifeng Skill Tree] §fv%s §7— turn spare FE energy into skill points, unlock 114 skills in a 9-column tree!",
   "chat.zifeng_s_custom_skill_tree.welcome_author": "§aMade by 不无聊的子枫哥 §7(developed with AI, fully open-source MIT)",
-  "chat.zifeng_s_custom_skill_tree.welcome_modern_ui": "§bTip: §fInstall §eModern UI §ffor better font rendering & UI!"
+  "chat.zifeng_s_custom_skill_tree.welcome_modern_ui": "§bTip: §fInstall §eModern UI §ffor better font rendering & UI!",
+  "chat.zifeng_s_custom_skill_tree.admin_reset_done_online": "✅ Cleared %s's skill data & zeroed points (applied immediately)",
+  "chat.zifeng_s_custom_skill_tree.admin_reset_done_offline": "✅ Cleared %s's skill data & zeroed points (offline; takes effect on next login)",
+  "chat.zifeng_s_custom_skill_tree.admin_points_set": "✅ Set %s's skill points to %s",
+  "chat.zifeng_s_custom_skill_tree.admin_points_add": "✅ Adjusted %s's skill points by %s (now %s)",
+  "chat.zifeng_s_custom_skill_tree.admin_player_not_found": "⚠ Player data not found: player must have logged into this server at least once (or use a UUID / @s selector)"
 }

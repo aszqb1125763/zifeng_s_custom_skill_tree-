@@ -248,6 +248,7 @@
   "ui.zifeng_s_custom_skill_tree.col_aura": "光环",
   "ui.zifeng_s_custom_skill_tree.col_global": "寰宇法则",
   "ui.zifeng_s_custom_skill_tree.col_machine": "机械共鸣",
+  "ui.zifeng_s_custom_skill_tree.machine_weak_warn": "⚠ 弱兼容警告：本技能以模拟玩家机器（假玩家）触发事件的方式生效\n这是弱兼容而非强兼容——不保证在所有机器上生效\n能生效的机器也不确定，请学习后放入实际机器验证",
   "ui.zifeng_s_custom_skill_tree.col_gift": "子枫的馈赠",
   "ui.zifeng_s_custom_skill_tree.key_toggle_col": "开关",
   "ui.zifeng_s_custom_skill_tree.key_target_col": "目标",
@@ -264,6 +265,9 @@
   "ui.zifeng_s_custom_skill_tree.type_gift": "馈赠",
   "ui.zifeng_s_custom_skill_tree.hud_on": "✅ 技能点HUD开",
   "ui.zifeng_s_custom_skill_tree.hud_off": "❌ 技能点HUD关",
+  "ui.zifeng_s_custom_skill_tree.hud_adjust": "⚙ HUD调整",
+  "ui.zifeng_s_custom_skill_tree.hud_title": "≡ 技能点HUD调整",
+  "ui.zifeng_s_custom_skill_tree.hud_step_hint": "点击箭头/滚轮调整 · Shift=10 Ctrl=100",
   "ui.zifeng_s_custom_skill_tree.hud_x": "X位置",
   "ui.zifeng_s_custom_skill_tree.hud_y": "Y位置",
   "ui.zifeng_s_custom_skill_tree.hud_reset": "↺ 重置位置",
@@ -438,6 +442,7 @@
   "ui.zifeng_s_custom_skill_tree.panel_btn_hide": "点击：隐藏/显示属性面板",
   "ui.zifeng_s_custom_skill_tree.panel_btn_shift": "Shift+点击：切换 右侧/底部 位置",
   "ui.zifeng_s_custom_skill_tree.panel_btn_show": "点击：显示属性面板",
+  "ui.zifeng_s_custom_skill_tree.panel_btn_open": "≡ 属性面板",
   "ui.zifeng_s_custom_skill_tree.panel_rbtn_hint": "右键技能=开关",
   "chat.zifeng_s_custom_skill_tree.aura_target": "%s %s目标：%s",
   "chat.zifeng_s_custom_skill_tree.need_time": "⏳ %s 需要游戏时长 %s 小时（当前 %s 小时，还需约 %s 分钟）",
@@ -475,5 +480,10 @@
   "chat.zifeng_s_custom_skill_tree.no_mod_learn": "⚠ 未安装%s，学习「%s」无效",
   "chat.zifeng_s_custom_skill_tree.welcome_intro": "§6[子枫技能树] §fv%s §7—— 把多余 FE 能量转化为技能点，解锁九列技能树 114 种技能！",
   "chat.zifeng_s_custom_skill_tree.welcome_author": "§a作者：不无聊的子枫哥 §7（AI 辅助开发，完全开源 MIT）",
-  "chat.zifeng_s_custom_skill_tree.welcome_modern_ui": "§b提示：§f推荐安装 §eModern UI §f优化字体与界面显示！"
+  "chat.zifeng_s_custom_skill_tree.welcome_modern_ui": "§b提示：§f推荐安装 §eModern UI §f优化字体与界面显示！",
+  "chat.zifeng_s_custom_skill_tree.admin_reset_done_online": "✅ 已清空玩家 %s 的技能数据并归零技能点（已即时生效）",
+  "chat.zifeng_s_custom_skill_tree.admin_reset_done_offline": "✅ 已清空玩家 %s 的技能数据并归零技能点（该玩家当前离线，将在下次登录时生效）",
+  "chat.zifeng_s_custom_skill_tree.admin_points_set": "✅ 已将 %s 的技能点设置为 %s",
+  "chat.zifeng_s_custom_skill_tree.admin_points_add": "✅ 已为 %s 调整 %s 技能点（当前 %s）",
+  "chat.zifeng_s_custom_skill_tree.admin_player_not_found": "⚠ 找不到玩家数据：需玩家至少在本服登录过一次（或使用 UUID / @s 等在线选择器）"
 }

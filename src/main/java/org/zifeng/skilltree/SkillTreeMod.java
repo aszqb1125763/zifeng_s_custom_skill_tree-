@@ -46,6 +46,10 @@ public class SkillTreeMod {
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.RegisterCommandsEvent event) ->
                 org.zifeng.skilltree.command.ModCommands.register(event.getDispatcher()));
 
+        // 玩家技能数据管理指令（/skilltree reset | points set | points add，2026-09-04 1.3.7）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.RegisterCommandsEvent event) ->
+                org.zifeng.skilltree.command.SkillTreeAdminCommands.register(event.getDispatcher()));
+
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         // Config 热重载/加载后重挂在线玩家属性（2026-08-29：属性每点加成进 Config 后需即时生效）
         modEventBus.addListener(Config::onConfigChanged);

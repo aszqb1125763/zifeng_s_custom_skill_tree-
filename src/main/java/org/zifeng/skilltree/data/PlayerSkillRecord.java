@@ -354,6 +354,20 @@ public class PlayerSkillRecord {
         return refund;
     }
 
+    /**
+     * 管理指令硬清空（2026-09-04，/skilltree reset）：与游戏内重洗 {@link #resetAll()} 相反——
+     * <b>不返还任何技能点</b>，清空全部已学/开关/生效等级/光环目标模式并把剩余技能点归零。
+     * 保留非技能类数据：自动熔炼黑名单、凋落物挪移绑定、累计转换技能点数（totalConvertedPoints）。
+     */
+    public void hardReset() {
+        learnedSkills.clear();
+        toggles.clear();
+        activeLevels.clear();
+        auraTargetModes.clear();
+        auraEnabled = true;
+        skillPoints = 0;
+    }
+
     /** 单技能已投入总消耗（对外公开，供单技能重置包使用） */
     public double totalSpentOf(String skillId) {
         return totalSpent(skillId, getLearnedPoints(skillId));
