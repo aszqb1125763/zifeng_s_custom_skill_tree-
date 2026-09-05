@@ -35,6 +35,8 @@ public class SkillKeyBinds {
     /** 技能点 HUD 位置偏移（2026-08-25：持久化，重启不重置；基准点 = 用户测试调好的位置，默认 0,0） */
     private static int hudOffsetX = 0;
     private static int hudOffsetY = 0;
+    /** 子界面位置（2026-09-01：子界面标识 → [x, y] 面板左上角，持久化拖动结果） */
+    private static final Map<String, int[]> SUB_SCREEN_POS = new HashMap<>();
 
     private static boolean loaded = false;
 
@@ -208,6 +210,20 @@ public class SkillKeyBinds {
         save();
     }
 
+    // ============ 子界面位置持久化（2026-09-01） ============
+
+    /** 获取子界面上次位置 [x, y]（null = 未保存过，用默认位置） */
+    public static int[] getSubScreenPos(String key) {
+        load();
+        return SUB_SCREEN_POS.get(key);
+    }
+
+    /** 保存子界面位置（拖动后调用，重启恢复） */
+    public static void setSubScreenPos(String key, int x, int y) {
+        SUB_SCREEN_POS.put(key, new int[]{x, y});
+        save();
+    }
+
     // ============ 文件读写 ============
 
     private static File file() {
@@ -254,6 +270,15 @@ public class SkillKeyBinds {
             // 2026-08-28：加载时 clamp 到新调整范围（X ±400 / Y ±200），防止旧配置残留超范围值
             hudOffsetX = Math.max(-400, Math.min(400, data.hudOffsetX));
             hudOffsetY = Math.max(-200, Math.min(200, data.hudOffsetY));
+            // 子界面位置（2026-09-01）
+            SUB_SCREEN_POS.clear();
+            if (data.subScreenPos != null) {
+                for (Map.Entry<String, int[]> e : data.subScreenPos.entrySet()) {
+                    if (e.getValue() != null && e.getValue().length == 2) {
+                        SUB_SCREEN_POS.put(e.getKey(), new int[]{e.getValue()[0], e.getValue()[1]});
+                    }
+                }
+            }
             invalidateViews(); // 首次加载填充 BINDS 后失效视图缓存
         } catch (Exception ignored) {
             // 读取失败（文件损坏等）→ 用默认值，不崩溃
@@ -280,6 +305,10 @@ public class SkillKeyBinds {
             data.scale = lastScale;
             data.hudOffsetX = hudOffsetX;
             data.hudOffsetY = hudOffsetY;
+            data.subScreenPos = new HashMap<>();
+            for (Map.Entry<String, int[]> e : SUB_SCREEN_POS.entrySet()) {
+                data.subScreenPos.put(e.getKey(), new int[]{e.getValue()[0], e.getValue()[1]});
+            }
             String json = new GsonBuilder().setPrettyPrinting().create().toJson(data);
             Files.writeString(f.toPath(), json, StandardCharsets.UTF_8);
         } catch (IOException ignored) {
@@ -296,5 +325,6 @@ public class SkillKeyBinds {
         double scale = 1.0;
         int hudOffsetX = 0; // 基准点 = 用户测试调好的位置，显示从 0 开始
         int hudOffsetY = 0;
+        Map<String, int[]> subScreenPos; // 子界面位置（2026-09-01）
     }
 }

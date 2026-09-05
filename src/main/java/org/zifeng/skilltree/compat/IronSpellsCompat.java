@@ -6,6 +6,7 @@ import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraftforge.fml.ModList;
+import net.minecraftforge.registries.RegistryObject;
 
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -19,12 +20,11 @@ import java.util.Map;
  *   <li>整合包 <b>没装</b> 铁魔法 → 所有方法安全返回默认值，绝不崩溃</li>
  *   <li>整合包 <b>装了</b> 铁魔法 → 通过 attribute modifier 给玩家加最大魔力/魔力恢复/吟唱缩减/流派强度</li>
  * </ul>
- * 铁魔法属性（源码研究结论，AttributeRegistry，全部 setSyncable(true)）：
+ * 铁魔法属性（1.20.1 3.16.3 字节码确认，AttributeRegistry 全部静态字段）：
  * <pre>
- * MAX_MANA         = MagicRangedAttribute(默认100, 0~1,000,000)
- * MANA_REGEN       = MagicPercentAttribute(默认1.0, 0~100)  恢复 = 最大魔力×MANA_REGEN×0.01
- * CAST_TIME_REDUCTION = MagicPercentAttribute(默认1.0, -100~100)  吟唱 = 原始×(2-softCap(x))
- * {school}_spell_power = MagicPercentAttribute(默认1.0, -100~100)  流派伤害倍率
+ * MAX_MANA / MANA_REGEN / CAST_TIME_REDUCTION / COOLDOWN_REDUCTION / {school}_SPELL_POWER
+ *   = RegistryObject&lt;Attribute&gt;（2026-09-05 修复：1.20.1 是 RegistryObject 包装，不是裸
+ *     Attribute，也不是 1.21.1 的 Holder&lt;Attribute&gt;；反射必须 get() 解包！）
  * school: fire/ice/lightning/holy/ender/blood/evocation/nature/eldritch
  * </pre>
  */
@@ -50,7 +50,7 @@ public final class IronSpellsCompat {
             "fire", "ice", "lightning", "holy", "ender", "blood", "evocation", "nature", "eldritch"
     };
 
-    /** 缓存：已反射成功的属性（字段名 → Attribute；1.20.1 是 Attribute 类型非 Holder） */
+    /** 缓存：已反射解包成功的属性（字段名 → Attribute；1.20.1 静态字段为 RegistryObject 包装） */
     private static final Map<String, Attribute> CACHE = new HashMap<>();
 
     /** 模组是否已加载 */
@@ -58,7 +58,11 @@ public final class IronSpellsCompat {
         return ModList.get() != null && ModList.get().isLoaded(MOD_ID);
     }
 
-    /** 反射获取铁魔法 AttributeRegistry 中的属性（成功后缓存） */
+    /**
+     * 反射读取 AttributeRegistry 的 RegistryObject&lt;Attribute&gt; 静态字段并解包（成功后缓存）。
+     * 1.20.1 静态字段类型为 RegistryObject&lt;Attribute&gt;，直接强转 Attribute 会 ClassCastException
+     * （被 catch 吞掉导致功能静默失效——2026-09-05 已修复）。
+     */
     private static Attribute getAttribute(String fieldName) {
         Attribute cached = CACHE.get(fieldName);
         if (cached != null) {
@@ -70,9 +74,15 @@ public final class IronSpellsCompat {
         try {
             Class<?> clazz = Class.forName("io.redspace.ironsspellbooks.api.registry.AttributeRegistry");
             Field field = clazz.getField(fieldName);
-            Attribute attr = (Attribute) field.get(null);
-            CACHE.put(fieldName, attr);
-            return attr;
+            Object raw = field.get(null);
+            if (raw instanceof RegistryObject<?> registryObject) {
+                Object value = registryObject.get();
+                if (value instanceof Attribute attr) {
+                    CACHE.put(fieldName, attr);
+                    return attr;
+                }
+            }
+            return null;
         } catch (Throwable t) {
             return null;
         }

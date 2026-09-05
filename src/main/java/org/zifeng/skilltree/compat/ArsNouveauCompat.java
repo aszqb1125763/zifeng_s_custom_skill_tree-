@@ -5,6 +5,7 @@ import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraftforge.fml.ModList;
+import net.minecraftforge.registries.RegistryObject;
 import net.minecraft.resources.ResourceLocation;
 
 import java.lang.reflect.Field;
@@ -18,12 +19,13 @@ import java.util.UUID;
  *   <li>整合包 <b>没装</b> 新生魔艺 → 所有方法安全返回默认值，绝不崩溃</li>
  *   <li>整合包 <b>装了</b> 新生魔艺 → 通过 {@link #applyManaAmp} 给玩家最大魔力加修饰符</li>
  * </ul>
- * 新生魔艺魔力机制（源码研究结论）：
+ * 新生魔艺魔力机制（1.20.1 4.12.7 源码/字节码确认）：
  * <pre>
- * PerkAttributes.MAX_MANA（注册名 ars_nouveau.perk.max_mana）
- *   = RangedAttribute(0~10000).setSyncable(true)，已加到 Player
- * ManaUtil.calcMaxMana()：基础+雕纹+书等级 → 写入 transient modifier → 读 getValue()
- *   → 任何外部 modifier 都会自动计入最大魔力
+ * PerkAttributes.MAX_MANA / MANA_REGEN_BONUS（注册名 ars_nouveau.perk.max_mana 等）
+ *   = RegistryObject&lt;Attribute&gt;（2026-09-05 修复：1.20.1 静态字段是 RegistryObject 包装，
+ *     不是裸 Attribute，也不是 1.21.1 的 Holder&lt;Attribute&gt;；反射必须 get() 解包！）
+ * ManaUtil.calcMaxMana()：基础+雕纹+书等级 → 写入固定 UUID transient modifier → 读 getValue()
+ *   → 任何外部 modifier 都会自动计入最大魔力（字节码 m_22135_ 确认）
  * </pre>
  */
 public final class ArsNouveauCompat {
@@ -42,9 +44,9 @@ public final class ArsNouveauCompat {
     private static final UUID MANA_AMP_UUID = UUID.nameUUIDFromBytes(MANA_AMP_MOD.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     private static final UUID MANA_REGEN_UUID = UUID.nameUUIDFromBytes(MANA_REGEN_MOD.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-    /** 缓存：PerkAttributes.MAX_MANA 静态字段（首次反射成功后缓存）；1.20.1 是 Attribute 类型（非 Holder） */
+    /** 缓存：PerkAttributes.MAX_MANA 静态字段解包后的 Attribute（首次反射成功后缓存）；1.20.1 需 RegistryObject.get() */
     private static volatile Attribute cachedMaxManaAttr;
-    /** 缓存：PerkAttributes.MANA_REGEN_BONUS 静态字段（首次反射成功后缓存） */
+    /** 缓存：PerkAttributes.MANA_REGEN_BONUS 静态字段解包后的 Attribute（首次反射成功后缓存） */
     private static volatile Attribute cachedManaRegenAttr;
 
     /** 模组是否已加载 */
@@ -53,27 +55,43 @@ public final class ArsNouveauCompat {
     }
 
     /**
-     * 获取新生魔艺最大魔力属性（反射，成功后缓存）。
+     * 反射读取 PerkAttributes 的 RegistryObject&lt;Attribute&gt; 静态字段并解包（成功后缓存）。
+     * 1.20.1 静态字段类型为 RegistryObject&lt;Attribute&gt;，直接强转 Attribute 会 ClassCastException
+     * （被 catch 吞掉导致功能静默失效——2026-09-05 已修复）。
      *
-     * @return 玩家最大魔力属性 Holder；模组未加载/类不存在 → null
+     * @return 解包后的 Attribute；模组未加载/字段缺失/注册未就绪 → null
      */
-    public static Attribute getMaxManaAttribute() {
-        if (cachedMaxManaAttr != null) {
-            return cachedMaxManaAttr;
-        }
+    private static Attribute resolveAttribute(String fieldName) {
         if (!isLoaded()) {
             return null;
         }
         try {
             Class<?> clazz = Class.forName("com.hollingsworth.arsnouveau.api.perk.PerkAttributes");
-            Field field = clazz.getField("MAX_MANA");
-            Attribute attr = (Attribute) field.get(null);
-            cachedMaxManaAttr = attr;
-            return attr;
+            Field field = clazz.getField(fieldName);
+            Object raw = field.get(null);
+            if (raw instanceof RegistryObject<?> registryObject) {
+                Object value = registryObject.get();
+                if (value instanceof Attribute attr) {
+                    return attr;
+                }
+            }
+            return null;
         } catch (Throwable t) {
-            // 反射失败（类名变动/加载异常）→ 保守返回 null，不影响游戏
+            // 反射失败（类名变动/注册未就绪抛异常）→ 保守返回 null，不影响游戏
             return null;
         }
+    }
+
+    /**
+     * 获取新生魔艺最大魔力属性（反射解包，成功后缓存）。
+     *
+     * @return 玩家最大魔力属性；模组未加载/类不存在 → null
+     */
+    public static Attribute getMaxManaAttribute() {
+        if (cachedMaxManaAttr == null) {
+            cachedMaxManaAttr = resolveAttribute("MAX_MANA");
+        }
+        return cachedMaxManaAttr;
     }
 
     /**
@@ -101,26 +119,15 @@ public final class ArsNouveauCompat {
     }
 
     /**
-     * 获取新生魔艺魔力恢复属性（反射，成功后缓存）。
+     * 获取新生魔艺魔力恢复属性（反射解包，成功后缓存）。
      *
-     * @return 玩家魔力恢复属性 Holder；模组未加载/类不存在 → null
+     * @return 玩家魔力恢复属性；模组未加载/类不存在 → null
      */
     public static Attribute getManaRegenAttribute() {
-        if (cachedManaRegenAttr != null) {
-            return cachedManaRegenAttr;
+        if (cachedManaRegenAttr == null) {
+            cachedManaRegenAttr = resolveAttribute("MANA_REGEN_BONUS");
         }
-        if (!isLoaded()) {
-            return null;
-        }
-        try {
-            Class<?> clazz = Class.forName("com.hollingsworth.arsnouveau.api.perk.PerkAttributes");
-            Field field = clazz.getField("MANA_REGEN_BONUS");
-            Attribute attr = (Attribute) field.get(null);
-            cachedManaRegenAttr = attr;
-            return attr;
-        } catch (Throwable t) {
-            return null;
-        }
+        return cachedManaRegenAttr;
     }
 
     /**

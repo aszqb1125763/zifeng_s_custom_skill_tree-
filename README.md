@@ -31,6 +31,8 @@
 - **多人支持**：数据按玩家独立存储（主世界 SavedData），多玩家计数正确恢复；全局技能订阅界面驱动推送（打开技能树订阅、关闭取消，增量包+快照去重，零轮询）
 - **配置热重载**：全部核心数值走 `Config.java`，游戏内即可调整
 - **高性能**：光环攻击间隔制（默认 10 秒/次）、锁定纯事件驱动、转换机 20 tick 阈值缓存、AE 反射成员缓存、兼容 Iris 光影
+- **🧪 v1.3.7 更新**：属性面板显隐/位置持久化（重启不还原）；新增管理指令 `/skilltree reset <玩家>`（硬清空技能数据+技能点归零）、`points set/add`（权限 2，支持 UUID 清离线玩家）；修复（仅 1.20.1）新生魔艺/铁魔法兼容技能无效（1.20.1 属性字段是 `RegistryObject<Attribute>`，已反射解包）；机械共鸣系列悬停提示新增红字弱兼容警告（模拟玩家事件不保证所有机器生效）
+- **🧪 v1.3.6 更新**：常驻药水效果改为无限时长（HUD 显示 `**:**` 不倒数——不坏金身/星瞳夜视/村庄英雄/虚空之躯吸收，技能关闭/重置自动回收不误删他源）；治愈光环重做（每 10 秒给 2400 tick/2 分钟生命回复，有限时长自然过期不卡顿）；1.20.1 方块破坏修复（自动熔炼/方块掉落倍率/万物挖掘/挪移术改用原生 Global Loot Modifier，不再丢箱子物品/双重音效/机器不耗能）；万物挖掘 1.20.1 完整修复（基岩/屏障/命令方块有进度条、能挖穿、掉落自身方块物品）
 
 ## 🎮 游戏内操作
 
@@ -45,6 +47,9 @@
 | `Ctrl`+`R` | 重置鼠标悬停的技能（按返还率退点）|
 | `/hmd` | 手持【熔炼产物】加入自动熔炼黑名单（无需作弊权限）|
 | `/delhmd` | 查看并移除黑名单 |
+| `/skilltree reset <玩家>` | 硬清空玩家技能数据（全部技能移除 + 技能点归零，权限 2）|
+| `/skilltree points set <玩家> <数量>` | 设置玩家技能点（填 0 归零，权限 2）|
+| `/skilltree points add <玩家> <数量>` | 增加/扣除技能点（权限 2，负数=扣除）|
 
 ### 技能双快捷键（技能树内绑定）
 
@@ -96,6 +101,9 @@ gradlew.bat build
 | **JustDireThings** | 掉落传送绑定机制（DROPTELEPORT） | 子枫挪移术（凋落物挪移）绑定思路参考——木棍蹲下右键容器绑定；独立重写（绑定信息存玩家存档而非物品组件），MIT 协议 |
 | **Flux-Networks** | long 能量传输接口（IFNEnergyStorage，超 int 21 亿） | 星能转换机超 21 亿 FE 能量兼容——注册其 FluxCapabilities.BLOCK capability 直灌 long 能量；反射软集成，未装 Flux 自动降级 |
 | **Tweakeroo** | 无限交易（disableVillagerTradeLocking） | 无限交易技能灵感——交易次数不减少；独立实现（用 NeoForge 原生 TradeWithVillagerEvent + MerchantOffer.resetUses()，非 Mixin 抬 maxUses） |
+| **EverlastingAbilities** | 药水效果节流 + 有限时长刷新；能力等级变更钩子精确回收 | 常驻药水无限时长技能（1.3.6）——效果节流刷新思路、按等级变更精确回收思路（MIT 协议，独立实现） |
+| **TinkersConstruct（匠魂）** | Global Loot Modifier 方块掉落修改；自动熔炼配方缓存 | 1.20.1 方块掉落修改（1.3.6）——掉落物生成后、变实体前改列表；熔炉配方 Map 缓存（MIT 协议，独立实现） |
+| **Passive Skill Tree（daripher）** | 技能数据管理指令集（reset / points set / add） | 玩家技能数据管理指令（1.3.7）——命令语义灵感；基于本模组自有 PlayerSkillRecord 存档独立实现，扩展支持离线玩家（GPL-3.0，仅参考设计，未复制代码） |
 | **Applied Energistics 2（应用能源2）** | 频道模式切换 API（AEConfig.setChannelModel + Grid repath） | 无限回路（AE 无限频道）技能——调用 AE2 官方公开 API（与 /ae2 channelmode infinite 指令相同逻辑），反射软集成，未装 AE2 自动降级 |
 
 > 📝 声明：以上模组仅为机制参考，本模组代码由 AI 辅助原创编写，未复制任何模组的源码。

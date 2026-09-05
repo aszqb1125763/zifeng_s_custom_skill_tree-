@@ -37,6 +37,11 @@ public class SkillTreeScreen extends Screen {
         return Component.translatable("ui.zifeng_s_custom_skill_tree." + key).getString();
     }
 
+    /** 字体（供子界面访问，Screen.font 是 protected） */
+    net.minecraft.client.gui.Font font() {
+        return this.font;
+    }
+
     private static final int BUTTON_WIDTH = 150;
     private static final int BUTTON_HEIGHT = 46;
     private static final int VERTICAL_SPACING = 2;
@@ -77,6 +82,33 @@ public class SkillTreeScreen extends Screen {
     /** 第二列按键框（等级/目标循环）监听状态：当前正在设置的技能（null = 无） */
     private String levelKeyBindSkillId = null;
     private boolean levelKeyBindListening = false;
+
+    /** 当前打开的子界面（null = 无；2026-09-01 子界面系统） */
+    private SkillSubScreen activeSubScreen = null;
+
+    /** 打开子界面（同类型已打开则关闭切换） */
+    void openSubScreen(SkillSubScreen sub) {
+        if (activeSubScreen != null) {
+            activeSubScreen.onClose();
+        }
+        activeSubScreen = sub;
+        if (activeSubScreen != null) {
+            activeSubScreen.init(width, height);
+        }
+    }
+
+    /** 关闭当前子界面 */
+    void closeSubScreen() {
+        if (activeSubScreen != null) {
+            activeSubScreen.onClose();
+            activeSubScreen = null;
+        }
+    }
+
+    /** 当前子界面（供渲染/输入转发） */
+    SkillSubScreen activeSubScreen() {
+        return activeSubScreen;
+    }
 
     /** 是否可设置等级/目标循环快捷键（2026-08-13 优化）：
      *  光环仅 伤害/速度/治愈 使用目标模式（敌我过滤）；时之环/磁力/锁定/强化/虚空之矛 无目标模式不显示。
@@ -217,6 +249,16 @@ public class SkillTreeScreen extends Screen {
 
         // 第一图层（最顶）：顶部标题区 + 属性面板 + 开关面板 + 面板开关按钮
         renderLayer1HeaderAndPanels(guiGraphics);
+        guiGraphics.flush();
+
+        // 子界面图层（2026-09-01 子界面系统）：最上层渲染当前打开的子界面（不透明面板覆盖一切）
+        if (activeSubScreen != null) {
+            activeSubScreen.render(guiGraphics, mouseX, mouseY);
+            guiGraphics.flush();
+        }
+
+        // 右下角功能按钮（HUD调整 + 属性面板）：子界面之上，始终可点（2026-09-01 统一风格）
+        renderBottomButtons(guiGraphics);
     }
 
     /**
@@ -445,118 +487,62 @@ public class SkillTreeScreen extends Screen {
     }
 
     /**
-     * 第一图层（最顶）：顶部标题区 + 属性面板 + 开关面板 + 面板开关按钮。
+     * 第一图层（最顶）：顶部标题区。
      * 全部用 guiOverlay 渲染（无深度测试、最后提交）→ 永远覆盖第二/第三图层。
+     * 属性面板已改为子界面（2026-09-01）；右下角功能按钮统一在 render 末尾最上层绘制。
      */
     private void renderLayer1HeaderAndPanels(GuiGraphics guiGraphics) {
-        renderAttributesPanel(guiGraphics);
-        renderTogglePanel(guiGraphics);
-        // 面板开关按钮（右下角，保证在最上层不被提示条盖住）
-        if (Config.PANEL_VISIBLE.get()) {
-            renderPanelToggleButton(guiGraphics);
-        } else {
-            renderPanelRestoreButton(guiGraphics);
-        }
         renderHeaderInfo(guiGraphics);
-        renderHudToggleButton(guiGraphics);
     }
 
-    /** 技能点 HUD 开关按钮（顶部信息区右下角，2026-08-25：自由开关左下角技能点 HUD）
-     *  下面三行：X 位置 / Y 位置调节（与技能点切换一致：点击 ±1，Shift+点击 ±10，Ctrl+点击 ±100）+ 重置归零 */
-    private static final int HUD_BTN_W = 110;
-    private static final int HUD_BTN_H = 14;
-    private static final int HUD_POS_W = 110;
-    private static final int HUD_POS_H = 13;
+    // ============ 右下角功能按钮（2026-09-01 统一风格：HUD调整 左、属性面板 右，平行并排，固定文字） ============
 
-    /** HUD 控件顶部 y */
-    private int hudPanelTop() {
-        return 8;
+    /** 按钮宽：5 字符（约 30px）+ 左右留白 ≈ 58px；样式固定不随文字变化 */
+    private static final int BOTTOM_BTN_W = 58;
+    private static final int BOTTOM_BTN_H = 16;
+    private static final int BOTTOM_BTN_GAP = 4;
+    private static final int BOTTOM_BTN_MARGIN = 8;
+
+    /** 属性面板按钮（右下角，右侧） */
+    private int panelToggleX() {
+        return width - BOTTOM_BTN_MARGIN - BOTTOM_BTN_W;
     }
 
-    private void renderHudToggleButton(GuiGraphics guiGraphics) {
-        boolean visible = org.zifeng.skilltree.client.SkillPointHudRenderer.isVisible();
-        int x = width - HUD_BTN_W - 12;
-        int y = hudPanelTop();
-        // 行1：开关键
-        int bg = visible ? 0xFF2A4A2A : 0xFF4A2A2A;
-        int border = visible ? 0xFF55FF55 : 0xFFFF5555;
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + HUD_BTN_W, y + HUD_BTN_H, bg);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + HUD_BTN_W, y + 1, border);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y + HUD_BTN_H - 1, x + HUD_BTN_W, y + HUD_BTN_H, border);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + 1, y + HUD_BTN_H, border);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x + HUD_BTN_W - 1, y, x + HUD_BTN_W, y + HUD_BTN_H, border);
-        guiGraphics.drawCenteredString(font, visible ? Component.translatable("ui.zifeng_s_custom_skill_tree.hud_on").getString() : Component.translatable("ui.zifeng_s_custom_skill_tree.hud_off").getString(), x + HUD_BTN_W / 2, y + 3, visible ? 0xFF55FF55 : 0xFFFF5555);
-        // 行2：X 位置
-        int y2 = y + HUD_BTN_H + 2;
-        drawHudPosRow(guiGraphics, x, y2, Component.translatable("ui.zifeng_s_custom_skill_tree.hud_x").getString(),
-                org.zifeng.skilltree.client.SkillPointHudRenderer.getHudOffsetX());
-        // 行3：Y 位置
-        int y3 = y2 + HUD_POS_H + 2;
-        drawHudPosRow(guiGraphics, x, y3, Component.translatable("ui.zifeng_s_custom_skill_tree.hud_y").getString(),
-                org.zifeng.skilltree.client.SkillPointHudRenderer.getHudOffsetY());
-        // 行4：重置按钮（X/Y 归零）
-        int y4 = y3 + HUD_POS_H + 2;
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y4, x + HUD_BTN_W, y4 + HUD_BTN_H, 0xFF3A2A2A);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y4, x + HUD_BTN_W, y4 + 1, 0xFFDD5555);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y4 + HUD_BTN_H - 1, x + HUD_BTN_W, y4 + HUD_BTN_H, 0xFFDD5555);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y4, x + 1, y4 + HUD_BTN_H, 0xFFDD5555);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x + HUD_BTN_W - 1, y4, x + HUD_BTN_W, y4 + HUD_BTN_H, 0xFFDD5555);
-        guiGraphics.drawCenteredString(font, Component.translatable("ui.zifeng_s_custom_skill_tree.hud_reset").getString(), x + HUD_BTN_W / 2, y4 + 3, 0xFFFF5555);
+    private int panelToggleY() {
+        return height - BOTTOM_BTN_MARGIN - BOTTOM_BTN_H;
     }
 
-    private void drawHudPosRow(GuiGraphics guiGraphics, int x, int y, String label, int value) {
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + HUD_POS_W, y + HUD_POS_H, 0xFF2A2A3A);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + HUD_POS_W, y + 1, 0xFF555566);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y + HUD_POS_H - 1, x + HUD_POS_W, y + HUD_POS_H, 0xFF555566);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x, y, x + 1, y + HUD_POS_H, 0xFF555566);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x + HUD_POS_W - 1, y, x + HUD_POS_W, y + HUD_POS_H, 0xFF555566);
-        // 左箭头区（0 ~ 20px）、文字区（20 ~ 90）、右箭头区（90 ~ 110）
-        guiGraphics.drawCenteredString(font, "◀", x + 10, y + 2, 0xFF87CEEB);
-        guiGraphics.drawCenteredString(font, label + ":" + value, x + 55, y + 2, 0xFFE0B6C8);
-        guiGraphics.drawCenteredString(font, "▶", x + HUD_POS_W - 10, y + 2, 0xFF87CEEB);
+    /** HUD 调整按钮（属性面板按钮左边，平行同高） */
+    private int hudBtnX() {
+        return panelToggleX() - BOTTOM_BTN_GAP - BOTTOM_BTN_W;
     }
 
-    /** 点击 HUD 区域（返回 true=已处理）：行1 开关；行2 X位置；行3 Y位置；行4 重置（2026-08-28） */
-    private boolean handleHudButtonClick(double mouseX, double mouseY) {
-        int x = width - HUD_BTN_W - 12;
-        int y = hudPanelTop();
-        // 行1：开关键
-        if (mouseX >= x && mouseX <= x + HUD_BTN_W && mouseY >= y && mouseY <= y + HUD_BTN_H) {
-            org.zifeng.skilltree.client.SkillPointHudRenderer.setVisible(
-                    !org.zifeng.skilltree.client.SkillPointHudRenderer.isVisible());
-            return true;
-        }
-        // 行2/行3：X/Y 位置（与技能点切换一致：普通=1，Shift=10，Ctrl=100）
-        int y2 = y + HUD_BTN_H + 2;
-        int y3 = y2 + HUD_POS_H + 2;
-        int y4 = y3 + HUD_POS_H + 2;
-        boolean ctrl = isControlHeld();
-        boolean shift = isShiftHeld();
-        int step = ctrl ? 100 : (shift ? 10 : 1);
-        if (mouseX >= x && mouseX <= x + HUD_POS_W && mouseY >= y2 && mouseY <= y2 + HUD_POS_H) {
-            // X 位置：左箭- / 右箭+
-            if (mouseX < x + 22) {
-                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetX(-step);
-            } else if (mouseX > x + HUD_POS_W - 22) {
-                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetX(step);
-            }
-            return true;
-        }
-        if (mouseX >= x && mouseX <= x + HUD_POS_W && mouseY >= y3 && mouseY <= y3 + HUD_POS_H) {
-            if (mouseX < x + 22) {
-                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetY(-step);
-            } else if (mouseX > x + HUD_POS_W - 22) {
-                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetY(step);
-            }
-            return true;
-        }
-        // 行4：重置位置（X/Y 归零）
-        if (mouseX >= x && mouseX <= x + HUD_BTN_W && mouseY >= y4 && mouseY <= y4 + HUD_BTN_H) {
-            org.zifeng.skilltree.client.SkillPointHudRenderer.resetOffset();
-            return true;
-        }
-        return false;
+    private int hudBtnY() {
+        return panelToggleY();
     }
+
+    /** 统一按钮绘制：底色 + 边框 + 悬停 + 打开子界面高亮 + 居中固定文字 */
+    private void drawBottomButton(GuiGraphics guiGraphics, int x, int y, String text, boolean active) {
+        boolean hovered = lastMouseX >= x && lastMouseX <= x + BOTTOM_BTN_W && lastMouseY >= y && lastMouseY <= y + BOTTOM_BTN_H;
+        int bg = active ? 0xFF2A6A8A : (hovered ? 0xFF3A6EA5 : 0xFF24476E);
+        int border = active ? 0xFF66CCFF : (hovered ? 0xFFB0D8FF : 0xFF87CEEB);
+        var overlay = net.minecraft.client.renderer.RenderType.guiOverlay();
+        guiGraphics.fill(overlay, x, y, x + BOTTOM_BTN_W, y + BOTTOM_BTN_H, bg);
+        guiGraphics.fill(overlay, x, y, x + BOTTOM_BTN_W, y + 1, border);
+        guiGraphics.fill(overlay, x, y + BOTTOM_BTN_H - 1, x + BOTTOM_BTN_W, y + BOTTOM_BTN_H, border);
+        guiGraphics.fill(overlay, x, y, x + 1, y + BOTTOM_BTN_H, border);
+        guiGraphics.fill(overlay, x + BOTTOM_BTN_W - 1, y, x + BOTTOM_BTN_W, y + BOTTOM_BTN_H, border);
+        guiGraphics.drawCenteredString(font, text, x + BOTTOM_BTN_W / 2, y + 4, active ? 0xFF66CCFF : 0xFF87CEEB);
+    }
+
+    /** 右下角两个功能按钮（HUD 调整 + 属性面板），统一风格 */
+    private void renderBottomButtons(GuiGraphics guiGraphics) {
+        boolean panelOpen = activeSubScreen instanceof AttributePanelSubScreen;
+        boolean hudOpen = activeSubScreen instanceof HudAdjustSubScreen;
+        drawBottomButton(guiGraphics, hudBtnX(), hudBtnY(), t("hud_adjust"), hudOpen);
+        drawBottomButton(guiGraphics, panelToggleX(), panelToggleY(), t("panel_btn_open"), panelOpen);
+    }
+
 
     /** 顶部信息区（第一图层最顶）：技能树标题 + 技能点/状态行 + 快捷键提示行 + 未绑定快捷键警告 */
     private void renderHeaderInfo(GuiGraphics guiGraphics) {
@@ -642,6 +628,13 @@ public class SkillTreeScreen extends Screen {
         // 2. 描述正文（白灰，正常字号）
         for (String line : Skills.getDescriptionComponent(skillId).getString().split("\\n")) {
             lines.add(new TooltipLine(line, 0xFFDDDDDD, 1.0F));
+        }
+        // 2.4 机械共鸣系列：弱兼容红字警告（2026-09-05 用户需求）
+        //  共鸣技能靠"模拟玩家机器触发游戏事件"的弱兼容机制生效，非强兼容——不保证所有机器生效
+        if (Skills.MACHINE_SKILLS.contains(skillId)) {
+            for (String line : t("machine_weak_warn").split("\\n")) {
+                lines.add(new TooltipLine(line, 0xFFFF5555, 0.9F));
+            }
         }
         // 2.5 凋落物挪移：显示当前绑定容器（2026-08-24 需求：描述下方新增"绑定容器+坐标"）
         if (Skills.AURA_LOOT_VACUUM.equals(skillId)) {
@@ -839,37 +832,31 @@ public class SkillTreeScreen extends Screen {
      * 属性面板区域 / 顶部标题区 / 底部提示条 / 右下角面板开关按钮。
      */
     private boolean isOverUI(double mouseX, double mouseY) {
+        // 子界面打开：仅面板内区域视为 UI（tooltip 不透传到面板上）；面板外正常
+        if (activeSubScreen != null && activeSubScreen.isMouseOver(mouseX, mouseY)) {
+            return true;
+        }
         if (isMouseOverPanel(mouseX, mouseY)) {
             return true;
         }
         if (isMouseOverHeader(mouseX, mouseY)) {
             return true;
         }
-        // 底部提示条（renderTogglePanel：height-32 ~ height，横跨面板宽度区域）
-        if (Config.PANEL_VISIBLE.get()) {
-            int tx = width - PANEL_WIDTH - 10;
-            if (mouseX >= tx - 2 && mouseX <= tx + PANEL_WIDTH + 2 && mouseY >= height - 32 && mouseY <= height) {
-                return true;
-            }
-        }
-        // 右下角面板开关按钮（14×14）
-        if (mouseX >= panelToggleX() && mouseX <= panelToggleX() + 14
-                && mouseY >= panelToggleY() && mouseY <= panelToggleY() + 14) {
+        // 右下角两个功能按钮（HUD调整 + 属性面板，2026-09-01 统一风格）
+        if (mouseX >= panelToggleX() && mouseX <= panelToggleX() + BOTTOM_BTN_W
+                && mouseY >= panelToggleY() && mouseY <= panelToggleY() + BOTTOM_BTN_H) {
             return true;
         }
-        // 技能点 HUD 开关+位置调节面板（右上角 3 行，2026-08-25）
         if (isHudPanelHit(mouseX, mouseY)) {
             return true;
         }
         return false;
     }
 
-    /** HUD 面板 4 行区域命中（开关 + X + Y + 重置） */
+    /** HUD 调整按钮区域命中（属性面板按钮左边，平行同高） */
     private boolean isHudPanelHit(double mouseX, double mouseY) {
-        int x = width - HUD_BTN_W - 12;
-        int y = hudPanelTop();
-        int panelBottom = y + HUD_BTN_H + 2 + HUD_POS_H + 2 + HUD_POS_H + 2 + HUD_BTN_H;
-        return mouseX >= x && mouseX <= x + HUD_BTN_W && mouseY >= y && mouseY <= panelBottom;
+        return mouseX >= hudBtnX() && mouseX <= hudBtnX() + BOTTOM_BTN_W
+                && mouseY >= hudBtnY() && mouseY <= hudBtnY() + BOTTOM_BTN_H;
     }
 
     /** 图标被 UI/tooltip 覆盖时跳过的面积比例阈值（图标被遮 ≥15% 才跳过渲染） */
@@ -907,21 +894,20 @@ public class SkillTreeScreen extends Screen {
         float iy1 = oy + (button.y() + 3) * (float) scale;
         float ix2 = ox + (button.x() + 19) * (float) scale;
         float iy2 = oy + (button.y() + 19) * (float) scale;
-        // 1. 属性面板（右侧 / 底部布局）
+        // 1. 当前打开的子界面（不透明面板覆盖 → 被覆盖图标必须跳过）
+        if (activeSubScreen != null && activeSubScreen.isMouseOver(ix1, iy1)) {
+            return true;
+        }
+        // 2. 底部提示条
         if (Config.PANEL_VISIBLE.get()) {
-            if (Config.PANEL_POSITION.get() == 1) {
-                if (overlapRatio(ix1, iy1, ix2, iy2, 6, height - 140, width - 6, height - 8) >= ICON_OVERLAP_SKIP_RATIO) return true;
-            } else {
-                if (overlapRatio(ix1, iy1, ix2, iy2, width - PANEL_WIDTH - 12, 46, width - 6, height - 30) >= ICON_OVERLAP_SKIP_RATIO) return true;
-            }
-            // 2. 底部提示条
             if (overlapRatio(ix1, iy1, ix2, iy2, width - PANEL_WIDTH - 12, height - 32, width - 6, height) >= ICON_OVERLAP_SKIP_RATIO) return true;
         }
         // 3. 顶部标题区
         int[] hb = headerBounds();
         if (overlapRatio(ix1, iy1, ix2, iy2, hb[0], hb[1], hb[2], hb[3]) >= ICON_OVERLAP_SKIP_RATIO) return true;
-        // 4. 右下角面板开关按钮（14×14）
-        if (overlapRatio(ix1, iy1, ix2, iy2, panelToggleX(), panelToggleY(), panelToggleX() + 14, panelToggleY() + 14) >= ICON_OVERLAP_SKIP_RATIO) return true;
+        // 4. 右下角两个功能按钮（属性面板 + HUD调整，2026-09-01）
+        if (overlapRatio(ix1, iy1, ix2, iy2, panelToggleX(), panelToggleY(), panelToggleX() + BOTTOM_BTN_W, panelToggleY() + BOTTOM_BTN_H) >= ICON_OVERLAP_SKIP_RATIO) return true;
+        if (overlapRatio(ix1, iy1, ix2, iy2, hudBtnX(), hudBtnY(), hudBtnX() + BOTTOM_BTN_W, hudBtnY() + BOTTOM_BTN_H) >= ICON_OVERLAP_SKIP_RATIO) return true;
         // 5. 当前 tooltip（背景半透明，被覆盖图标必须跳过）
         if (activeTooltipBounds != null) {
             int[] t = activeTooltipBounds;
@@ -1280,32 +1266,14 @@ public class SkillTreeScreen extends Screen {
     // ============ 属性面板 ============
 
     /** 面板可视行数（右侧布局，减去标题/技能点行） */
-    private int panelVisibleRows() {
+    int panelVisibleRows() {
         // 滚动区域：标题(18px) + 可见行 + 底部提示(20px)；每行 12px
         return (height - 50 - 30 - 18 - 20) / 12;
     }
 
-    /** 面板开关按钮（右侧标题栏右上角的小方块，12×12） */
-    /** 面板开关按钮位置（右下角） */
-    private int panelToggleX() {
-        return width - 26;
-    }
-
-    private int panelToggleY() {
-        return height - 26;
-    }
-
-    /** 鼠标是否在属性面板区域内（tooltip 穿透检查用；面板隐藏时该区域不视为 UI → 恢复为技能树区域） */
+    /** 鼠标是否在属性面板区域内（2026-09-01：属性面板已改为子界面，内嵌区域不再是 UI → 恒 false，右侧/底部恢复为技能树区域） */
     private boolean isMouseOverPanel(double mouseX, double mouseY) {
-        if (!Config.PANEL_VISIBLE.get()) {
-            return false;
-        }
-        if (Config.PANEL_POSITION.get() == 1) {
-            // 底部布局
-            return mouseY >= height - 140 && mouseY <= height - 8 && mouseX >= 6 && mouseX <= width - 6;
-        }
-        // 右侧布局
-        return mouseX >= width - PANEL_WIDTH - 12 && mouseX <= width - 6 && mouseY >= 46 && mouseY <= height - 30;
+        return false;
     }
 
     /**
@@ -1342,7 +1310,7 @@ public class SkillTreeScreen extends Screen {
     private long lastRowsTick = -1;
 
     /** 属性行收集（共用逻辑，右侧/底部布局都展示同一份数据） */
-    private java.util.List<String[]> collectRows() {
+    java.util.List<String[]> collectRows() {
         long tick = minecraft != null && minecraft.level != null ? minecraft.level.getGameTime() : 0;
         if (cachedRows != null && tick - lastRowsTick < 20) {
             return cachedRows;
@@ -1675,55 +1643,12 @@ public class SkillTreeScreen extends Screen {
         }
     }
 
-    /** 面板开关按钮：右下角 ✕/▦ 图标；Shift+点击切换位置 */
-    private void renderPanelToggleButton(GuiGraphics guiGraphics) {
-        int tx = panelToggleX();
-        int ty = panelToggleY();
-        boolean hovered = lastMouseX >= tx && lastMouseX <= tx + 14 && lastMouseY >= ty && lastMouseY <= ty + 14;
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), tx, ty, tx + 14, ty + 14, hovered ? 0xFF3A6EA5 : 0xFF24476E);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), tx, ty, tx + 14, ty + 1, 0xFF87CEEB);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), tx, ty + 13, tx + 14, ty + 14, 0xFF87CEEB);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), tx, ty, tx + 1, ty + 14, 0xFF87CEEB);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), tx + 13, ty, tx + 14, ty + 14, 0xFF87CEEB);
-        // ✕ 图标（点击隐藏面板）
-        int cx = tx + 7, cy = ty + 7;
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), cx - 3, cy - 3, cx - 2, cy + 3, 0xFFFFFFFF);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), cx + 2, cy - 3, cx + 3, cy + 3, 0xFFFFFFFF);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), cx - 3, cy - 3, cx + 3, cy - 2, 0xFFFFFFFF);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), cx - 3, cy + 2, cx + 3, cy + 3, 0xFFFFFFFF);
-        // 悬停提示
-        if (hovered) {
-            java.util.List<Component> tips = new ArrayList<>();
-            tips.add(Component.literal(t("panel_btn_hide")).withStyle(style -> style.withColor(0xFFFFFFFF)));
-            tips.add(Component.literal(t("panel_btn_shift")).withStyle(style -> style.withColor(0xFFAAAAAA)));
-            guiGraphics.renderTooltip(font, tips, java.util.Optional.empty(), lastMouseX, lastMouseY - 14);
-        }
-    }
-
-    /** 面板隐藏时的恢复按钮（右下角） */
-    private void renderPanelRestoreButton(GuiGraphics guiGraphics) {
-        int tx = panelToggleX();
-        int ty = panelToggleY();
-        boolean hovered = lastMouseX >= tx && lastMouseX <= tx + 14 && lastMouseY >= ty && lastMouseY <= ty + 14;
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), tx, ty, tx + 14, ty + 14, hovered ? 0xFF3A6EA5 : 0xFF24476E);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), tx, ty, tx + 14, ty + 1, 0xFF87CEEB);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), tx, ty + 13, tx + 14, ty + 14, 0xFF87CEEB);
-        // ▦ 图标（恢复显示）
-        int cx = tx + 2, cy = ty + 2;
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), cx, cy, cx + 10, cy + 10, 0xFFFFFFFF);
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), cx + 2, cy + 2, cx + 8, cy + 8, 0xFF24476E);
-        if (hovered) {
-            guiGraphics.renderTooltip(font, java.util.List.of(Component.literal(t("panel_btn_show"))),
-                    java.util.Optional.empty(), lastMouseX, lastMouseY - 14);
-        }
-    }
-
     private void addRow(java.util.List<String[]> rows, String name, double value, String fmt) {
         rows.add(new String[]{name, String.format(fmt, value)});
     }
 
     /** 解析 #RRGGBB 颜色字符串 → ARGB int（默认白色） */
-    private static int parseColor(String hex) {
+    static int parseColor(String hex) {
         try {
             if (hex != null && hex.startsWith("#") && hex.length() == 7) {
                 return 0xFF000000 | Integer.parseInt(hex.substring(1), 16);
@@ -1768,7 +1693,7 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.fill(type, right - half, bottom - half, right, bottom, color);
     }
 
-    private org.zifeng.skilltree.data.PlayerSkillRecord learnedAsRecord() {
+    org.zifeng.skilltree.data.PlayerSkillRecord learnedAsRecord() {
         org.zifeng.skilltree.data.PlayerSkillRecord record = new org.zifeng.skilltree.data.PlayerSkillRecord(java.util.UUID.randomUUID());
         // 直接设置点数（不能用 learnSkill：AURA 消耗递增会因点数不足提前失败，导致光环永远只显示 1 级）
         learnedSkills.forEach(record::setLearnedPoints);
@@ -1777,39 +1702,38 @@ public class SkillTreeScreen extends Screen {
         return record;
     }
 
-    /** 开关面板：属性面板隐藏时只保留右下角开关按钮，不显示提示条 */
-    private void renderTogglePanel(GuiGraphics guiGraphics) {
-        // 属性面板隐藏时只保留开关按钮（renderPanelRestoreButton），其余提示条全部隐藏
-        if (!Config.PANEL_VISIBLE.get()) {
-            return;
-        }
-        guiGraphics.flush();
-        int x = width - PANEL_WIDTH - 10;
-        int y = height - 30;
-        // 从下往上画：先画底部说明（guiOverlay 无条件覆盖下层）；文字左对齐，给右下角开关按钮留空间
-        guiGraphics.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), x - 2, y - 2, x + PANEL_WIDTH + 2, y + PANEL_WIDTH / 3, 0xCC101010);
-        guiGraphics.drawString(font, t("panel_rbtn_hint"), x + 4, y + 2, 0xFFFFAA55);
-    }
-
     // ============ 交互 ============
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        // 技能点 HUD 开关 + 位置调节（右上角，2026-08-25）
-        if (button == 0 && handleHudButtonClick(mouseX, mouseY)) {
-            return true;
-        }
-        // 面板开关按钮（右下角）：点击隐藏/显示；Shift+点击切换位置（优先级最高，避免误触技能）
-        if (button == 0 && mouseX >= panelToggleX() && mouseX <= panelToggleX() + 14
-                && mouseY >= panelToggleY() && mouseY <= panelToggleY() + 14) {
+        // 属性面板按钮（右下角右侧）：优先响应（即使子界面打开，再点可关闭）Shift+点击切换位置
+        if (button == 0 && mouseX >= panelToggleX() && mouseX <= panelToggleX() + BOTTOM_BTN_W
+                && mouseY >= panelToggleY() && mouseY <= panelToggleY() + BOTTOM_BTN_H) {
             if (isShiftHeld()) {
-                // Shift+点击：切换位置（右侧/底部）
                 Config.PANEL_POSITION.set(1 - Config.PANEL_POSITION.get());
+                Config.PANEL_POSITION.save();
             } else {
-                // 点击：隐藏/显示
-                Config.PANEL_VISIBLE.set(!Config.PANEL_VISIBLE.get());
+                // 点击：打开/关闭属性面板子界面（替代旧的直接显示/隐藏）
+                if (activeSubScreen instanceof AttributePanelSubScreen) {
+                    closeSubScreen();
+                } else {
+                    openSubScreen(new AttributePanelSubScreen(this));
+                }
             }
             return true;
+        }
+        // HUD 调整按钮（属性面板按钮左边）：优先响应（即使子界面打开，再点可关闭）
+        if (button == 0 && isHudPanelHit(mouseX, mouseY)) {
+            if (activeSubScreen instanceof HudAdjustSubScreen) {
+                closeSubScreen();
+            } else {
+                openSubScreen(new HudAdjustSubScreen(this));
+            }
+            return true;
+        }
+        // 子界面打开：仅面板内区域交给子界面；面板外正常走技能树逻辑（不干扰操作）
+        if (activeSubScreen != null && activeSubScreen.isMouseOver(mouseX, mouseY)) {
+            return activeSubScreen.mouseClicked(mouseX, mouseY, button);
         }
         // 中键：仅用于拖动技能树（任意位置），按下即接管
         if (button == 2) {
@@ -1923,6 +1847,13 @@ public class SkillTreeScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // ESC：子界面打开时先关子界面（逐层关闭）；其他键走子界面逻辑，子界面不处理则继续技能树逻辑
+        if (activeSubScreen != null) {
+            if (activeSubScreen.keyPressed(keyCode, scanCode, modifiers)) {
+                return true;
+            }
+            // 子界面未处理该键（如非 ESC）→ 继续走技能树逻辑
+        }
         // 按键设置监听：仿原版按键设置——按任意键绑定，Esc 取消监听，Backspace 清除
         if (keyBindSkillId != null && keyBindListening) {
             if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
@@ -2008,6 +1939,10 @@ public class SkillTreeScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        // 子界面打开：面板内 或 正在拖动面板 → 手势转发给子界面（拖动中鼠标移出面板也持续跟手）
+        if (activeSubScreen != null && (activeSubScreen.isMouseOver(mouseX, mouseY) || activeSubScreen.isDragging())) {
+            return activeSubScreen.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+        }
         // 中键：任意位置直接拖动技能树（包括按钮上/面板上）
         if (button == 2) {
             panX += dragX;
@@ -2023,6 +1958,16 @@ public class SkillTreeScreen extends Screen {
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
+    /** 鼠标释放（子界面拖动结束后保存位置，2026-09-01） */
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (activeSubScreen != null) {
+            activeSubScreen.mouseReleased(mouseX, mouseY, button);
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
     /** 鼠标当前是否悬停在任一技能按钮上 */
     private boolean isHoveringAnyButton(double mouseX, double mouseY) {
         for (SkillButton b : buttons) {
@@ -2035,38 +1980,9 @@ public class SkillTreeScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        // 技能点 HUD 位置滚轮调整（2026-08-25）：悬停在 HUD 面板上时
-        // 滚轮 = 调整位置（X行滚轮改X，Y行滚轮改Y）；与技能点切换一致：Ctrl=100，Shift=10，普通=1
-        int hudStep = isControlHeld() ? 100 : (Screen.hasShiftDown() ? 10 : 1);
-        if (isHudPanelHit(mouseX, mouseY)) {
-            int x = width - HUD_BTN_W - 12;
-            int y = hudPanelTop();
-            int y2 = y + HUD_BTN_H + 2;
-            int y3 = y2 + HUD_POS_H + 2;
-            int dir = delta > 0 ? 1 : -1;
-            if (mouseY >= y2 && mouseY <= y2 + HUD_POS_H) {
-                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetX(dir * hudStep);
-                return true;
-            }
-            if (mouseY >= y3 && mouseY <= y3 + HUD_POS_H) {
-                org.zifeng.skilltree.client.SkillPointHudRenderer.adjustOffsetY(dir * hudStep);
-                return true;
-            }
-        }
-        // 鼠标在底部属性面板区域 → 翻页
-        if (Config.PANEL_POSITION.get() == 1 && Config.PANEL_VISIBLE.get()
-                && mouseY >= height - 140 && mouseY <= height - 10) {
-            int step = Screen.hasShiftDown() ? 5 : 1;
-            panelScroll -= (int) (delta * step);
-            return true;
-        }
-        // 鼠标在右侧属性面板区域 → 滚动面板（仅面板可见时拦截；隐藏后滚轮恢复正常缩放）
-        int px = width - PANEL_WIDTH - 10;
-        if (Config.PANEL_POSITION.get() != 1 && Config.PANEL_VISIBLE.get()
-                && mouseX >= px - 2 && mouseX <= px + PANEL_WIDTH + 2 && mouseY >= 48 && mouseY <= height - 32) {
-            int step = Screen.hasShiftDown() ? 5 : 1;
-            panelScroll -= (int) (delta * step);
-            return true;
+        // 子界面打开：仅面板内滚轮交给子界面（面板外正常缩放）
+        if (activeSubScreen != null && activeSubScreen.isMouseOver(mouseX, mouseY)) {
+            return activeSubScreen.mouseScrolled(mouseX, mouseY, delta);
         }
         // 悬停在基础/增幅/多级终极技能上：滚轮调节生效等级（0 ~ 已学等级）
         for (SkillButton skillButton : buttons) {
