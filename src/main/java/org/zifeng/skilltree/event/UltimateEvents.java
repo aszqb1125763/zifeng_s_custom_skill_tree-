@@ -871,10 +871,20 @@ public class UltimateEvents {
         java.util.UUID deadId = event.getEntity().getUUID();
         java.util.List<ItemStack> equippedSnapshot = DEATH_EQUIPMENT_SNAPSHOT.remove(deadId);
         DEATH_SNAPSHOT_TIME.remove(deadId);
+        // ============ 刷怪蛋/头颅掉落提前（v1.3.8 起参与战利品爆炸复制与生物掉落倍率增幅）============
+        // 概率逐级叠加（满级=100% 必掉）；提前生成 → 随普通掉落一起被财源滚滚/猎魂丰收放大
+        // ⚠️ 机械共鸣：假玩家（机器）需对应共鸣技能开启才继承
+        if (SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_SPAWN_EGG)) {
+            dropSpawnEgg(sp, event, record);
+        }
+        if (SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_MOB_HEAD)) {
+            dropMobHead(sp, event, record);
+        }
         // ============ 战利品爆炸（终极节点，参考神化 FestiveAffix）============
         // 对所有生物（含 Boss、含其他模组怪物）击杀时 100% 触发：掉落物翻倍爆炸散射
         // 1 级 = 掉落 1 倍（即 2 份），100 级 = 100 倍（线性：倍率 = 1 + 等级）
         // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 战利品爆炸·共鸣 才继承
+        // v1.3.8：子枫挪移术可直传容器不卡顿 → 取消装备类 20 份上限，全部物品全量复制
         int bombLevel = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_LOOT_BOMB)
                 && record.isEnabled(Skills.LOOT_BOMB) ? record.getActiveLevel(Skills.LOOT_BOMB) : 0;
         if (bombLevel > 0 && !event.getDrops().isEmpty()) {
@@ -882,28 +892,20 @@ public class UltimateEvents {
             int maxMult = org.zifeng.skilltree.Config.LOOT_BOMB_MAX_MULTIPLIER.get();
             int bombMult = Math.min(maxMult, 1 + bombLevel);
             if (bombMult > 1) {
-                // 2026-08-15 优化：普通可堆叠物品按原倍率全量复制（恢复原效果，不设上限）；
-                // 装备类（不可堆叠，如盔甲/武器/工具）限制单件最多 20 份——装备无法堆叠，
-                //    复制 100 份会生成 100 个实体（卡顿+捡不完），20 份已足够。
-                int maxCopies = org.zifeng.skilltree.Config.LOOT_BOMB_MAX_COPIES_PER_KILL.get();
+                // v1.3.8：掉落物可直传容器（子枫挪移术）→ 不再卡顿，装备类上限删除，全量按倍率复制
                 // 快照掉落物列表，避免遍历中修改
                 List<ItemEntity> snapshot = new java.util.ArrayList<>(event.getDrops());
                 for (ItemEntity item : snapshot) {
                     if (item == null || !item.isAlive()) {
                         continue;
                     }
-                    // ⚠️ 防刷物品（2026-08-26）：跳过生物装备栏来源的物品（玩家主动给予的装备）
-                    if (isEquippedItem(equippedSnapshot, item.getItem())) {
+                    // ⚠️ 防刷物品（2026-08-26 初版 / 2026-09-06 v1.3.8 放宽）：跳过玩家注入的生物装备；
+                    //    世界自然产出的装备（非持久怪的装备 + 神化词条装）可翻倍
+                    if (isPlayerInjectedEquipment(equippedSnapshot, item.getItem(), event.getEntity())) {
                         continue;
                     }
-                    // 复制 (bombMult-1) 份（item.copy() 独立栈）
-                    // ⚠️ 装备类（不可堆叠）：单件上限 20 份（防 100 个装备实体卡顿+捡不完）；可堆叠物品按原倍率全量复制
-                    int copies;
-                    if (item.getItem().getMaxStackSize() <= 1 && maxCopies > 0) {
-                        copies = Math.min(bombMult - 1, maxCopies);
-                    } else {
-                        copies = bombMult - 1;
-                    }
+                    // 复制 (bombMult-1) 份（item.copy() 独立栈）——装备/不可堆叠也全量复制
+                    int copies = bombMult - 1;
                     for (int i = 0; i < copies; i++) {
                         ItemEntity copy = new ItemEntity(sp.level(),
                                 item.getX(), item.getY(), item.getZ(),
@@ -916,16 +918,6 @@ public class UltimateEvents {
                 // 不发送聊天提示（每杀必触发会刷屏）
             }
         }
-        // ============ 刷怪蛋掉落 / 头颅掉落（独立节点技能，不吃战利品爆炸/生物掉落倍率）============
-        // 固定掉 1 个，数量不被任何技能增幅；概率逐级叠加，满级=100% 必掉
-        // ⚠️ 机械共鸣：假玩家（机器）需对应共鸣技能开启才继承
-        if (SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_SPAWN_EGG)) {
-            dropSpawnEgg(sp, event, record);
-        }
-        if (SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_MOB_HEAD)) {
-            dropMobHead(sp, event, record);
-        }
-
         // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 生物掉落·共鸣 才继承生物掉落倍率
         double mult = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_MOB_DROP)
                 ? SkillEffects.getMobDropMultiplier(record) : 1.0;
@@ -934,10 +926,10 @@ public class UltimateEvents {
             // 1.20.1：LivingEntity.getLootTable() 返回 ResourceLocation（无 ResourceKey<LootTable>）
             net.minecraft.resources.ResourceLocation lootKey = event.getEntity().getLootTable();
             if (lootKey != null && supportsLooting(lootKey, sp.serverLevel())) {
-                // ⚠️ 防刷物品（2026-08-26）：掉落倍率跳过生物装备栏来源的物品（玩家主动给予的装备）
+                // ⚠️ 防刷物品（2026-08-26 初版 / 2026-09-06 v1.3.8 放宽）：掉落倍率跳过玩家注入的生物装备
                 java.util.List<ItemEntity> filterable = new java.util.ArrayList<>();
                 for (ItemEntity drop : event.getDrops()) {
-                    if (!isEquippedItem(equippedSnapshot, drop.getItem())) {
+                    if (!isPlayerInjectedEquipment(equippedSnapshot, drop.getItem(), event.getEntity())) {
                         filterable.add(drop);
                     }
                 }
@@ -954,8 +946,9 @@ public class UltimateEvents {
     }
 
     /**
-     * 刷怪蛋掉落（节点技能，独立机制）：击杀生物时按概率掉 1 个对应刷怪蛋。
-     * 每级 +10% 概率（满 10 级 = 100% 必掉）；固定 1 个，不参与任何倍率/爆炸增幅。
+     * 刷怪蛋掉落（节点技能）：击杀生物时按概率掉对应刷怪蛋。
+     * 每级 +10% 概率（满 10 级 = 100% 必掉）；v1.3.8 起掉落参与财源滚滚/猎魂丰收增幅
+     * （提前到战利品爆炸前生成 → 随普通掉落一起被复制/放大；子枫挪移术可直传容器不卡顿）。
      * 用 {@link SpawnEggItem#byId} 取对应刷怪蛋（所有原版+模组生物通用；无刷怪蛋的生物不掉）。
      */
     private static void dropSpawnEgg(ServerPlayer sp, LivingDropsEvent event, PlayerSkillRecord record) {
@@ -979,8 +972,9 @@ public class UltimateEvents {
     }
 
     /**
-     * 头颅掉落（节点技能，独立机制）：击杀生物时按概率掉 1 个对应头颅。
-     * 每级 +10% 概率（满 5 级 = 50%）；固定 1 个，不参与任何倍率/爆炸增幅。
+     * 头颅掉落（节点技能）：击杀生物时按概率掉对应头颅。
+     * 每级 +10% 概率（满 5 级 = 50%）；v1.3.8 起掉落参与财源滚滚/猎魂丰收增幅
+     * （提前到战利品爆炸前生成 → 随普通掉落一起被复制/放大；子枫挪移术可直传容器不卡顿）。
      * 原版可穿戴头颅生物（僵尸/骷髅/凋灵骷髅/苦力怕/猪灵）掉对应头；
      * 击杀玩家掉对方皮肤对应的玩家头颅（PROFILE 组件带皮肤）；
      * 无对应头颅的生物不掉（不再掉史蒂夫头）。
@@ -1309,6 +1303,43 @@ public class UltimateEvents {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * 生物是否持久（不会自然消失 despawn）。
+     * 原版 wiki 机制（2026-09-06 确认）：会自然消失的生物 = 没被玩家“碰过”——
+     * 捡起过物品 / 被发射器强制穿甲 / 命名牌命名 / 绝大多数结构生成 / Boss / 召唤方块生成等
+     * 都会打 PersistenceRequired 或带名字 → 永不自然消失。
+     * 推论：会自然消失的怪身上的装备【不可能是玩家注入的】（注入只有“丢地上捡/发射器穿”两条路，
+     * 两条都会让它变持久）→ 装备必然是自然生成的世界产出，可安全多倍掉落。
+     */
+    private static boolean isPersistentMob(LivingEntity entity) {
+        if (entity instanceof net.minecraft.world.entity.Mob mob) {
+            return mob.isPersistenceRequired() || mob.hasCustomName() || mob.isLeashed();
+        }
+        return entity.hasCustomName();
+    }
+
+    /**
+     * 判断掉落物是否为“玩家注入的生物装备”（应跳过翻倍放大，防刷物品）。
+     * 2026-09-06 v1.3.8 重做：原逻辑（2026-08-26）对【所有装备栏来源】一律跳过，导致
+     * 世界自然产出的装备（含神化词条装）也翻不了倍。放宽规则：
+     * <ul>
+     *   <li>非装备栏来源（战利品表掉落）→ 永不拦（返回 false）</li>
+     *   <li>装备栏来源 + 生物会自然消失（非持久）→ 装备必为世界产出 → 放行</li>
+     *   <li>装备栏来源 + 持久生物 → 仅放行神化词条装（1.20.1 老版无来源标记，词条装一律放行）</li>
+     * </ul>
+     */
+    private static boolean isPlayerInjectedEquipment(java.util.List<ItemStack> equippedSnapshot,
+                                                     ItemStack drop, LivingEntity dead) {
+        if (!isEquippedItem(equippedSnapshot, drop)) {
+            return false;
+        }
+        if (!isPersistentMob(dead)) {
+            return false; // 会自然消失的怪：装备必为自然生成
+        }
+        // 持久怪（词条 Boss 命名/召唤方块/捡过玩家物品）：仅词条装豁免（1.20.1 无来源标记，词条装一律放行）
+        return !org.zifeng.skilltree.compat.ApotheosisCompat.isWorldLootAffix(drop);
     }
 
     /**

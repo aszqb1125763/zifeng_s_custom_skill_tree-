@@ -122,6 +122,8 @@ public class AuraEvents {
             // 攻击/治疗光环：直接按各技能开关执行（不再有总开关；K 键只控制伤害/速度）
             auraAttack(player, record);
             auraHeal(player, record);
+            // 汲灵之环（光环被动）：每秒获得经验
+            auraXp(player, record);
         }
     }
 
@@ -645,6 +647,21 @@ public class AuraEvents {
                 ally.addEffect(regen);
             }
         }
+    }
+
+    // ============ 汲灵之环（AURA_XP，2026-09-06）：每秒获得经验点数 ============
+    // 1 级 = 每秒 1000 经验点，每级 +1000（100 级 = 每秒 100000 点）。
+    // 用原版 Player.giveExperiencePoints 直接加经验（绕弯实现：不走经验倍率/事件，简单快速），
+    // 触发原版升级/附魔消耗统一结算。
+    private static void auraXp(ServerPlayer player, PlayerSkillRecord record) {
+        int level = record.isEnabled(Skills.AURA_XP) ? record.getActiveLevel(Skills.AURA_XP) : 0;
+        if (level <= 0) {
+            return; // 未学/关闭
+        }
+        if (player.tickCount % 20 != 0) {
+            return; // 每秒一次
+        }
+        player.giveExperiencePoints(1000 * level);
     }
 
     private static PlayerSkillRecord getRecord(ServerPlayer player) {

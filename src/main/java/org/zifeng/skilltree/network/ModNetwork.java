@@ -28,6 +28,11 @@ public class ModNetwork {
                 .decoder(OpenSkillTreeC2SPacket::decode)
                 .consumerMainThread(OpenSkillTreeC2SPacket::handle)
                 .add();
+        CHANNEL.messageBuilder(BlinkC2SPacket.class, id++)
+                .encoder(BlinkC2SPacket::encode)
+                .decoder(BlinkC2SPacket::decode)
+                .consumerMainThread(BlinkC2SPacket::handle)
+                .add();
         CHANNEL.messageBuilder(LearnSkillC2SPacket.class, id++)
                 .encoder(LearnSkillC2SPacket::encode)
                 .decoder(LearnSkillC2SPacket::decode)

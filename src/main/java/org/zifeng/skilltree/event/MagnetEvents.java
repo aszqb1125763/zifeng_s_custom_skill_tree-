@@ -53,37 +53,28 @@ public class MagnetEvents {
         boolean voidSpear = record.getLearnedPoints(Skills.AURA_VOID) > 0;
         double itemRadius = voidSpear ? Config.VOID_MAGNET_RADIUS.get() : Config.MAGNET_ITEM_RADIUS.get();
         double xpRadius = voidSpear ? Config.VOID_MAGNET_RADIUS.get() : Config.MAGNET_XP_RADIUS.get();
-        // ⚠️ 性能优化（2026-08-27）：大半径（虚空之矛 55 格，体积 110³）时降频到每 5 tick 扫描，
-        //    小半径保持每 2 tick（响应灵敏）。实体密集场景（刷怪塔/农场）显著降低扫描开销。
-        int scanEvery = (itemRadius > 32 || xpRadius > 32) ? 5 : 2;
-        if (player.tickCount % scanEvery != 0) {
-            return;
-        }
-        attractItems(player, itemRadius);
+        // ⚠️ 2026-09-06 改版：每 tick 全量吸取（去掉频率门控与单次数量上限）——
+        //    配合子枫挪移术直传容器不生成实体，刷怪塔/农场不再卡顿。
+        attractItems(player, itemRadius, record);
         attractXp(player, xpRadius);
     }
 
-    /** 吸取掉落物：传送到玩家脚下自然掉落（由原版拾取机制自动进背包，背包满则留在地上） */
-    private static void attractItems(ServerPlayer player, double radius) {
+    /**
+     * 吸取掉落物：
+     * 与子枫挪移术同时开启（且有绑定容器）→ 掉落物直传绑定容器（不生成实体，防卡顿）；
+     * 否则传送到玩家脚下自然掉落（由原版拾取机制自动进背包，背包满则留在地上）。
+     */
+    private static void attractItems(ServerPlayer player, double radius, PlayerSkillRecord record) {
         Level level = player.level();
         AABB box = player.getBoundingBox().inflate(radius);
         List<ItemEntity> items = level.getEntitiesOfClass(ItemEntity.class, box);
         if (items.isEmpty()) {
             return;
         }
-        // ⚠️ 性能优化（2026-08-15）：单 tick 处理上限——光环/战利品爆炸场景可能瞬间产生上千掉落物，
-        //    一次全部 teleportTo 会导致服务端卡死。限制每次最多处理 N 个（默认 64），其余下 tick 继续。
-        int maxPerTick = org.zifeng.skilltree.Config.MAGNET_MAX_PER_TICK.get();
-        int processed = 0;
-        // 按距离从近到远排序（最近优先吸取）——仅当数量超限时才需要排序（否则顺序遍历零开销）
-        if (items.size() > maxPerTick) {
-            items.sort(Comparator.comparingDouble(item -> item.distanceToSqr(player)));
-        }
+        // 挪移是否同开生效（每 tick 只判断一次，避免逐物品查绑定）
+        boolean vacuumActive = org.zifeng.skilltree.event.LootVacuumEvents.isVacuumActive(record);
         boolean any = false;
         for (ItemEntity item : items) {
-            if (processed >= maxPerTick) {
-                break;
-            }
             if (!item.isAlive() || item.getItem().isEmpty()) {
                 continue;
             }
@@ -92,12 +83,25 @@ public class MagnetEvents {
             if (owner != null && !owner.getUUID().equals(player.getUUID()) && item.hasPickUpDelay()) {
                 continue;
             }
+            if (vacuumActive) {
+                // 吸星 + 挪移同开：掉落物直传绑定容器（2026-09-06）
+                net.minecraft.world.item.ItemStack leftover =
+                        org.zifeng.skilltree.event.LootVacuumEvents.insertIntoBound(player, record, item.getItem());
+                if (leftover.isEmpty()) {
+                    item.discard(); // 全部进容器
+                    any = true;
+                    continue;
+                }
+                // 部分进容器（容器快满）：剩余留在地上继续被吸
+                if (leftover.getCount() != item.getItem().getCount()) {
+                    item.setItem(leftover);
+                }
+            }
             // 传送到玩家脚下自然掉落（原版拾取判定由游戏处理：进背包或背包满留在地上）
             item.teleportTo(player.getX(), player.getY() + 0.5, player.getZ());
             item.setPickUpDelay(0);
             item.setDeltaMovement(0, 0, 0);
             any = true;
-            processed++;
         }
         if (any) {
             level.playSound(null, player.getX(), player.getY(), player.getZ(),
@@ -105,7 +109,7 @@ public class MagnetEvents {
         }
     }
 
-    /** 吸取经验球：直接模拟拾取（尊重 PlayerXpEvent.PickupXp 取消） */
+    /** 吸取经验球：直接模拟拾取（尊重 PlayerXpEvent.PickupXp 取消）；2026-09-06 起每 tick 全量无上限 */
     private static void attractXp(ServerPlayer player, double radius) {
         Level level = player.level();
         AABB box = player.getBoundingBox().inflate(radius);
@@ -113,17 +117,7 @@ public class MagnetEvents {
         if (orbs.isEmpty()) {
             return;
         }
-        // ⚠️ 性能优化（2026-08-15）：单 tick 处理上限（与掉落物共享预算），防止上千经验球同时结算卡顿
-        int maxPerTick = org.zifeng.skilltree.Config.MAGNET_MAX_PER_TICK.get();
-        int processed = 0;
-        // 按距离从近到远排序——仅当数量超限时才需要排序
-        if (orbs.size() > maxPerTick) {
-            orbs.sort(Comparator.comparingDouble(orb -> orb.distanceToSqr(player)));
-        }
         for (ExperienceOrb orb : orbs) {
-            if (processed >= maxPerTick) {
-                break;
-            }
             if (!orb.isAlive()) {
                 continue;
             }
@@ -135,7 +129,6 @@ public class MagnetEvents {
             player.take(orb, 1);
             player.giveExperiencePoints(orb.value);
             orb.discard();
-            processed++;
         }
     }
 

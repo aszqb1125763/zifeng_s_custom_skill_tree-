@@ -181,6 +181,55 @@ public final class LootVacuumEvents {
         return remaining;
     }
 
+    /**
+     * 凋落物挪移是否当前生效（技能已学开启 + 已绑定容器）——供吸星大法兼容判断（2026-09-06）。
+     */
+    public static boolean isVacuumActive(PlayerSkillRecord record) {
+        return record != null
+                && record.getLearnedPoints(Skills.AURA_LOOT_VACUUM) > 0
+                && record.isEnabled(Skills.AURA_LOOT_VACUUM)
+                && record.hasLootVacuumBind();
+    }
+
+    /**
+     * 把单个 ItemStack 尽量塞进该玩家绑定的容器，返回未塞下的剩余。
+     * 挪移未生效/容器失效/跨维未加载 → 返回原 stack（调用方按未转移处理）。
+     * 供吸星大法（MagnetEvents）与挪移同时开启时直传容器用（2026-09-06）。
+     */
+    public static ItemStack insertIntoBound(ServerPlayer player, PlayerSkillRecord record, ItemStack stack) {
+        if (player == null || stack == null || stack.isEmpty() || !isVacuumActive(record)) {
+            return stack;
+        }
+        ServerLevel serverLevel = player.serverLevel();
+        if (serverLevel == null) {
+            return stack;
+        }
+        String dim = record.getLootVacuumDim();
+        BlockPos pos = new BlockPos(record.getLootVacuumX(), record.getLootVacuumY(), record.getLootVacuumZ());
+        ServerLevel targetLevel = serverLevel.getServer().getLevel(
+                ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
+                        net.minecraft.resources.ResourceLocation.tryParse(dim)));
+        if (targetLevel == null) {
+            return stack;
+        }
+        targetLevel.getChunk(pos.getX() >> 4, pos.getZ() >> 4); // 跨维度确保 chunk 加载
+        int faceOrdinal = record.getLootVacuumFace();
+        Direction face = faceOrdinal >= 0 && faceOrdinal < Direction.values().length
+                ? Direction.values()[faceOrdinal] : null;
+        net.minecraft.world.level.block.entity.BlockEntity targetBE = targetLevel.getBlockEntity(pos);
+        IItemHandler handler = null;
+        if (targetBE != null) {
+            handler = targetBE.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER, face).orElse(null);
+            if (handler == null) {
+                handler = targetBE.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER, null).orElse(null);
+            }
+        }
+        if (handler == null) {
+            return stack;
+        }
+        return insertAll(handler, stack);
+    }
+
     /** ItemStack 列表版（1.20.1 方块掉落 BreakEvent 用）：全部塞进容器返回 true（调用方清空列表），部分塞进返回 false */
 
     /** 是否可能触发凋落物挪移（技能已学开启 + 已绑定容器）——供 GLM 判断是否需要进入掉落处理 */
