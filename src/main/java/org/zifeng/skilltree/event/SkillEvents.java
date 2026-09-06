@@ -107,6 +107,8 @@ public class SkillEvents {
             AuraEvents.onPlayerLogout(player);
             // 清理子枫的馈赠在线计时累计（防残留，下次进世界重新计时）
             GiftEvents.onPlayerLogout(player);
+            // 清理闪现冷却（防残留）
+            BLINK_LAST.remove(player.getUUID());
         }
     }
 
@@ -129,6 +131,193 @@ public class SkillEvents {
                 data.unbindMachine(machineKey(level, event.getPos()));
             }
         }
+    }
+
+    /**
+     * 暴食（GLUTTONY，2026-09-06）：秒吃所有食物。
+     * 原版吃东西要走 LivingEntityUseItemEvent（使用进度 tick 递减至 0 → Finish）。
+     * 这里在每个 Tick 把剩余时长压到 1 → 下一 tick 立即 Finish 完成食用（含所有模组食物）。
+     * 只作用于可食用物品（getFoodProperties != null），弓箭/盾牌/药水等不受影响。
+     */
+    @SubscribeEvent
+    public static void onItemUseTick(net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent.Tick event) {
+        if (!(event.getEntity() instanceof ServerPlayer sp)) {
+            return;
+        }
+        if (sp.serverLevel() == null) {
+            return; // 登出瞬间防御
+        }
+        PlayerSkillRecord record = PlayerSkillSavedData.get(sp.serverLevel()).getOrCreatePlayer(sp.getUUID());
+        if (record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.GLUTTONY) <= 0
+                || !record.isEnabled(org.zifeng.skilltree.skill.Skills.GLUTTONY)) {
+            return;
+        }
+        net.minecraft.world.item.ItemStack stack = event.getItem();
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+        // 仅可食用物品加速（1.20.1/1.21.1 同签名：Item#getFoodProperties(ItemStack, LivingEntity)）
+        if (stack.getItem().getFoodProperties(stack, sp) == null) {
+            return;
+        }
+        if (event.getDuration() > 1) {
+            event.setDuration(1); // 压到 1 tick → 下一 tick Finish → 秒吃
+        }
+    }
+
+    // ============ 闪现（BLINK，2026-09-06）：向视线方向传送 ============
+    /** 闪现冷却：玩家 UUID → 上次传送的 tickCount（冷却 2 tick 防连点） */
+    private static final java.util.Map<java.util.UUID, Integer> BLINK_LAST = new java.util.HashMap<>();
+
+    /**
+     * 闪现（服务端权威，BlinkC2SPacket 调用）：
+     * 向玩家当前视线方向传送——沿视线每 0.5 格采样，最多 100 格；
+     * 只判空气/流体（可站），连续实心方块 ≤5 格厚（10 步）允许穿过，超过则停在墙前最后空旷处。
+     * 参考原版末影珍珠/EnderIO 旅行手杖的传送语义：传送到视线终点，落地不做额外找地（简单版）。
+     */
+    public static void blink(ServerPlayer player) {
+        if (player == null || player.serverLevel() == null) {
+            return;
+        }
+        PlayerSkillRecord record = PlayerSkillSavedData.get(player.serverLevel()).getOrCreatePlayer(player.getUUID());
+        if (record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.BLINK) <= 0
+                || !record.isEnabled(org.zifeng.skilltree.skill.Skills.BLINK)) {
+            return; // 未学/关闭
+        }
+        // 冷却 2 tick（用玩家 tickCount 时间戳）
+        int now = player.tickCount;
+        Integer last = BLINK_LAST.get(player.getUUID());
+        if (last != null && now - last < 2) {
+            return;
+        }
+        net.minecraft.world.phys.Vec3 eye = player.getEyePosition();
+        net.minecraft.world.phys.Vec3 dir = player.getLookAngle();
+        if (dir.lengthSqr() < 1.0E-6) {
+            dir = new net.minecraft.world.phys.Vec3(1, 0, 0); // 保险：垂直视角时避免除零
+        }
+        net.minecraft.world.phys.Vec3 startPos = player.position();
+        net.minecraft.world.level.Level lvl = player.level();
+        // ===== 最终规则（2026-09-06）：先 raycast 找第一个实心命中；远处只停面外，近处(≤5格)才穿墙 =====
+        // 防“卡碰撞箱被原版推挤穿墙”：任何落点都必须空气 + 玩家 bbox 无碰撞
+        net.minecraft.world.phys.Vec3 rayEnd = eye.add(dir.scale(100.0));
+        net.minecraft.world.phys.BlockHitResult hit = lvl.clip(new net.minecraft.world.level.ClipContext(
+                eye, rayEnd,
+                net.minecraft.world.level.ClipContext.Block.COLLIDER,
+                net.minecraft.world.level.ClipContext.Fluid.NONE,
+                net.minecraft.world.phys.shapes.CollisionContext.empty()));
+        net.minecraft.world.phys.Vec3 dest = null;
+        if (hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
+            // 命中距离（玩家眼睛 → 命中点，格）
+            double dist = eye.distanceTo(hit.getLocation());
+            if (dist <= 5.0) {
+                // ===== 近距离（墙就在眼前 ≤5 格）：穿墙模式 =====
+                // 从眼睛沿视线步进（0.5 格）：命中面前全是开阔(跳过)；碰到第一个实心=进入墙面；
+                // 墙内累计实心半格；一旦重新开阔 = 穿出墙 → 停在墙后第一个
+                // “空气 + bbox 完全无碰撞”采样点；若连续实心 >6 格(12 半格，>5 格规则)仍未出墙 = 穿不过。
+                // 兜底：从命中面沿视线反方向(-dir，=射线来向的空气侧)逐 0.5 格回退找最近安全空气点
+                //（命中面可能是地面顶面/天花板底面/墙侧面，统一用 -dir 才正确）
+                net.minecraft.world.phys.Vec3 wallFallback = null;
+                for (int back = 0; back <= 8; back++) {
+                    net.minecraft.world.phys.Vec3 cand = hit.getLocation().subtract(dir.scale(0.3 + back * 0.5));
+                    wallFallback = resolveSafePoint(lvl, player, startPos, cand);
+                    if (wallFallback != null) {
+                        break;
+                    }
+                }
+                dest = null;
+                int wallRun = 0; // 墙内连续实心半格计数
+                boolean inWall = false;
+                for (int i = 1; i <= 200; i++) {
+                    net.minecraft.world.phys.Vec3 p = eye.add(dir.scale(i * 0.5));
+                    net.minecraft.world.level.block.state.BlockState st = lvl.getBlockState(BlockPos.containing(p));
+                    boolean open = st.isAir() || !st.getFluidState().isEmpty();
+                    if (open) {
+                        if (inWall) {
+                            // 穿出墙：墙后第一安全格即停
+                            net.minecraft.world.phys.Vec3 sp = resolveSafePoint(lvl, player, startPos, p);
+                            if (sp != null) {
+                                dest = sp;
+                                break;
+                            }
+                            // 刚出墙但 bbox 仍贴墙未完全脱离 → 继续前进半格再试
+                        }
+                        continue; // 命中面前的开阔：跳过
+                    }
+                    if (!inWall) {
+                        inWall = true; // 碰到墙的近面
+                        wallRun = 0;
+                        continue;
+                    }
+                    if (++wallRun > 12) {
+                        break; // 连续实心 >6 格仍没出去：穿不过
+                    }
+                }
+                if (dest == null) {
+                    dest = wallFallback; // 穿不过/无安全出口 → 停墙面前方
+                }
+            } else {
+                // ===== 远距离（命中 >5 格）：不穿墙，停在“看到的面”外侧空气 =====
+                // 面外侧 = 视线来向(-dir)：朝下看地 → 地面顶面之上；朝上看天花板 → 底面之下；看墙 → 墙前
+                dest = null;
+                for (int back = 0; back <= 10; back++) {
+                    net.minecraft.world.phys.Vec3 cand = hit.getLocation().subtract(dir.scale(0.5 + back * 0.5));
+                    dest = resolveSafePoint(lvl, player, startPos, cand);
+                    if (dest != null) {
+                        break;
+                    }
+                }
+            }
+        } else {
+            // ===== 无命中（天空/开阔）：传到 100 格尽头，落在安全空气点 =====
+            dest = resolveSafePoint(lvl, player, startPos, rayEnd);
+            if (dest == null) {
+                // 尽头贴近实体/方块的极端情况：往回找最近安全点
+                for (int back = 1; back <= 20; back++) {
+                    net.minecraft.world.phys.Vec3 cand = rayEnd.subtract(dir.scale(back * 0.5));
+                    dest = resolveSafePoint(lvl, player, startPos, cand);
+                    if (dest != null) {
+                        break;
+                    }
+                }
+            }
+        }
+        if (dest == null) {
+            return; // 找不到任何安全落点（极端环境），不传送
+        }
+        BlockPos destPos = BlockPos.containing(dest);
+        // 末影传送粒子（落点）+ 显式末影传送音效（原版 SoundEvents.ENDERMAN_TELEPORT）
+        player.level().globalLevelEvent(2003, destPos, 0);
+        player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
+                net.minecraft.sounds.SoundEvents.ENDERMAN_TELEPORT,
+                net.minecraft.sounds.SoundSource.PLAYERS, 1.0F, 1.0F);
+        // 传送到落点格底部中心（脚贴地）；参考 EnderIO 收尾防回弹
+        player.teleportTo(destPos.getX() + 0.5, destPos.getY(), destPos.getZ() + 0.5);
+        if (player.connection != null) {
+            player.connection.resetPosition();
+        }
+        player.fallDistance = 0;
+        BLINK_LAST.put(player.getUUID(), now);
+    }
+
+    /**
+     * 闪现辅助（2026-09-06）：给定一个候选点，若该点所在格为空气/流体且玩家整个 bbox 移过去
+     * 无碰撞（noCollision，收 0.05 容差）→ 返回该候选点；否则返回 null（表示会卡碰撞箱，不可停）。
+     * 这是闪现“永不把碰撞箱嵌进实心方块”的红线校验，防原版推挤把玩家挤出墙。
+     */
+    private static net.minecraft.world.phys.Vec3 resolveSafePoint(
+            net.minecraft.world.level.Level lvl, ServerPlayer player,
+            net.minecraft.world.phys.Vec3 startPos, net.minecraft.world.phys.Vec3 p) {
+        net.minecraft.world.level.block.state.BlockState st = lvl.getBlockState(BlockPos.containing(p));
+        boolean open = st.isAir() || !st.getFluidState().isEmpty();
+        if (!open) {
+            return null;
+        }
+        net.minecraft.world.phys.AABB box = player.getBoundingBox()
+                .move(p.x - startPos.x, p.y - startPos.y, p.z - startPos.z);
+        if (!lvl.noCollision(player, box.inflate(-0.05))) {
+            return null;
+        }
+        return p;
     }
 
     /** 机器 key：维度|X|Y|Z（与 wmp 相同方案） */

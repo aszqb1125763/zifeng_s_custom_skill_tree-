@@ -171,6 +171,51 @@ public final class LootVacuumEvents {
         return remaining;
     }
 
+    /**
+     * 凋落物挪移是否当前生效（技能已学开启 + 已绑定容器）——供吸星大法兼容判断（2026-09-06）。
+     */
+    public static boolean isVacuumActive(PlayerSkillRecord record) {
+        return record != null
+                && record.getLearnedPoints(Skills.AURA_LOOT_VACUUM) > 0
+                && record.isEnabled(Skills.AURA_LOOT_VACUUM)
+                && record.hasLootVacuumBind();
+    }
+
+    /**
+     * 把单个 ItemStack 尽量塞进该玩家绑定的容器，返回未塞下的剩余。
+     * 挪移未生效/容器失效/跨维未加载 → 返回原 stack（调用方按未转移处理）。
+     * 供吸星大法（MagnetEvents）与挪移同时开启时直传容器用（2026-09-06）。
+     */
+    public static ItemStack insertIntoBound(ServerPlayer player, PlayerSkillRecord record, ItemStack stack) {
+        if (player == null || stack == null || stack.isEmpty() || !isVacuumActive(record)) {
+            return stack;
+        }
+        ServerLevel serverLevel = player.serverLevel();
+        if (serverLevel == null) {
+            return stack;
+        }
+        String dim = record.getLootVacuumDim();
+        BlockPos pos = new BlockPos(record.getLootVacuumX(), record.getLootVacuumY(), record.getLootVacuumZ());
+        ServerLevel targetLevel = serverLevel.getServer().getLevel(
+                ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
+                        net.minecraft.resources.ResourceLocation.parse(dim)));
+        if (targetLevel == null) {
+            return stack;
+        }
+        targetLevel.getChunk(pos.getX() >> 4, pos.getZ() >> 4); // 跨维度确保 chunk 加载
+        int faceOrdinal = record.getLootVacuumFace();
+        Direction face = faceOrdinal >= 0 && faceOrdinal < Direction.values().length
+                ? Direction.values()[faceOrdinal] : null;
+        IItemHandler handler = targetLevel.getCapability(Capabilities.ItemHandler.BLOCK, pos, face);
+        if (handler == null) {
+            handler = targetLevel.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+        }
+        if (handler == null) {
+            return stack;
+        }
+        return insertAll(handler, stack);
+    }
+
     private static void markDirty(ServerPlayer player) {
         if (player.serverLevel() != null) {
             PlayerSkillSavedData.get(player.serverLevel()).setDirty();

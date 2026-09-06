@@ -184,6 +184,10 @@ public class SkillPointHudRenderer {
         if (mc.player == null || mc.screen != null) {
             return;
         }
+        // ⚠️ 旁观模式不显示 HUD（2026-09-06：旁观别人时技能点数据不属于自己，避免误导）
+        if (mc.player.isSpectator()) {
+            return;
+        }
         GuiGraphics gui = event.getGuiGraphics();
         int height = mc.getWindow().getGuiScaledHeight();
         int x = BASE_X + hudOffsetX;

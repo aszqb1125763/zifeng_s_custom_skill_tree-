@@ -12,6 +12,7 @@ public class ModNetwork {
     public static void register(RegisterPayloadHandlersEvent event) {
         var registrar = event.registrar(SkillTreeMod.MOD_ID);
         registrar.playToServer(OpenSkillTreeC2SPacket.TYPE, OpenSkillTreeC2SPacket.STREAM_CODEC, OpenSkillTreeC2SPacket::handle);
+        registrar.playToServer(BlinkC2SPacket.TYPE, BlinkC2SPacket.STREAM_CODEC, BlinkC2SPacket::handle);
         registrar.playToClient(SkillTreeDataS2CPacket.TYPE, SkillTreeDataS2CPacket.STREAM_CODEC, SkillTreeDataS2CPacket::handle);
         registrar.playToClient(ReviveCooldownS2CPacket.TYPE, ReviveCooldownS2CPacket.STREAM_CODEC, ReviveCooldownS2CPacket::handle);
         registrar.playToClient(SkillPointRateS2CPacket.TYPE, SkillPointRateS2CPacket.STREAM_CODEC, SkillPointRateS2CPacket::handle);

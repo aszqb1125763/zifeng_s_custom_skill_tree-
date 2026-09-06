@@ -112,6 +112,8 @@ public final class Skills {
             case UNLIMITED_TRADES -> 100L;   // 无限交易：一次性 100 点
             case VILLAGER_MASTER -> 1000L;   // 村民大师：一次性 1000 点
             case TREASURE_HUNTER -> 500L;    // 寻宝大师：一次性 500 点
+            case GLUTTONY -> 5L;             // 暴食：一次性 5 点（2026-09-06）
+            case BLINK -> 10L;               // 闪现：一次性 10 点（2026-09-06）
             // 终极节点·生存辅助（2026-08-27）：100 点
             case FLY_NO_INERTIA, FLY_MINING, FIRE_PROTECT, WATER_BREATH, DARK_VISION, UNDERWATER_VISION -> 100L;
             default -> 1L; // 普通终极 1 点
@@ -180,6 +182,8 @@ public final class Skills {
     public static final String UNLIMITED_TRADES = "unlimited_trades"; // 无限交易（100点，村民不用补货，交易次数不减少）
     public static final String VILLAGER_MASTER = "villager_master";   // 村民大师（1000点，交易后村民直接满级）
     public static final String TREASURE_HUNTER = "treasure_hunter";   // 寻宝大师（500点，64格内战利品容器/考古刷扫点发光）
+    public static final String GLUTTONY = "gluttony";                 // 暴食（秒吃所有食物，1级，5点，2026-09-06）
+    public static final String BLINK = "blink";                       // 闪现（向视线方向传送，1级，10点，2026-09-06）
 
     // ============ 终极节点·生存辅助（纵列3，2026-08-27 新增：飞行/火焰/呼吸/视野/AE兼容） ============
     public static final String FLY_NO_INERTIA = "fly_no_inertia";           // 御风止步：飞行无惯性，松空格即停（1级，100点）
@@ -241,6 +245,7 @@ public final class Skills {
     public static final String AURA_EMPOWER = "aura_empower"; // 杀戮光环·强化（混沌/Boss伤害，拆自光环，虚空之矛上方）
     public static final String AURA_VOID = "aura_void";       // 杀戮光环·虚空之矛（虚空伤害/秒杀）
     public static final String AURA_LOOT_VACUUM = "aura_loot_vacuum"; // 凋落物挪移（木棍绑定容器，掉落直传容器不生成实体）
+    public static final String AURA_XP = "aura_xp";                   // 汲灵之环（光环被动：每秒获得经验，上限100级，消耗指数增长 1000×1.05^n，2026-09-06）
 
     // ============ 寰宇法则（GLOBAL，纵列6，2026-08-27 新增：全局更改类技能，服务器全局生效，光环右侧） ============
     public static final String AURA_TIME = "aura_time";       // 时之环·时间停止（锁定开启时的时间，全局 gamerule）
@@ -283,17 +288,26 @@ public final class Skills {
             AMP_HP, AMP_ARMOR, AMP_TOUGH, AMP_DAMAGE, AMP_ATTACK_SPEED, AMP_MINING, AMP_MOVE,
             AMP_REGEN, AMP_LUCK, AMP_JUMP, AMP_FLY, AMP_SWIM,
             AMP_CRIT, AMP_LIFESTEAL, AMP_THORNS, AMP_ARMOR_PEN);
-    /** 所有终极节点（纵列3）：只保留加玩家属性/防御的终极（2026-08-25：不加属性的被动/掉落类已拆到 SPECIAL 纵列4） */
-    public static final List<String> ULTIMATE_SKILLS = List.of(ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, NIGHT_VISION, SATURATION, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY,
-            FLY_NO_INERTIA, FLY_MINING, FIRE_PROTECT, WATER_BREATH, DARK_VISION, UNDERWATER_VISION);
-    /** 所有特殊被动（纵列4，2026-08-25 新增）：原终极列中不加玩家属性的被动/掉落/行为类技能 */
+    /** 所有终极节点（纵列3，2026-09-06 重新划分）：【成长型大招】——战斗质变/成长生产/吃技能点的主力增强 */
+    public static final List<String> ULTIMATE_SKILLS = List.of(
+            // 战斗大招
+            ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY,
+            // 掉落/生产成长系（自特殊列上移）：财源滚滚/万载不磨/猎魂丰收/点石成金/经验飞涨/妖魂凝卵/斩首夺颅/自动熔炼/万物挖掘/不毁词条/横扫千军/稳如泰山
+            LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN,
+            MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT, ULT_BREAK_ALL, ULT_UNBREAK_TAG,
+            ULT_SWEEP, ULT_KB_RESIST);
+    /** 所有特殊被动（纵列4，2026-09-06 重新划分）：【一次性奇技】——点一次给固定能力的玩法/工具/生存便利 */
     public static final List<String> SPECIAL_SKILLS = List.of(
-            VILLAGE_HERO, REACH, GLOW, LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN,
-            MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT, ULT_BREAK_ALL, ULT_UNBREAK_TAG, ULT_SWEEP, ULT_KB_RESIST,
+            // 生存便利（自终极列下移）：夜视/饱食/御风止步/凌空采掘/烈焰不侵/鲛人之息/破暗之瞳/碧波清眸
+            NIGHT_VISION, SATURATION, FLY_NO_INERTIA, FLY_MINING,
+            FIRE_PROTECT, WATER_BREATH, DARK_VISION, UNDERWATER_VISION,
+            // 玩法/工具
+            VILLAGE_HERO, REACH, GLOW,
             ENCHANT_RANDOM, ENCHANT_BREAK, ENCHANT_OVER,
-            UNLIMITED_TRADES, VILLAGER_MASTER, TREASURE_HUNTER);
+            UNLIMITED_TRADES, VILLAGER_MASTER, TREASURE_HUNTER,
+            GLUTTONY, BLINK);
     /** 所有杀戮光环（纵列5）：杀戮光环·强化 在 虚空之矛 上方；时之环/晴空环已移至寰宇法则列（2026-08-27） */
-    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM);
+    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM, AURA_XP);
     /** 所有寰宇法则（纵列6，2026-08-27 新增）：全局更改类技能（服务器全局生效，无法单人隔离） */
     public static final List<String> GLOBAL_SKILLS = List.of(AURA_TIME, AURA_WEATHER, AE_INFINITE_CHANNEL);
     /** 所有魔法增幅（纵列0）：其余模组兼容技能（新生魔艺/铁魔法等），不作为任何前置 */
@@ -361,6 +375,7 @@ public final class Skills {
             case AURA_EMPOWER -> 1; // 一次性解锁（1000 技能点）
             case AURA_VOID -> 1; // 一次性解锁（5000 技能点）
             case AURA_LOOT_VACUUM -> 1; // 一次性解锁（10 技能点）
+            case AURA_XP -> 100; // 汲灵之环：上限 100 级（2026-09-06）
             default -> 0;
         };
     }
@@ -549,7 +564,8 @@ public final class Skills {
             case GLOW -> 1;
             case LOOT_BOMB -> 100;
             case UNBREAKABLE -> 5;
-            case MOB_DROP, BLOCK_DROP, XP_GAIN -> 10;
+            case XP_GAIN -> 50; // 经验飞涨：上限 50 级（2026-09-06，原 10 级）
+            case MOB_DROP, BLOCK_DROP -> 10;
             case MOB_SPAWN_EGG, MOB_HEAD -> 5;
             default -> 1;
         };
@@ -605,6 +621,7 @@ public final class Skills {
         if (AURA_LOOT_VACUUM.equals(skillId)) {
             return 10L; // 凋落物挪移：固定 10 技能点一次性解锁（2026-08-24）
         }
+        // ⚠️ 汲灵之环（AURA_XP）无特判：走统一光环指数增长 auraBaseCost×1.05^等级（用户 2026-09-06 要求）
         double raw = auraBaseCost() * Math.pow(auraCostMultiplier(), currentLevel);
         if (raw >= Long.MAX_VALUE) {
             return Long.MAX_VALUE; // 极端高等级 clamp，防溢出
@@ -718,6 +735,7 @@ public final class Skills {
             case AURA_LOCK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             case AURA_VOID -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             case AURA_LOOT_VACUUM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case AURA_XP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             // ===== 子枫的馈赠（纵列7，2026-08-25 新增） =====
             case GIFT_TIME_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             case GIFT_TIME_STORM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
@@ -737,6 +755,8 @@ public final class Skills {
             case UNLIMITED_TRADES -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             case VILLAGER_MASTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             case TREASURE_HUNTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case GLUTTONY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case BLINK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             default -> "skill.zifeng_s_custom_skill_tree.unknown.name";
         };
     }
@@ -841,6 +861,7 @@ public final class Skills {
             case AURA_LOCK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             case AURA_VOID -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             case AURA_LOOT_VACUUM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case AURA_XP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             // ===== 子枫的馈赠（纵列7，按游戏时长激活，免费获得技能点） =====
             case GIFT_TIME_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             case GIFT_TIME_STORM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
@@ -860,6 +881,8 @@ public final class Skills {
             case UNLIMITED_TRADES -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             case VILLAGER_MASTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             case TREASURE_HUNTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case GLUTTONY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case BLINK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             default -> "skill.zifeng_s_custom_skill_tree.unknown.desc";
         };
     }
@@ -1103,6 +1126,7 @@ public final class Skills {
             case AURA_LOCK -> Items.ANVIL;                     // 光环锁定：铁砧（稳固不动）
             case AURA_VOID -> Items.DIAMOND_SWORD;            // 虚空之矛：原版钻石剑（虚空力量，金边=伤害吸收）
             case AURA_LOOT_VACUUM -> Items.STICK;             // 凋落物挪移：木棍（绑定容器的工具）
+            case AURA_XP -> Items.EXPERIENCE_BOTTLE;          // 汲灵之环：经验瓶（每级+1000/秒经验）
             // ===== 子枫的馈赠（纵列7） =====
             case GIFT_TIME_BAPTISM -> Items.CLOCK;            // 时间洗礼：时钟（时间）
             case GIFT_TIME_STORM -> Items.LIGHTNING_ROD;      // 时间风暴：避雷针（风暴）
@@ -1122,6 +1146,8 @@ public final class Skills {
             case UNLIMITED_TRADES -> Items.EMERALD;           // 无限交易：绿宝石（交易货币）
             case VILLAGER_MASTER -> Items.EMERALD_BLOCK;      // 村民大师：绿宝石块（满级大师）
             case TREASURE_HUNTER -> Items.GOLD_NUGGET;        // 寻宝大师：金粒（宝箱宝藏）
+            case GLUTTONY -> Items.COOKED_BEEF;               // 暴食：牛排（大快朵颐秒吃）
+            case BLINK -> Items.ENDER_PEARL;                  // 闪现：末影珍珠（瞬移）
             default -> Items.BARRIER;
         };
     }

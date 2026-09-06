@@ -96,6 +96,15 @@ public class ModKeyBindingEvents {
                     if (!Skills.isTogglable(skillId)) {
                         continue;
                     }
+                    // 闪现（BLINK，2026-09-06）：主动技能——快捷键按下即传送一次，不切换开关
+                    if (Skills.BLINK.equals(skillId)) {
+                        boolean blinkLearned = auraLearnedCache.getOrDefault(skillId, Boolean.FALSE)
+                                || allSkillsLearnedCache.getOrDefault(skillId, Boolean.FALSE);
+                        if (blinkLearned) {
+                            PacketDistributor.sendToServer(new org.zifeng.skilltree.network.BlinkC2SPacket());
+                        }
+                        continue;
+                    }
                     // 已学才触发（光环技能走 auraLearnedCache，其余技能走 allSkillsLearnedCache）
                     boolean learned = auraLearnedCache.getOrDefault(skillId, Boolean.FALSE)
                             || allSkillsLearnedCache.getOrDefault(skillId, Boolean.FALSE);
@@ -115,7 +124,8 @@ public class ModKeyBindingEvents {
                         continue;
                     }
                     // 光环技能：循环该光环自己的目标模式（0 敌对 → 1 友好 → 2 所有 → 0）
-                    if (Skills.AURA_SKILLS.contains(skillId)) {
+                    // ⚠️ 汲灵之环（AURA_XP，2026-09-06）除外：光环被动无目标概念 → 走下方等级循环
+                    if (Skills.AURA_SKILLS.contains(skillId) && !Skills.AURA_XP.equals(skillId)) {
                         int cur = auraTargetModes.getOrDefault(skillId, 0);
                         int next = (cur + 1) % 3;
                         auraTargetModes.put(skillId, next);

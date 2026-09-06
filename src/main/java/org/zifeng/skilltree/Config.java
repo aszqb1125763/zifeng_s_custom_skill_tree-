@@ -127,9 +127,6 @@ public class Config {
     /** Loot Bomb: drop multiplier cap (level 1 = 1x, linear 1+level; default cap 101). 战利品爆炸封顶 */
     public static final ModConfigSpec.IntValue LOOT_BOMB_MAX_MULTIPLIER;
 
-    /** Loot Bomb: max drop copies per kill (perf guard vs entity explosion on mass kills). 单次掉落副本上限 */
-    public static final ModConfigSpec.IntValue LOOT_BOMB_MAX_COPIES_PER_KILL;
-
     /** Magnet aura: max items+XP orbs processed per tick (perf guard). 磁力每 tick 上限 */
     public static final ModConfigSpec.IntValue MAGNET_MAX_PER_TICK;
 
@@ -418,9 +415,6 @@ public class Config {
         LOOT_BOMB_MAX_MULTIPLIER = builder
                 .comment("Loot Bomb: drop multiplier cap (level 1 = 1x, linear 1+level, 100 levels = 101x; default 101).\n战利品爆炸封顶")
                 .defineInRange("lootBombMaxMultiplier", 101, 2, 1000000);
-        LOOT_BOMB_MAX_COPIES_PER_KILL = builder
-                .comment("Loot Bomb: max drop copies per kill (default 20; prevents drop entity explosion on mass kills, 0 = unlimited).\n单次掉落副本上限")
-                .defineInRange("lootBombMaxCopiesPerKill", 20, 0, 1000000);
         MAGNET_MAX_PER_TICK = builder
                 .comment("Magnet aura: max items+XP orbs processed per tick (default 64; prevents lag from mass teleport).\n磁力每 tick 上限")
                 .defineInRange("magnetMaxPerTick", 64, 1, 1000000);
