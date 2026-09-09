@@ -7,7 +7,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.zifeng.skilltree.SkillTreeMod;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
@@ -41,7 +40,7 @@ public record SetSkillToggleC2SPacket(String skillId, boolean enabled) implement
                 // ⚠️ 未学习该技能时忽略（防止快捷键把未学技能 toggle 置 false，导致 UI 永远显示"关闭"）
                 if (record.getLearnedPoints(packet.skillId()) <= 0) {
                     // 回发当前真实状态校准客户端缓存（未学的技能恢复默认开启显示）
-                    PacketDistributor.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
+                    org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
                     return;
                 }
                 record.setEnabled(packet.skillId(), packet.enabled());
@@ -64,7 +63,7 @@ public record SetSkillToggleC2SPacket(String skillId, boolean enabled) implement
                                 : "chat.zifeng_s_custom_skill_tree.skill_off",
                         icon, Skills.getDisplayNameComponent(packet.skillId())));
                 // 回发最新状态
-                PacketDistributor.sendToPlayer(player,
+                org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
             }
         });

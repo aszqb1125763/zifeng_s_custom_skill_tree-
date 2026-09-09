@@ -152,7 +152,7 @@ public final class PlayerPushState {
         pendingSkillDelta = 0;
         net.minecraft.server.level.ServerPlayer ownerPlayer = level.getServer().getPlayerList().getPlayer(owner);
         if (ownerPlayer != null) {
-            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(ownerPlayer,
+            org.zifeng.skilltree.network.ModNetwork.sendToPlayer(ownerPlayer,
                     new org.zifeng.skilltree.network.SkillPointDeltaS2CPacket(delta, total));
         }
     }

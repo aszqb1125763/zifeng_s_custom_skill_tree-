@@ -273,6 +273,9 @@ public class SkillPointHudRenderer {
                 break;
             }
         }
+
+        // 4. 凤凰涅槃图腾行（2026-09-08：图标从经验条上方移到技能点 HUD 模块正下方，随模块显隐/偏移）
+        org.zifeng.skilltree.client.ReviveHudRenderer.renderInto(gui, x, totalY + 12);
     }
 
     private static int lerpColor(int from, int to, float t) {

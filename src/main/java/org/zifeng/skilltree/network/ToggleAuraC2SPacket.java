@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.zifeng.skilltree.SkillTreeMod;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
@@ -47,7 +46,7 @@ public record ToggleAuraC2SPacket() implements CustomPacketPayload {
                                 ? "chat.zifeng_s_custom_skill_tree.aura_on"
                                 : "chat.zifeng_s_custom_skill_tree.aura_off",
                         now ? "⚔" : "✖", Skills.getDisplayNameComponent(Skills.AURA_DAMAGE)));
-                PacketDistributor.sendToPlayer(player,
+                org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
             }
         });

@@ -6,7 +6,6 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.zifeng.skilltree.Config;
 import org.zifeng.skilltree.init.ModMenus;
 import org.zifeng.skilltree.menu.SkillPointConverterMenu;
@@ -178,7 +177,7 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
                 rate = 1_000_000_000_000L;
             }
             localRate = rate; // 本地乐观生效（立即显示），服务端同步后覆盖
-            PacketDistributor.sendToServer(new ConverterRateC2SPacket(menu.getBlockPos(), rate));
+            org.zifeng.skilltree.network.ModNetwork.sendToServer(new ConverterRateC2SPacket(menu.getBlockPos(), rate));
             rateBox.setValue(String.valueOf(rate));
         } catch (NumberFormatException ignored) {
             // 非法输入恢复
@@ -243,7 +242,7 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
                 && mouseY >= btnY && mouseY <= btnY + btnH) {
             boolean next = !currentUnlimited();
             localUnlimited = next; // 立即本地切换，视觉马上变化
-            PacketDistributor.sendToServer(new ConverterUnlimitedC2SPacket(menu.getBlockPos(), next));
+            org.zifeng.skilltree.network.ModNetwork.sendToServer(new ConverterUnlimitedC2SPacket(menu.getBlockPos(), next));
             return true;
         }
         // 点击编辑框外部 → 提交输入并失焦

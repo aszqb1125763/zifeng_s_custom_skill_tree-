@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.zifeng.skilltree.SkillTreeMod;
@@ -44,7 +43,7 @@ public record OpenSkillTreeC2SPacket(boolean subscribe) implements CustomPacketP
                 }
                 PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
                 PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
-                PacketDistributor.sendToPlayer(player,
+                org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
             }
         });

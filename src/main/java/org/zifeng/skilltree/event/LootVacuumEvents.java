@@ -37,6 +37,10 @@ public final class LootVacuumEvents {
     }
 
     // ============ 绑定：手持木棍 + 潜行 + 右键容器 ============
+    // ⚠️ 2026-09-07 架构调整：绑定容器独立为「子功能」——只要学习了任一容器绑定技能
+    //（子枫挪移术 AURA_LOOT_VACUUM / 子枫的搬运术 CONTAINER_HAUL）即可绑定，
+    // 不再要求挪移术「已学且开启」。绑定数据存玩家存档（LootVacuum* 字段），
+    // 供所有容器技能共享，不受单一技能开关逻辑影响。
 
     @SubscribeEvent
     public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
@@ -46,14 +50,26 @@ public final class LootVacuumEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return;
         }
-        // 条件：主手原版木棍 + 潜行 + 技能已学且开启
+        // 条件：主手原版木棍 + 潜行 + 已学任一容器绑定技能（不需要对应技能开启）
         ItemStack stack = event.getItemStack();
         if (stack.getItem() != Items.STICK || !player.isShiftKeyDown()) {
             return;
         }
         PlayerSkillRecord record = getRecord(player);
-        if (record.getLearnedPoints(Skills.AURA_LOOT_VACUUM) <= 0 || !record.isEnabled(Skills.AURA_LOOT_VACUUM)) {
+        // ⚠️ 2026-09-08 迁入木棍工具层 BIND 模块：需工具总开关开 + 当前模式=BIND（潜行右键绑容器）
+        //    工具关（还原木棍）或切到 RANGE 时，潜行右键回到原版行为。
+        if (!record.isStickToolOn() || record.getStickToolMode() != Skills.STICK_MODE_BIND) {
             return;
+        }
+        boolean hasBindSkill = false;
+        for (String sid : Skills.ALL_SKILLS) {
+            if (Skills.isContainerBindSkill(sid) && record.getLearnedPoints(sid) > 0) {
+                hasBindSkill = true;
+                break;
+            }
+        }
+        if (!hasBindSkill) {
+            return; // 未学任何容器绑定技能 → 木棍+潜行右键仍是原版行为
         }
         Level level = event.getLevel();
         BlockPos pos = event.getPos();
@@ -76,6 +92,9 @@ public final class LootVacuumEvents {
         if (same) {
             record.clearLootVacuumBind();
             markDirty(player);
+            // ⚠️ 2026-09-08：解除后回发技能数据，客户端绑定框即时消失
+            org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
+                    org.zifeng.skilltree.network.SkillTreeDataS2CPacket.from(record));
             player.displayClientMessage(Component.translatable("chat.zifeng_s_custom_skill_tree.lootvac_unbind"), false);
             level.playSound(null, player.blockPosition(), SoundEvents.ENDER_EYE_DEATH, SoundSource.PLAYERS, 1.0F, 1.0F);
             return;
@@ -83,14 +102,52 @@ public final class LootVacuumEvents {
         record.setLootVacuumBind(dim, pos.getX(), pos.getY(), pos.getZ(),
                 face != null ? face.ordinal() : 0, getContainerName(level, pos));
         markDirty(player);
+        // ⚠️ 2026-09-08：绑定后回发技能数据，客户端绑定框即时切到新容器
+        org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
+                org.zifeng.skilltree.network.SkillTreeDataS2CPacket.from(record));
         player.displayClientMessage(Component.translatable("chat.zifeng_s_custom_skill_tree.lootvac_bind",
                 getContainerName(level, pos), pos.getX(), pos.getY(), pos.getZ()), false);
         level.playSound(null, player.blockPosition(), SoundEvents.END_PORTAL_FRAME_FILL, SoundSource.PLAYERS, 1.0F, 1.0F);
     }
 
-    /** 取容器方块显示名（如"箱子"） */
+    /** 取容器方块显示名（如"箱子"；Sophisticated 等参数化方块名用干净名，2026-09-07） */
     private static String getContainerName(Level level, BlockPos pos) {
-        return level.getBlockState(pos).getBlock().getName().getString();
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+        if (be != null) {
+            String clean = org.zifeng.skilltree.compat.SophisticatedCompat.cleanDisplayName(be);
+            if (clean != null) {
+                return clean; // Sophisticated 干净名（带 wood 参数渲染，无 %s 残留）
+            }
+        }
+        String name = level.getBlockState(pos).getBlock().getName().getString();
+        if (name != null && name.contains("%s")) {
+            // 兜底防乱码：参数化模板没渲染好时退回方块注册名（难看但不显示 %s）
+            return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).getPath();
+        }
+        return name;
+    }
+
+    /**
+     * 统一插入入口（2026-09-09 重写）：纯容器 IO——取目标 ITEM_HANDLER capability 逐槽插入。
+     * 像 AE2 存储总线/管道一样带方向访问（face 优先，null 兜底）；只管"放"，怎么存由容器决定。
+     * ⚠️ 不再有任何 Sophisticated 反射特判。
+     */
+    private static ItemStack insertStackInto(Level level, BlockPos pos, net.minecraft.core.Direction face, ItemStack stack) {
+        IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, face);
+        if (handler == null) {
+            handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null); // 兜底不区分朝向
+        }
+        if (handler == null) {
+            return stack;
+        }
+        return insertAll(handler, stack);
+    }
+
+    /** 用绑定时记录的方向插入（record.getLootVacuumFace()；无记录 face 时用 null） */
+    private static ItemStack insertIntoBoundTarget(Level level, BlockPos pos, int faceOrdinal, ItemStack stack) {
+        net.minecraft.core.Direction face = faceOrdinal >= 0 && faceOrdinal < net.minecraft.core.Direction.values().length
+                ? net.minecraft.core.Direction.values()[faceOrdinal] : null;
+        return insertStackInto(level, pos, face, stack);
     }
 
     // ============ 掉落传送：击杀/挖掘时把掉落物塞进绑定容器 ============
@@ -116,7 +173,6 @@ public final class LootVacuumEvents {
         }
         String dim = record.getLootVacuumDim();
         BlockPos pos = new BlockPos(record.getLootVacuumX(), record.getLootVacuumY(), record.getLootVacuumZ());
-        int faceOrdinal = record.getLootVacuumFace();
         ServerLevel serverLevel = player.serverLevel();
         if (serverLevel == null) {
             return false;
@@ -130,15 +186,6 @@ public final class LootVacuumEvents {
         // ⚠️ 2026-08-24 跨维度确保：目标维度的容器 chunk 可能未加载（玩家在别的维度时容器 chunk 不活跃），
         //    必须强制加载 chunk 才能取到容器 block entity / capability——否则 getCapability 返回 null 跨维度失效
         targetLevel.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
-        Direction face = faceOrdinal >= 0 && faceOrdinal < Direction.values().length
-                ? Direction.values()[faceOrdinal] : null;
-        IItemHandler handler = targetLevel.getCapability(Capabilities.ItemHandler.BLOCK, pos, face);
-        if (handler == null) {
-            handler = targetLevel.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
-        }
-        if (handler == null) {
-            return false; // 容器被移除/加载失败
-        }
         boolean allMoved = true;
         Iterator<ItemEntity> it = drops.iterator();
         while (it.hasNext()) {
@@ -151,7 +198,7 @@ public final class LootVacuumEvents {
                 it.remove();
                 continue;
             }
-            ItemStack leftover = insertAll(handler, stack);
+            ItemStack leftover = insertIntoBoundTarget(targetLevel, pos, record.getLootVacuumFace(), stack);
             if (leftover.isEmpty()) {
                 it.remove(); // 全部塞进容器，不生成掉落实体
             } else {
@@ -162,13 +209,13 @@ public final class LootVacuumEvents {
         return allMoved;
     }
 
-    /** 把物品尽量塞进容器全部槽位，返回未塞下的剩余（模拟=false 真实插入） */
+    /**
+     * 通用容器放入（2026-09-09）：直接用 NeoForge 官方 ItemHandlerHelper.insertItem——
+     * 所有模组/管道共用的标准"把物品塞进容器"方法，内部自行处理逐槽/堆叠/容量规则。
+     * 我们只负责"放"，放不下返回剩余由调用方处理，不掺任何自定义逻辑。
+     */
     private static ItemStack insertAll(IItemHandler handler, ItemStack stack) {
-        ItemStack remaining = stack.copy();
-        for (int slot = 0; slot < handler.getSlots() && !remaining.isEmpty(); slot++) {
-            remaining = handler.insertItem(slot, remaining, false);
-        }
-        return remaining;
+        return net.neoforged.neoforge.items.ItemHandlerHelper.insertItem(handler, stack, false);
     }
 
     /**
@@ -187,7 +234,19 @@ public final class LootVacuumEvents {
      * 供吸星大法（MagnetEvents）与挪移同时开启时直传容器用（2026-09-06）。
      */
     public static ItemStack insertIntoBound(ServerPlayer player, PlayerSkillRecord record, ItemStack stack) {
-        if (player == null || stack == null || stack.isEmpty() || !isVacuumActive(record)) {
+        if (!isVacuumActive(record)) {
+            return stack;
+        }
+        return insertIntoBoundRaw(player, record, stack);
+    }
+
+    /**
+     * 把单个 ItemStack 尽量塞进该玩家绑定的容器（搬运术用，2026-09-07）。
+     * ⚠️ 只要求「已绑定容器」存在（绑定由子枫挪移术建立，搬运术复用同一目标），
+     * 不要求挪移技能本身已开启/已学——与吸星大法直传（要求挪移开启）区分。
+     */
+    public static ItemStack insertIntoBoundRaw(ServerPlayer player, PlayerSkillRecord record, ItemStack stack) {
+        if (player == null || stack == null || stack.isEmpty() || record == null || !record.hasLootVacuumBind()) {
             return stack;
         }
         ServerLevel serverLevel = player.serverLevel();
@@ -203,17 +262,55 @@ public final class LootVacuumEvents {
             return stack;
         }
         targetLevel.getChunk(pos.getX() >> 4, pos.getZ() >> 4); // 跨维度确保 chunk 加载
-        int faceOrdinal = record.getLootVacuumFace();
-        Direction face = faceOrdinal >= 0 && faceOrdinal < Direction.values().length
-                ? Direction.values()[faceOrdinal] : null;
-        IItemHandler handler = targetLevel.getCapability(Capabilities.ItemHandler.BLOCK, pos, face);
-        if (handler == null) {
-            handler = targetLevel.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+        return insertIntoBoundTarget(targetLevel, pos, record.getLootVacuumFace(), stack);
+    }
+
+    /**
+     * 从该玩家绑定的容器中提取物品（选区放置取料用，2026-09-08）。
+     * 只要求「已绑定容器」存在；逐槽取出与标签匹配的物品最多 count 个，
+     * 返回合并后的 stack（可能为 EMPTY）。找不到/容器失效 → EMPTY。
+     */
+    public static ItemStack extractFromBoundRaw(ServerPlayer player, PlayerSkillRecord record,
+                                                java.util.function.Predicate<ItemStack> match, int count) {
+        if (player == null || record == null || !record.hasLootVacuumBind() || count <= 0) {
+            return ItemStack.EMPTY;
         }
-        if (handler == null) {
-            return stack;
+        ServerLevel serverLevel = player.serverLevel();
+        if (serverLevel == null) {
+            return ItemStack.EMPTY;
         }
-        return insertAll(handler, stack);
+        String dim = record.getLootVacuumDim();
+        BlockPos pos = new BlockPos(record.getLootVacuumX(), record.getLootVacuumY(), record.getLootVacuumZ());
+        ServerLevel targetLevel = serverLevel.getServer().getLevel(
+                ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
+                        net.minecraft.resources.ResourceLocation.parse(dim)));
+        if (targetLevel == null) {
+            return ItemStack.EMPTY;
+        }
+        targetLevel.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
+        IItemHandler handler = targetLevel.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+        if (handler == null) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack result = ItemStack.EMPTY;
+        int want = count;
+        for (int slot = 0; slot < handler.getSlots() && want > 0; slot++) {
+            ItemStack in = handler.getStackInSlot(slot);
+            if (in.isEmpty() || !match.test(in)) {
+                continue;
+            }
+            ItemStack take = handler.extractItem(slot, want, false);
+            if (take.isEmpty()) {
+                continue;
+            }
+            if (result.isEmpty()) {
+                result = take;
+            } else {
+                result.grow(take.getCount());
+            }
+            want -= take.getCount();
+        }
+        return result;
     }
 
     private static void markDirty(ServerPlayer player) {

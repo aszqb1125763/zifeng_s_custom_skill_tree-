@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.zifeng.skilltree.SkillTreeMod;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
@@ -43,7 +42,7 @@ public record LearnSkillC2SPacket(String skillId, int levels) implements CustomP
                 if (Skills.ALL_SKILLS.contains(skillId) && checkUltimateRequirements(record, skillId)) {
                     // 其余模组兼容技能：对应模组未安装 → 拒绝学习 + 红字提示（防刷包/误点）
                     if (!checkModLoaded(skillId, player)) {
-                        PacketDistributor.sendToPlayer(player,
+                        org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                                 SkillTreeDataS2CPacket.from(record));
                         return;
                     }
@@ -60,7 +59,7 @@ public record LearnSkillC2SPacket(String skillId, int levels) implements CustomP
                                     Skills.getDisplayNameComponent(skillId),
                                     need / 72000, have / 72000, remainSec / 60)
                                     .withColor(0xFFFFAA55));
-                            PacketDistributor.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
+                            org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
                             return;
                         }
                     }
@@ -85,7 +84,7 @@ public record LearnSkillC2SPacket(String skillId, int levels) implements CustomP
                         }
                     }
                 }
-                PacketDistributor.sendToPlayer(player,
+                org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
             }
         });

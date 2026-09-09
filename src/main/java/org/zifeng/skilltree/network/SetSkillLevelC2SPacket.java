@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.zifeng.skilltree.SkillTreeMod;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
@@ -59,7 +58,7 @@ public record SetSkillLevelC2SPacket(String skillId, int level) implements Custo
                             .append(net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree." + modeKey));
                 }
                 player.sendSystemMessage(msgComp);
-                PacketDistributor.sendToPlayer(player,
+                org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
             }
         });

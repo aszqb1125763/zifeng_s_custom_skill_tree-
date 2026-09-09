@@ -18,9 +18,12 @@ import java.util.Map;
  */
 public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> learnedSkills, Map<String, Boolean> toggles,
                                      Map<String, Integer> activeLevels, boolean auraEnabled, Map<String, Integer> auraTargetModes,
-                                     String lootVacuumBind, int weatherMode) implements CustomPacketPayload {
+                                     String lootVacuumBind, int weatherMode, boolean stickToolOn, int stickToolMode,
+                                     Map<String, org.zifeng.skilltree.data.OperZone> operZones,
+                                     java.util.List<org.zifeng.skilltree.data.OperZone> protectZones) implements CustomPacketPayload {
     public static final Type<SkillTreeDataS2CPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "skill_tree_data"));
-    // ⚠️ 2026-08-24：StreamCodec.composite 最多 8 字段，加 lootVacuumBind 后 9 个 → 改 StreamCodec.of 手动编解码
+    // ⚠️ 2026-08-24：StreamCodec.composite 最多 8 字段 → 改 StreamCodec.of 手动编解码
+    // ⚠️ 2026-09-08：追加 木棍工具层 stickToolOn/stickToolMode（10 字段）+ 操作区 operZones
     public static final StreamCodec<FriendlyByteBuf, SkillTreeDataS2CPacket> STREAM_CODEC = new StreamCodec<>() {
         @Override
         public SkillTreeDataS2CPacket decode(FriendlyByteBuf buf) {
@@ -32,7 +35,26 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
             Map<String, Integer> auraTargetModes = buf.readMap(HashMap::new, FriendlyByteBuf::readUtf, FriendlyByteBuf::readVarInt);
             String lootVacuumBind = buf.readBoolean() ? buf.readUtf() : null;
             int weatherMode = buf.readVarInt();
-            return new SkillTreeDataS2CPacket(skillPoints, learnedSkills, toggles, activeLevels, auraEnabled, auraTargetModes, lootVacuumBind, weatherMode);
+            boolean stickToolOn = buf.readBoolean();
+            int stickToolMode = buf.readVarInt();
+            int zoneCount = buf.readVarInt();
+            Map<String, org.zifeng.skilltree.data.OperZone> operZones = new HashMap<>();
+            for (int i = 0; i < zoneCount; i++) {
+                String skill = buf.readUtf();
+                String dim = buf.readUtf();
+                int ax = buf.readVarInt(), ay = buf.readVarInt(), az = buf.readVarInt();
+                int bx = buf.readVarInt(), by = buf.readVarInt(), bz = buf.readVarInt();
+                operZones.put(skill, new org.zifeng.skilltree.data.OperZone(dim, ax, ay, az, bx, by, bz));
+            }
+            int pzCount = buf.readVarInt();
+            java.util.List<org.zifeng.skilltree.data.OperZone> protectZones = new java.util.ArrayList<>();
+            for (int i = 0; i < pzCount; i++) {
+                String dim = buf.readUtf();
+                protectZones.add(new org.zifeng.skilltree.data.OperZone(dim,
+                        buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
+                        buf.readVarInt(), buf.readVarInt(), buf.readVarInt()));
+            }
+            return new SkillTreeDataS2CPacket(skillPoints, learnedSkills, toggles, activeLevels, auraEnabled, auraTargetModes, lootVacuumBind, weatherMode, stickToolOn, stickToolMode, operZones, protectZones);
         }
 
         @Override
@@ -48,6 +70,29 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
                 buf.writeUtf(p.lootVacuumBind());
             }
             buf.writeVarInt(p.weatherMode());
+            buf.writeBoolean(p.stickToolOn());
+            buf.writeVarInt(p.stickToolMode());
+            buf.writeVarInt(p.operZones().size());
+            for (Map.Entry<String, org.zifeng.skilltree.data.OperZone> e : p.operZones().entrySet()) {
+                buf.writeUtf(e.getKey());
+                buf.writeUtf(e.getValue().dim());
+                buf.writeVarInt(e.getValue().ax());
+                buf.writeVarInt(e.getValue().ay());
+                buf.writeVarInt(e.getValue().az());
+                buf.writeVarInt(e.getValue().bx());
+                buf.writeVarInt(e.getValue().by());
+                buf.writeVarInt(e.getValue().bz());
+            }
+            buf.writeVarInt(p.protectZones().size());
+            for (org.zifeng.skilltree.data.OperZone z : p.protectZones()) {
+                buf.writeUtf(z.dim());
+                buf.writeVarInt(z.ax());
+                buf.writeVarInt(z.ay());
+                buf.writeVarInt(z.az());
+                buf.writeVarInt(z.bx());
+                buf.writeVarInt(z.by());
+                buf.writeVarInt(z.bz());
+            }
         }
     };
 
@@ -63,9 +108,10 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
                 && record.isEnabled(org.zifeng.skilltree.skill.Skills.AURA_DAMAGE);
         return new SkillTreeDataS2CPacket(record.getSkillPoints(), record.getLearnedSkills(), record.getToggles(),
                 record.getActiveLevels(), auraOn, record.getAuraTargetModes(), record.hasLootVacuumBind()
-                        ? record.getLootVacuumName() + " [" + record.getLootVacuumX() + ", " + record.getLootVacuumY()
-                        + ", " + record.getLootVacuumZ() + "]"
-                        : null, record.getWeatherMode());
+                        ? record.getLootVacuumDim() + "|" + record.getLootVacuumName() + "|" + record.getLootVacuumX()
+                        + "|" + record.getLootVacuumY() + "|" + record.getLootVacuumZ()
+                        : null, record.getWeatherMode(), record.isStickToolOn(), record.getStickToolMode(),
+                        record.getOperZones(), record.getProtectZones());
     }
 
     public static void handle(SkillTreeDataS2CPacket packet, IPayloadContext ctx) {
@@ -92,6 +138,12 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
                         packet.learnedSkills().getOrDefault(org.zifeng.skilltree.skill.Skills.AURA_MAGNET, 0) > 0);
                 // 校准凋落物挪移绑定容器（技能树 tooltip 显示用）
                 org.zifeng.skilltree.client.ModKeyBindingEvents.setLootVacuumBindClient(packet.lootVacuumBind());
+                // 校准木棍工具层（2026-09-08：总开关 + 模式；渲染/手势路由/信息栏用）
+                org.zifeng.skilltree.client.ModKeyBindingEvents.setStickToolStateClient(packet.stickToolOn(), packet.stickToolMode());
+                // 校准机械共鸣·操作区（2026-09-08：渲染操作区框用）
+                org.zifeng.skilltree.client.ModKeyBindingEvents.setOperZonesClient(packet.operZones());
+                // 校准防护区多块列表（2026-09-08：渲染全部防护区框用）
+                org.zifeng.skilltree.client.ModKeyBindingEvents.setProtectZonesClient(packet.protectZones());
                 // 校准技能点 HUD 常驻显示（2026-08-25：左下角总技能点绿色常驻）
                 org.zifeng.skilltree.client.SkillPointHudRenderer.updateTotal(packet.skillPoints());
                 // 只在技能树界面已打开时更新数据，绝不强制打开界面

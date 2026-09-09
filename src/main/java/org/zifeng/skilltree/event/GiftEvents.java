@@ -4,7 +4,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.stats.Stats;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
-import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
 import org.zifeng.skilltree.network.SkillTreeDataS2CPacket;
@@ -84,9 +83,13 @@ public final class GiftEvents {
         }
     }
 
-    @SubscribeEvent
-    public static void onPlayerTick(PlayerTickEvent.Post event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) {
+    /**
+     * Z-Link 门面迁移（2026-09-09）：原 onPlayerTick 事件 body 抽为 tickGift，
+     * 由 system/GiftModule 调度调用（学了任一馈赠技能才唤醒，未学全冬眠零开销）。
+     * ⚠️ 累计逻辑一字未改；事件触发（PlayerTickEvent 每玩家必进）已移除。
+     */
+    public static void tickGift(ServerPlayer player) {
+        if (player == null) {
             return;
         }
         // ⚠️ 2026-08-25：馈赠只对真玩家生效——FakePlayer（模拟玩家机器）不累计/不发放
@@ -96,8 +99,10 @@ public final class GiftEvents {
         PlayerSkillRecord record = getRecord(player);
         UUID uuid = player.getUUID();
 
-        // 开关状态检测：关闭洗礼 → 清累计（防重新开启立即触发）
-        checkToggleChanged(record, uuid);
+        // 开关状态检测：关闭洗礼 → 清累计（防重新开启立即触发）；每 20 tick 检测一次（性能，与 1.20.1 对齐）
+        if (player.tickCount % 20 == 0) {
+            checkToggleChanged(record, uuid);
+        }
 
         // ============ 时间类（在线 tick 累计；2026-08-25：风暴每次 +5 点，洪流每次 +10 点，洗礼 +1 点保底） ============
         for (String skill : TIME_SKILLS) {
@@ -247,9 +252,9 @@ public final class GiftEvents {
         // ⚠️ 2026-08-29：key 改为结构化（gift:skillId），客户端 HUD 按 key 转译（不再传中文名，支持多语言）
         java.util.Map<String, Double> rates = new HashMap<>();
         rates.put("gift:" + baptismSkill, (double) total);
-        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+        org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                 new org.zifeng.skilltree.network.SkillPointRateS2CPacket(record.getSkillPoints(), rates));
-        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+        org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                 SkillTreeDataS2CPacket.from(record));
     }
 

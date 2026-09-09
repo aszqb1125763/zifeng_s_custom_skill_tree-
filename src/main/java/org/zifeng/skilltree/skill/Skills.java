@@ -20,6 +20,56 @@ import java.util.Map;
  *   <li>终极节点（ULTIMATE）：需前置基础/增幅技能各投入 {@link #ULTIMATE_REQUIRE_POINTS} 点，单次解锁</li>
  * </ul>
  * 统一公式：最终属性 = 全部基础固定数值总和 × (1 + 全部特殊百分比增幅总和)
+ *
+ * <p>══════════════════════════════════════════════════════════════════════
+ * <p><b>Z-Link 技能 → 调用入口登记表（权威总目录，2026-09-09）</b>
+ * <p>改技能/加技能先查这里，定位它由哪个模块/事件执行。
+ * <p>══════════════════════════════════════════════════════════════════════
+ * <p><b>【A 持续型】→ system/ZModules 模块（每玩家每 tick 条件驱动 + 冬眠）</b>
+ * <ul>
+ *   <li>MagnetModule  → AURA_MAGNET（磁铁吸物/吸经验）</li>
+ *   <li>AuraDamageModule → AURA_DAMAGE / AURA_SPEED / AURA_EMPOWER / AURA_VOID（光环攻击链）</li>
+ *   <li>AuraHealModule  → AURA_HEAL（治愈光环）</li>
+ *   <li>AuraXpModule    → AURA_XP（汲灵之环）</li>
+ *   <li>UltimateTickModule → REGEN/ULT_GOLDEN/ULT_FAVOR/FLY/AMP_FLY/NIGHT_VISION/SATURATION/
+ *       VILLAGE_HERO/GLOW/ULT_MASTER/ULT_VOID_BODY/WATER_BREATH/AE_INFINITE_CHANNEL/ULT_REVIVE
+ *       （常驻 buff + 终极节点 tick 链，内部按块判断）</li>
+ *   <li>GiftModule      → GIFT_*（馈赠时间/距离累计发点）</li>
+ *   <li>ZoneAttackModule → MACHINE_ZONE_ATTACK（选区攻击）</li>
+ *   <li>GlobalRuleModule → AURA_TIME / AURA_WEATHER（时环/晴空环全局锁定）</li>
+ * </ul>
+ * <p><b>【B 事件型】→ 游戏事件总线触发（触发才执行，零轮询）</b>
+ * <ul>
+ *   <li>UltimateEvents.onLivingDamage   → 暴击/破甲/死神凝视（玩家攻击时）</li>
+ *   <li>UltimateEvents.onSweepAttack    → ULT_SWEEP（横扫，近战击中时）</li>
+ *   <li>UltimateEvents.onDamagePost     → LIFESTEAL（吸血，伤害结算后）</li>
+ *   <li>UltimateEvents.onLivingIncomingDamage → 荆棘反伤/全能精通减伤/虚空之躯（受击时）</li>
+ *   <li>UltimateEvents.onKnockBack      → TOUGH/ULT_KB_RESIST/ULT_GOLDEN/ULT_VOID_BODY（击退免疫）</li>
+ *   <li>UltimateEvents.onLivingFall     → 摔落保护相关</li>
+ *   <li>UltimateEvents.onLivingDeath    → ULT_MASTER 免死/ULT_REVIVE 凤凰涅槃/ULT_VOID_BODY（死亡时）</li>
+ *   <li>UltimateEvents.onLivingDrops    → LOOT_BOMB/MOB_DROP/MOB_SPAWN_EGG/MOB_HEAD/AURA_LOOT_VACUUM（击杀掉落）</li>
+ *   <li>UltimateEvents.onBlockDrops(1.21.1 BlockDropsEvent) → 万物挖掘补掉落/AUTO_SMELT/BLOCK_DROP/挪移（挖矿掉落）</li>
+ *   <li>UltimateEvents.onExperienceDrop → XP_GAIN（经验倍率）</li>
+ *   <li>UltimateEvents.onTradeWithVillager → UNLIMITED_TRADES/VILLAGER_MASTER（交易）</li>
+ *   <li>UltimateEvents.onAnvilUpdate    → ENCHANT_RANDOM/ENCHANT_BREAK/ENCHANT_OVER/ULT_UNBREAK_TAG（铁砧）</li>
+ *   <li>UltimateEvents.onEffectApplicable → FIRE_PROTECT/DARK_VISION（效果免疫）</li>
+ *   <li>MagnetEvents.onLeftClickBlock   → AURA_MAGNET 木棍左键拦截（RANGE 选区）</li>
+ *   <li>LockEvents.*                    → AURA_LOCK（TP/击退免疫，零 tick）</li>
+ *   <li>LootVacuumEvents.*              → AURA_LOOT_VACUUM / CONTAINER_HAUL 绑定容器/入容器（右键/开箱）</li>
+ *   <li>ContainerHaulEvents.*           → CONTAINER_HAUL（开箱搬运）</li>
+ *   <li>GiftEvents.onBlockBreak/onLivingDeath → GIFT_MINE_BAPTISM/GIFT_KILL_BAPTISM 计数</li>
+ *   <li>ZoneSkillEvents.triggerPlace/triggerExcavate → MACHINE_ZONE_PLACE/MACHINE_ZONE_EXCAVATE（触发键）</li>
+ *   <li>SkillEvents（进出世界/放置等）→ 属性重挂/转换机绑定/BLINK/GLUTTONY</li>
+ *   <li>LootVacuumEvents 由 GLM(1.20.1 loot包) / BlockDropsEvent(1.21.1) 驱动方块掉落进容器</li>
+ * </ul>
+ * <p><b>【C 客户端表现】→ Z-UI（纯展示，数据消费者）</b>
+ * <ul>
+ *   <li>ClientFlightEvents → FLY_NO_INERTIA（飞行无惯性，客户端输入）</li>
+ *   <li>ClientTreasureEvents → TREASURE_HUNTER（寻宝发光轮廓，客户端渲染）</li>
+ *   <li>ClientVisionEvents → UNDERWATER_VISION/FIRE_PROTECT（视野）</li>
+ *   <li>SkillTreeScreen/HUD/选区渲染 → 全部技能展示（Z-UI 层）</li>
+ * </ul>
+ * <p>══════════════════════════════════════════════════════════════════════
  */
 public final class Skills {
     private Skills() {
@@ -245,6 +295,7 @@ public final class Skills {
     public static final String AURA_EMPOWER = "aura_empower"; // 杀戮光环·强化（混沌/Boss伤害，拆自光环，虚空之矛上方）
     public static final String AURA_VOID = "aura_void";       // 杀戮光环·虚空之矛（虚空伤害/秒杀）
     public static final String AURA_LOOT_VACUUM = "aura_loot_vacuum"; // 凋落物挪移（木棍绑定容器，掉落直传容器不生成实体）
+    public static final String CONTAINER_HAUL = "container_haul";     // 子枫的搬运术（打开容器瞬间/按触发键把容器物品搬进挪移绑定容器，1级10点，2026-09-07）
     public static final String AURA_XP = "aura_xp";                   // 汲灵之环（光环被动：每秒获得经验，上限100级，消耗指数增长 1000×1.05^n，2026-09-06）
 
     // ============ 寰宇法则（GLOBAL，纵列6，2026-08-27 新增：全局更改类技能，服务器全局生效，光环右侧） ============
@@ -280,6 +331,15 @@ public final class Skills {
     public static final String MACHINE_SPAWN_EGG = "machine_spawn_egg";   // 刷怪蛋掉落·共鸣（1级，5000）
     public static final String MACHINE_MOB_HEAD = "machine_mob_head";     // 头颅掉落·共鸣（1级，5000）
     public static final String MACHINE_AUTO_SMELT = "machine_auto_smelt"; // 自动熔炼·共鸣（1级，5000）
+    // ===== 机械共鸣·木棍工具区块（2026-09-08：解锁木棍工具对应的选区模式；各 50 点，1 级） =====
+    /** 选区放置：木棍工具放置模式；触发键把整区填满手上物品（优先扣绑定容器） */
+    public static final String MACHINE_ZONE_PLACE = "machine_zone_place";
+    /** 选区挖掘：木棍工具挖掘模式；触发键瞬间挖空全区（掉落进绑定容器、不产经验） */
+    public static final String MACHINE_ZONE_EXCAVATE = "machine_zone_excavate";
+    /** 选区攻击：木棍工具攻击模式；前置杀戮光环·伤害5级；开启后自动攻击区内（复用杀戮光环伤害） */
+    public static final String MACHINE_ZONE_ATTACK = "machine_zone_attack";
+    /** 杀戮光环·防护选区：木棍工具防护模式；前置已学杀戮光环；开启后区内友好目标免伤 */
+    public static final String MACHINE_ZONE_PROTECT = "machine_zone_protect";
 
     /** 所有基础技能（纵列1） */
     public static final List<String> BASE_SKILLS = List.of(BODY_HP, BODY, TOUGH, BLADE, ATTACK_SPEED, MINING, MOVE, REGEN, LUCK, JUMP, FLY, SWIM, CRIT, LIFESTEAL, THORNS, ARMOR_PEN);
@@ -306,8 +366,9 @@ public final class Skills {
             ENCHANT_RANDOM, ENCHANT_BREAK, ENCHANT_OVER,
             UNLIMITED_TRADES, VILLAGER_MASTER, TREASURE_HUNTER,
             GLUTTONY, BLINK);
-    /** 所有杀戮光环（纵列5）：杀戮光环·强化 在 虚空之矛 上方；时之环/晴空环已移至寰宇法则列（2026-08-27） */
-    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM, AURA_XP);
+    /** 所有杀戮光环（纵列5）：杀戮光环·强化 在 虚空之矛 上方；时之环/晴空环已移至寰宇法则列（2026-08-27）
+     *  ⚠️ 2026-09-07：子枫的搬运术（CONTAINER_HAUL）紧随子枫挪移术后（系列，复用其绑定容器）。 */
+    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM, CONTAINER_HAUL, AURA_XP);
     /** 所有寰宇法则（纵列6，2026-08-27 新增）：全局更改类技能（服务器全局生效，无法单人隔离） */
     public static final List<String> GLOBAL_SKILLS = List.of(AURA_TIME, AURA_WEATHER, AE_INFINITE_CHANNEL);
     /** 所有魔法增幅（纵列0）：其余模组兼容技能（新生魔艺/铁魔法等），不作为任何前置 */
@@ -318,11 +379,13 @@ public final class Skills {
             IRON_MANA_AMP, IRON_MANA_REGEN, IRON_CAST_TIME, IRON_COOLDOWN,
             IRON_FIRE, IRON_ICE, IRON_LIGHTNING, IRON_HOLY, IRON_ENDER,
             IRON_BLOOD, IRON_EVOCATION, IRON_NATURE, IRON_ELDRITCH);
-    /** 所有机械共鸣（纵列6）：机械之星在最上，其余共鸣技能在前置原技能下方 */
+    /** 所有机械共鸣（纵列6）：机械之星在最上，其余共鸣技能在前置原技能下方；
+     *  2026-09-08 追加 4 个木棍工具区块技能（无机械之星前置） */
     public static final List<String> MACHINE_SKILLS = List.of(
             MACHINE_STAR,
             MACHINE_LOOT_BOMB, MACHINE_UNBREAKABLE, MACHINE_MOB_DROP, MACHINE_BLOCK_DROP,
-            MACHINE_XP_GAIN, MACHINE_SPAWN_EGG, MACHINE_MOB_HEAD, MACHINE_AUTO_SMELT);
+            MACHINE_XP_GAIN, MACHINE_SPAWN_EGG, MACHINE_MOB_HEAD, MACHINE_AUTO_SMELT,
+            MACHINE_ZONE_PLACE, MACHINE_ZONE_EXCAVATE, MACHINE_ZONE_ATTACK, MACHINE_ZONE_PROTECT);
     /** 所有子枫的馈赠（纵列7，2026-08-25 新增）：时间/移动/飞行/挖掘/击杀洗礼 + 增幅 */
     public static final List<String> GIFT_SKILLS = List.of(
             GIFT_TIME_BAPTISM, GIFT_TIME_STORM, GIFT_TIME_FLOOD,
@@ -330,6 +393,60 @@ public final class Skills {
             GIFT_FLY_BAPTISM, GIFT_FLY_AMP,
             GIFT_MINE_BAPTISM, GIFT_MINE_AMP,
             GIFT_KILL_BAPTISM, GIFT_KILL_AMP);
+
+    // ============ 木棍工具层（TOOL，纵列9，2026-09-08 新增：工具占位——不算技能不耗点） ============
+    /** 工具占位 id（技能树第10列显示；不参与学习/技能点体系，只承载木棍工具总开关 + 模式） */
+    public static final String STICK_TOOL = "stick_tool";
+    /** 工具模式：BIND=潜行右键绑容器（挪移/搬运） */
+    public static final int STICK_MODE_BIND = 0;
+    /** 工具模式：RANGE=左键框选磁铁屏蔽区（吸星大法） */
+    public static final int STICK_MODE_RANGE = 1;
+    /** 工具模式：ZONE_PLACE=框选放置区（机械共鸣·选区放置，2026-09-08） */
+    public static final int STICK_MODE_ZONE_PLACE = 2;
+    /** 工具模式：ZONE_EXCAVATE=框选挖掘区（机械共鸣·选区挖掘，2026-09-08） */
+    public static final int STICK_MODE_ZONE_EXCAVATE = 3;
+    /** 工具模式：ZONE_ATTACK=框选攻击区（机械共鸣·选区攻击，2026-09-08） */
+    public static final int STICK_MODE_ZONE_ATTACK = 4;
+    /** 工具模式：ZONE_PROTECT=框选防护区（杀戮光环·防护选区，2026-09-08） */
+    public static final int STICK_MODE_ZONE_PROTECT = 5;
+    /** 工具占位列（第10列） */
+    public static final List<String> TOOL_SKILLS = List.of(STICK_TOOL);
+
+    /** 是否工具占位卡（木棍工具层） */
+    public static boolean isStickTool(String skillId) {
+        return STICK_TOOL.equals(skillId);
+    }
+
+    /** 工具模式总数（BIND/RANGE/放置/挖掘/攻击/防护，2026-09-08 扩展为 6） */
+    public static int stickModeCount() {
+        return 6;
+    }
+
+    /** 木棍工具模式 → 解锁该模式的技能 ID（返回 null=不依赖技能的常驻模式如 BIND/RANGE 由各自绑技能判定） */
+    public static String skillForStickMode(int mode) {
+        return switch (mode) {
+            case STICK_MODE_ZONE_PLACE -> MACHINE_ZONE_PLACE;
+            case STICK_MODE_ZONE_EXCAVATE -> MACHINE_ZONE_EXCAVATE;
+            case STICK_MODE_ZONE_ATTACK -> MACHINE_ZONE_ATTACK;
+            case STICK_MODE_ZONE_PROTECT -> MACHINE_ZONE_PROTECT;
+            default -> null;
+        };
+    }
+
+    /** 是否木棍工具·区块类技能（放置/挖掘/攻击/防护；各自解锁一个工具模式，2026-09-08） */
+    public static boolean isStickZoneSkill(String skillId) {
+        return MACHINE_ZONE_PLACE.equals(skillId) || MACHINE_ZONE_EXCAVATE.equals(skillId)
+                || MACHINE_ZONE_ATTACK.equals(skillId) || MACHINE_ZONE_PROTECT.equals(skillId);
+    }
+
+    /** 区块技能 → 对应的木棍工具模式 */
+    public static int stickModeOfSkill(String skillId) {
+        if (MACHINE_ZONE_PLACE.equals(skillId)) return STICK_MODE_ZONE_PLACE;
+        if (MACHINE_ZONE_EXCAVATE.equals(skillId)) return STICK_MODE_ZONE_EXCAVATE;
+        if (MACHINE_ZONE_ATTACK.equals(skillId)) return STICK_MODE_ZONE_ATTACK;
+        if (MACHINE_ZONE_PROTECT.equals(skillId)) return STICK_MODE_ZONE_PROTECT;
+        return -1;
+    }
 
     public static final List<String> ALL_SKILLS = new ArrayList<>() {{
         addAll(MAGIC_SKILLS);
@@ -364,6 +481,88 @@ public final class Skills {
         return true;
     }
 
+    /** 是否为子枫的搬运术（CONTAINER_HAUL，2026-09-07）：打开容器瞬间/按触发键把容器物品搬进绑定容器 */
+    public static boolean isContainerHaul(String skillId) {
+        return CONTAINER_HAUL.equals(skillId);
+    }
+
+    /**
+     * 是否为「容器绑定技能」（2026-09-07 架构调整：绑定容器独立为子功能）。
+     * 玩家学习任一容器绑定技能后即可用木棍潜行右键绑定容器，绑定数据存在玩家存档
+     * （LootVacuum* 字段），供所有容器技能共享——不受单一技能开关影响。
+     */
+    public static boolean isContainerBindSkill(String skillId) {
+        return AURA_LOOT_VACUUM.equals(skillId) || CONTAINER_HAUL.equals(skillId);
+    }
+
+    /**
+     * 是否有「生物敌我目标模式」（2026-09-07）：模式切换的敌我过滤（0敌对/1友好/2所有）
+     * 只属于杀戮光环三兄弟（伤害/速度/治愈）——它们是按生物目标过滤的攻击/治疗光环。
+     * ⚠️ 其他光环/容器技能（磁力/锁定/强化/虚空/挪移/搬运术等）没有敌我目标概念，
+     * 各自模式（如搬运术自动/手动）由技能自身解释，不走本方法。
+     */
+    public static boolean isAuraTargetSkill(String skillId) {
+        return AURA_DAMAGE.equals(skillId) || AURA_SPEED.equals(skillId) || AURA_HEAL.equals(skillId);
+    }
+
+    /**
+     * 是否需要「功能触发键」（2026-09-07 第三类快捷键）：主动技在场景内按一下触发一次。
+     * 搬运术手动 / 闪现 / 机械共鸣·选区放置、选区挖掘（2026-09-08 手持物品按触发键执行一次）。
+     */
+    public static boolean isTriggerBindable(String skillId) {
+        return CONTAINER_HAUL.equals(skillId) || BLINK.equals(skillId)
+                || MACHINE_ZONE_PLACE.equals(skillId) || MACHINE_ZONE_EXCAVATE.equals(skillId);
+    }
+
+    // ==================== 第一代快捷键能力注册表（2026-09-07 规范 v1.0） ====================
+    // 每个技能在技能树按钮右侧最多三键位槽：
+    //   ① 开关键（所有技能都有）
+    //   ② 模式/等级键（有模式循环 或 可调等级 才显示）
+    //   ③ 功能触发键（hasTrigger 才显示）
+    // UI 显隐、按键处理、模式循环全部读下面这组统一方法 —— 禁止散落特判。
+
+    /**
+     * 是否有「子2 模式循环」（2026-09-07 规范）：
+     * 敌我目标（杀戮三兄弟 3 态）/ 天气（晴空环 3 态）/ 搬运（搬运术 2 态）/
+     * 工具（木棍 BIND/RANGE 2 态，2026-09-08）。
+     * 纯可调等级技能（无模式语义）返回 false —— 它们的子2是等级循环，见 {@link #hasLevelCycle}。
+     */
+    public static boolean hasModeCycle(String skillId) {
+        return isAuraTargetSkill(skillId)        // 敌我目标 3 态
+                || AURA_WEATHER.equals(skillId)  // 晴空环天气 3 态
+                || isContainerHaul(skillId)      // 搬运术自动/手动 2 态
+                || isStickTool(skillId);         // 木棍工具 BIND/RANGE 2 态（2026-09-08）
+    }
+
+    /** 子2 模式循环的态数（敌我/天气=3，搬运=2，工具=2）；无模式返回 0 */
+    public static int getModeCount(String skillId) {
+        if (isAuraTargetSkill(skillId) || AURA_WEATHER.equals(skillId)) {
+            return 3;
+        }
+        if (isContainerHaul(skillId)) {
+            return 2;
+        }
+        if (isStickTool(skillId)) {
+            return stickModeCount();
+        }
+        return 0;
+    }
+
+    /** 是否有「子2 等级循环」：可调等级（上限>1，含基础/增幅/魔法/多级终极/汲灵等） */
+    public static boolean hasLevelCycle(String skillId) {
+        return getMaxPoints(skillId) > 1;
+    }
+
+    /** 子2 按键存在 = 有模式循环 或 可调等级（任一即显示第二槽） */
+    public static boolean hasSub2(String skillId) {
+        return hasModeCycle(skillId) || hasLevelCycle(skillId);
+    }
+
+    /** 子3 触发键允许响应的 GUI 场景：true = 任意屏幕（含容器 GUI）可触发；false = 仅无屏幕（正常游戏） */
+    public static boolean canTriggerInScreen(String skillId) {
+        return isContainerHaul(skillId); // 搬运术：容器 GUI 打开时也可触发；闪现：正常游戏内触发
+    }
+
     /** 杀戮光环：每项上限 */
     public static int getAuraMaxPoints(String skillId) {
         return switch (skillId) {
@@ -375,6 +574,7 @@ public final class Skills {
             case AURA_EMPOWER -> 1; // 一次性解锁（1000 技能点）
             case AURA_VOID -> 1; // 一次性解锁（5000 技能点）
             case AURA_LOOT_VACUUM -> 1; // 一次性解锁（10 技能点）
+            case CONTAINER_HAUL -> 1; // 子枫的搬运术：一次性解锁（10 技能点，2026-09-07）
             case AURA_XP -> 100; // 汲灵之环：上限 100 级（2026-09-06）
             default -> 0;
         };
@@ -524,6 +724,11 @@ public final class Skills {
         if (MACHINE_STAR.equals(skillId)) {
             return Config.MACHINE_STAR_COST.get();
         }
+        // 木棍工具区块（2026-09-08）：固定 50 点
+        if (MACHINE_ZONE_PLACE.equals(skillId) || MACHINE_ZONE_EXCAVATE.equals(skillId)
+                || MACHINE_ZONE_ATTACK.equals(skillId) || MACHINE_ZONE_PROTECT.equals(skillId)) {
+            return 50L;
+        }
         return Config.MACHINE_RESONANCE_COST.get();
     }
 
@@ -620,6 +825,9 @@ public final class Skills {
     public static long getAuraCost(String skillId, int currentLevel) {
         if (AURA_LOOT_VACUUM.equals(skillId)) {
             return 10L; // 凋落物挪移：固定 10 技能点一次性解锁（2026-08-24）
+        }
+        if (CONTAINER_HAUL.equals(skillId)) {
+            return 10L; // 子枫的搬运术：固定 10 技能点一次性解锁（2026-09-07）
         }
         // ⚠️ 汲灵之环（AURA_XP）无特判：走统一光环指数增长 auraBaseCost×1.05^等级（用户 2026-09-06 要求）
         double raw = auraBaseCost() * Math.pow(auraCostMultiplier(), currentLevel);
@@ -735,6 +943,7 @@ public final class Skills {
             case AURA_LOCK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             case AURA_VOID -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             case AURA_LOOT_VACUUM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case CONTAINER_HAUL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             case AURA_XP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             // ===== 子枫的馈赠（纵列7，2026-08-25 新增） =====
             case GIFT_TIME_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
@@ -757,6 +966,8 @@ public final class Skills {
             case TREASURE_HUNTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             case GLUTTONY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             case BLINK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            case MACHINE_ZONE_PLACE, MACHINE_ZONE_EXCAVATE, MACHINE_ZONE_ATTACK, MACHINE_ZONE_PROTECT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name"; // 木棍工具区块技能（2026-09-08）
+            case STICK_TOOL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name"; // 木棍工具占位（2026-09-08）
             default -> "skill.zifeng_s_custom_skill_tree.unknown.name";
         };
     }
@@ -861,6 +1072,7 @@ public final class Skills {
             case AURA_LOCK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             case AURA_VOID -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             case AURA_LOOT_VACUUM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case CONTAINER_HAUL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             case AURA_XP -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             // ===== 子枫的馈赠（纵列7，按游戏时长激活，免费获得技能点） =====
             case GIFT_TIME_BAPTISM -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
@@ -883,6 +1095,8 @@ public final class Skills {
             case TREASURE_HUNTER -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             case GLUTTONY -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             case BLINK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
+            case MACHINE_ZONE_PLACE, MACHINE_ZONE_EXCAVATE, MACHINE_ZONE_ATTACK, MACHINE_ZONE_PROTECT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc"; // 木棍工具区块技能（2026-09-08）
+            case STICK_TOOL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc"; // 木棍工具占位（2026-09-08）
             default -> "skill.zifeng_s_custom_skill_tree.unknown.desc";
         };
     }
@@ -988,6 +1202,10 @@ public final class Skills {
             case MACHINE_SPAWN_EGG -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(MOB_SPAWN_EGG, 1));
             case MACHINE_MOB_HEAD -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(MOB_HEAD, 1));
             case MACHINE_AUTO_SMELT -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(AUTO_SMELT, 1));
+            // 木棍工具区块（2026-09-08，无机械之星前置）：攻击=杀戮伤害5级；防护=已学杀戮伤害；放置/挖掘无前置
+            case MACHINE_ZONE_PLACE, MACHINE_ZONE_EXCAVATE -> List.of();
+            case MACHINE_ZONE_ATTACK -> List.of(Map.entry(AURA_DAMAGE, 5));
+            case MACHINE_ZONE_PROTECT -> List.of(Map.entry(AURA_DAMAGE, 1));
             // 铁砧附魔（2026-08-27）：附魔突破/超限附魔 前置 = 随机附魔
             case ENCHANT_BREAK, ENCHANT_OVER -> List.of(Map.entry(ENCHANT_RANDOM, 1));
             // 子枫的馈赠增幅：需对应洗礼已学（2026-08-25）
@@ -1126,6 +1344,7 @@ public final class Skills {
             case AURA_LOCK -> Items.ANVIL;                     // 光环锁定：铁砧（稳固不动）
             case AURA_VOID -> Items.DIAMOND_SWORD;            // 虚空之矛：原版钻石剑（虚空力量，金边=伤害吸收）
             case AURA_LOOT_VACUUM -> Items.STICK;             // 凋落物挪移：木棍（绑定容器的工具）
+            case CONTAINER_HAUL -> Items.HOPPER;              // 子枫的搬运术：漏斗（把容器物品吸进绑定容器，2026-09-07）
             case AURA_XP -> Items.EXPERIENCE_BOTTLE;          // 汲灵之环：经验瓶（每级+1000/秒经验）
             // ===== 子枫的馈赠（纵列7） =====
             case GIFT_TIME_BAPTISM -> Items.CLOCK;            // 时间洗礼：时钟（时间）
@@ -1148,6 +1367,11 @@ public final class Skills {
             case TREASURE_HUNTER -> Items.GOLD_NUGGET;        // 寻宝大师：金粒（宝箱宝藏）
             case GLUTTONY -> Items.COOKED_BEEF;               // 暴食：牛排（大快朵颐秒吃）
             case BLINK -> Items.ENDER_PEARL;                  // 闪现：末影珍珠（瞬移）
+            case MACHINE_ZONE_PLACE -> Items.BRICK;           // 选区放置：砖（摆放）
+            case MACHINE_ZONE_EXCAVATE -> Items.DIAMOND_PICKAXE; // 选区挖掘：钻镐
+            case MACHINE_ZONE_ATTACK -> Items.NETHERITE_SWORD;   // 选区攻击：下界合金剑
+            case MACHINE_ZONE_PROTECT -> Items.SHIELD;        // 防护选区：盾牌
+            case STICK_TOOL -> Items.STICK;                   // 木棍工具占位：木棍（2026-09-08）
             default -> Items.BARRIER;
         };
     }

@@ -27,6 +27,8 @@ public class SkillKeyBinds {
     private static final Map<String, InputConstants.Key> BINDS = new HashMap<>();
     /** 技能ID → 等级/目标循环按键（2026-08-13 新增第二快捷键：光环循环目标模式，可调等级技能循环生效等级） */
     private static final Map<String, InputConstants.Key> LEVEL_BINDS = new HashMap<>();
+    /** 技能ID → 功能触发按键（2026-09-07 新增第三类快捷键：子枫的搬运术手动搬运等主动技；容器 GUI 打开时也可响应） */
+    private static final Map<String, InputConstants.Key> TRIGGER_BINDS = new HashMap<>();
     /** 技能树界面 panX / panY / scale（上次退出时的状态） */
     private static double lastPanX = 0;
     private static double lastPanY = 0;
@@ -89,6 +91,60 @@ public class SkillKeyBinds {
     public static void clearLevelKey(String skillId) {
         LEVEL_BINDS.remove(skillId);
         save();
+    }
+
+    // ============ 功能触发键存取（2026-09-07 新增第三类快捷键：主动技能触发，如搬运术手动搬运） ============
+
+    public static InputConstants.Key getTriggerKey(String skillId) {
+        return TRIGGER_BINDS.get(skillId);
+    }
+
+    public static boolean hasTriggerKey(String skillId) {
+        return TRIGGER_BINDS.containsKey(skillId);
+    }
+
+    /** 设置功能触发键（key 为 null/UNKNOWN 视为清除） */
+    public static void setTriggerKey(String skillId, InputConstants.Key key) {
+        if (key == null || key == InputConstants.UNKNOWN) {
+            TRIGGER_BINDS.remove(skillId);
+        } else {
+            TRIGGER_BINDS.put(skillId, key);
+        }
+        save();
+    }
+
+    public static void clearTriggerKey(String skillId) {
+        TRIGGER_BINDS.remove(skillId);
+        save();
+    }
+
+    /** 触发键上次 tick 按下状态（独立边沿检测，2026-09-07） */
+    private static final java.util.Set<String> lastTriggerPressed = new java.util.HashSet<>();
+
+    /** 触发键边沿检测：该技能触发键本 tick 是否刚按下（自动更新状态）
+     *  ⚠️ 2026-09-07：触发键【容器 GUI 打开时也要响应】（手动搬运依赖此场景），
+     *  与开关键/循环键的 screen==null 限制无关，单独调用此方法即可。 */
+    public static boolean consumeTriggerClick(String skillId) {
+        InputConstants.Key key = TRIGGER_BINDS.get(skillId);
+        if (key == null || key.getValue() < 0) {
+            return false;
+        }
+        boolean down = com.mojang.blaze3d.platform.InputConstants.isKeyDown(
+                Minecraft.getInstance().getWindow().getWindow(), key.getValue());
+        boolean prev = lastTriggerPressed.contains(skillId);
+        if (down && !prev) {
+            lastTriggerPressed.add(skillId);
+            return true;
+        }
+        if (!down) {
+            lastTriggerPressed.remove(skillId);
+        }
+        return false;
+    }
+
+    /** 全部触发键绑定（供按键轮询） */
+    public static Map<String, InputConstants.Key> allTriggerBinds() {
+        return Map.copyOf(TRIGGER_BINDS);
     }
 
     /** 上次 tick 各键按下状态（边沿检测：按下瞬间返回 true 一次） */
@@ -241,6 +297,15 @@ public class SkillKeyBinds {
                     }
                 }
             }
+            TRIGGER_BINDS.clear();
+            if (data.triggerBinds != null) {
+                for (Map.Entry<String, String> e : data.triggerBinds.entrySet()) {
+                    InputConstants.Key key = InputConstants.getKey(e.getValue());
+                    if (key != null && key != InputConstants.UNKNOWN) {
+                        TRIGGER_BINDS.put(e.getKey(), key);
+                    }
+                }
+            }
             lastPanX = data.panX;
             lastPanY = data.panY;
             lastScale = data.scale > 0 ? data.scale : 0.4;
@@ -276,6 +341,10 @@ public class SkillKeyBinds {
             for (Map.Entry<String, InputConstants.Key> e : LEVEL_BINDS.entrySet()) {
                 data.levelBinds.put(e.getKey(), e.getValue().getName());
             }
+            data.triggerBinds = new HashMap<>();
+            for (Map.Entry<String, InputConstants.Key> e : TRIGGER_BINDS.entrySet()) {
+                data.triggerBinds.put(e.getKey(), e.getValue().getName());
+            }
             data.panX = lastPanX;
             data.panY = lastPanY;
             data.scale = lastScale;
@@ -296,6 +365,7 @@ public class SkillKeyBinds {
     private static class Data {
         Map<String, String> binds;
         Map<String, String> levelBinds;
+        Map<String, String> triggerBinds; // 功能触发键（2026-09-07）
         double panX;
         double panY;
         double scale = 1.0;

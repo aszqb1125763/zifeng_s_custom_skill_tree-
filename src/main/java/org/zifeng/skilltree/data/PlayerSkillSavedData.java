@@ -29,6 +29,15 @@ public class PlayerSkillSavedData extends SavedData {
         return players.computeIfAbsent(uuid, PlayerSkillRecord::new);
     }
 
+    /**
+     * 只读取玩家记录（2026-09-09 性能审计）：null = 该玩家从无任何技能数据。
+     * ⚠️ 模块 activeCondition 用本方法判活跃，避免 getOrCreatePlayer 给
+     * 未学任何技能的玩家创建空记录 → 内存 map 与存档无谓膨胀。
+     */
+    public PlayerSkillRecord getPlayer(UUID uuid) {
+        return players.get(uuid);
+    }
+
     public void bindMachine(String machineKey, UUID owner) {
         if (machineKey == null || machineKey.isBlank() || owner == null) {
             return;

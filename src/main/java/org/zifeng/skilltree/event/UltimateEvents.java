@@ -30,7 +30,6 @@ import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingExperienceDropEvent;
-import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import org.zifeng.skilltree.SkillTreeMod;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
@@ -68,6 +67,8 @@ public class UltimateEvents {
     private static final Map<UUID, Long> reviveCooldownUntil = new HashMap<>(); // 世界时间 tick
     /** 已发送过"就绪"状态的玩家（2026-08-28 性能：就绪态不随 tick 变化，只发一次，避免每秒重复发包） */
     private static final Set<UUID> reviveReadySent = new HashSet<>();
+    /** 客户端当前处于"已学显示态"的玩家（2026-09-08：技能重置/关闭时据此补发 false，让客户端图腾隐藏） */
+    private static final Set<UUID> reviveTrueSent = new HashSet<>();
 
     // ============ 全能精通免死状态 ============
     private static final Map<UUID, Long> masterUndyingUntil = new HashMap<>(); // 免死保底冷却
@@ -91,6 +92,7 @@ public class UltimateEvents {
         UUID uuid = player.getUUID();
         reviveCooldownUntil.remove(uuid);
         reviveReadySent.remove(uuid);
+        reviveTrueSent.remove(uuid);
         masterUndyingUntil.remove(uuid);
         masterInvulnUntil.remove(uuid);
         SKILL_FLIGHT_GRANTED.remove(uuid);
@@ -130,13 +132,19 @@ public class UltimateEvents {
     }
 
     // ============ 再生体魄：每秒回血 + 宇宙的青睐：真创造飞行 + 不坏金身 buff ============
-    @SubscribeEvent
-    public static void onPlayerTick(net.neoforged.neoforge.event.tick.PlayerTickEvent.Pre event) {
-        if (event.getEntity() instanceof ServerPlayer player) {
-            // ⚠️ 性能优化（2026-08-13）：PlayerSkillSavedData 已静态缓存（getRecord 零分配），
-            // 这里只取一次 record 供本 tick 所有判断复用。
-            PlayerSkillRecord record = getRecord(player);
-            // 防刷物品快照兜底清理（2026-08-26）：每 5 秒清理超过 30 秒未结算的装备快照
+    /**
+     * Z-Link 门面迁移（2026-09-09）：原 onPlayerTick 事件 body 原样抽为 tickPlayer，
+     * 由 system/UltimateTickModule 调度调用（学了任一相关技能才唤醒，未学全冬眠零开销）。
+     * ⚠️ body 内容一字未改；事件触发（PlayerTickEvent 每玩家必进）已移除 → 改由调度器条件驱动。
+     */
+    public static void tickPlayer(ServerPlayer player) {
+        if (player == null) {
+            return;
+        }
+        // ⚠️ 性能优化（2026-08-13）：PlayerSkillSavedData 已静态缓存（getRecord 零分配），
+        // 这里只取一次 record 供本 tick 所有判断复用。
+        PlayerSkillRecord record = getRecord(player);
+        // 防刷物品快照兜底清理（2026-08-26）：每 5 秒清理超过 30 秒未结算的装备快照
             // （死亡被取消/极端时序残留，正常路径 put+remove 成对，Map 恒为空/极小）
             if (player.tickCount % 100 == 0 && !DEATH_SNAPSHOT_TIME.isEmpty()) {
                 long now = player.level().getGameTime();
@@ -402,24 +410,32 @@ public class UltimateEvents {
             // ⚠️ 性能优化（2026-08-27）：未学/未开启技能 → 不发包（避免全员每秒收无意义小包）
             if (player.tickCount % 20 == 0) {
                 boolean reviveLearned = record.getLearnedPoints(Skills.ULT_REVIVE) > 0 && record.isEnabled(Skills.ULT_REVIVE);
+                UUID pId = player.getUUID();
                 if (!reviveLearned) {
-                    return; // 未学：无需同步（客户端默认隐藏 HUD）；此处已是方法末尾，安全返回
+                    // ⚠️ 2026-09-08 修复：技能重置（resetAll/hardReset）/关闭后客户端图腾不消失——
+                    //    曾发过"已学"状态 → 补发 false 让客户端隐藏；从未学过的玩家零额外包
+                    if (reviveTrueSent.remove(pId)) {
+                        reviveReadySent.remove(pId);
+                        org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
+                                new org.zifeng.skilltree.network.ReviveCooldownS2CPacket(false, 0));
+                    }
+                    return; // 此处已是方法末尾，安全返回
                 }
-                long cdUntil = reviveCooldownUntil.getOrDefault(player.getUUID(), 0L);
+                reviveTrueSent.add(pId); // 记录"客户端当前已学显示态"（重置时据此补发 false）
+                long cdUntil = reviveCooldownUntil.getOrDefault(pId, 0L);
                 int remaining = (int) Math.max(0, cdUntil - player.level().getGameTime());
                 // ⚠️ 2026-08-28 性能：就绪态（remaining==0）不随 tick 变化 → 只发一次；冷却中每秒发倒计时
                 if (remaining <= 0) {
-                    if (reviveReadySent.add(player.getUUID())) {
-                        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                    if (reviveReadySent.add(pId)) {
+                        org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                                 new org.zifeng.skilltree.network.ReviveCooldownS2CPacket(true, 0));
                     }
                 } else {
-                    reviveReadySent.remove(player.getUUID()); // 冷却开始 → 重置就绪标记（下次就绪再发一次）
-                    net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+                    reviveReadySent.remove(pId); // 冷却开始 → 重置就绪标记（下次就绪再发一次）
+                    org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                             new org.zifeng.skilltree.network.ReviveCooldownS2CPacket(true, remaining));
                 }
             }
-        }
     }
 
     // ============ 浴血奋战（常驻属性：攻击力/生命 +50%，由 SkillEffects 属性修饰符实现）+ 暴击/破甲/死神凝视 ============
@@ -1098,6 +1114,37 @@ public class UltimateEvents {
         }
     }
 
+    /**
+     * 自动熔炼（ItemStack 列表版；v1-2 收编对齐 1.20.1 公共 API，供选区挖掘等需要直接操作
+     * 掉落 stack 列表的调用方使用；算法与 ItemEntity 版完全一致：黑名单 → 熔炉配方 → 数量保持替换）。
+     */
+    public static void applyAutoSmelt(ServerPlayer sp, java.util.List<net.minecraft.world.item.ItemStack> drops,
+                                      PlayerSkillRecord record) {
+        if (record.getLearnedPoints(Skills.AUTO_SMELT) <= 0 || !record.isEnabled(Skills.AUTO_SMELT)) {
+            return;
+        }
+        if (!(sp.level() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return;
+        }
+        java.util.Map<Item, ItemStack> smeltMap = getSmeltMap(serverLevel); // 熔炉配方表
+        for (int i = 0; i < drops.size(); i++) {
+            net.minecraft.world.item.ItemStack stack = drops.get(i);
+            if (stack == null || stack.isEmpty()) {
+                continue;
+            }
+            if (isAutoSmeltBlacklisted(record, stack.getItem(), smeltMap)) {
+                continue;
+            }
+            ItemStack result = smeltMap.get(stack.getItem());
+            if (result == null || result.isEmpty()) {
+                continue;
+            }
+            net.minecraft.world.item.ItemStack smelted = result.copy();
+            smelted.setCount(stack.getCount());
+            drops.set(i, smelted);
+        }
+    }
+
     /** 熔炼配方缓存：物品 → 熔炼产物（懒构建；跟随配方管理器版本，/reload 后自动重建） */
     private static java.util.Map<Item, ItemStack> SMELT_CACHE = null;
     private static long SMELT_CACHE_TICK = -1;
@@ -1371,6 +1418,33 @@ public class UltimateEvents {
         drops.addAll(extra);
     }
 
+    /** 方块掉落倍率（ItemStack 版；v1-2 收编对齐 1.20.1 公共 API，供选区挖掘等 stack 列表调用方使用）：
+     *  确定性数量放大，超出单堆上限拆成多份（与 ItemEntity 版算法一致） */
+    public static void applyDropMultiplierStacks(java.util.List<net.minecraft.world.item.ItemStack> drops,
+                                                  ServerPlayer sp, double mult) {
+        java.util.List<net.minecraft.world.item.ItemStack> extra = new java.util.ArrayList<>();
+        for (net.minecraft.world.item.ItemStack stack : drops) {
+            if (stack == null || stack.isEmpty()) {
+                continue;
+            }
+            int count = stack.getCount();
+            int total = (int) Math.floor(count * mult + sp.getRandom().nextFloat()); // 小数部分按概率进位
+            int remaining = total - count;
+            if (remaining <= 0) {
+                continue;
+            }
+            int max = stack.getMaxStackSize();
+            while (remaining > 0) {
+                int batch = Math.min(max, remaining);
+                net.minecraft.world.item.ItemStack extraStack = stack.copy();
+                extraStack.setCount(batch);
+                extra.add(extraStack);
+                remaining -= batch;
+            }
+        }
+        drops.addAll(extra);
+    }
+
     @SubscribeEvent
     public static void onExperienceDrop(LivingExperienceDropEvent event) {
         if (event.getAttackingPlayer() instanceof ServerPlayer sp) {
@@ -1635,5 +1709,10 @@ public class UltimateEvents {
             return new PlayerSkillRecord(player != null ? player.getUUID() : java.util.UUID.randomUUID());
         }
         return PlayerSkillSavedData.get(player.serverLevel()).getOrCreatePlayer(player.getUUID());
+    }
+
+    /** Z-Link 门面迁移用：模块取玩家技能记录（public 供 system 包调用，与 1.20.1 对齐） */
+    public static PlayerSkillRecord getRecordFor(ServerPlayer player) {
+        return getRecord(player);
     }
 }

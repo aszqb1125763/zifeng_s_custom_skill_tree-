@@ -6,7 +6,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.zifeng.skilltree.Config;
 import org.zifeng.skilltree.SkillTreeMod;
@@ -68,7 +67,7 @@ public record ToggleMagnetC2SPacket() implements CustomPacketPayload {
                                     : "chat.zifeng_s_custom_skill_tree.magnet_off",
                             Skills.getDisplayNameComponent(Skills.AURA_MAGNET)));
                 }
-                PacketDistributor.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
+                org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
             }
         });
     }

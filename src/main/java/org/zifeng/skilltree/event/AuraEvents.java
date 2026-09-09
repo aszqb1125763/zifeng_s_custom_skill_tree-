@@ -13,7 +13,6 @@ import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.GameRules;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
 import org.zifeng.skilltree.skill.SkillEffects;
@@ -98,31 +97,28 @@ public class AuraEvents {
         cachedSpeedByPlayer.remove(uuid);
     }
 
-    @SubscribeEvent
-    public static void onPlayerTick(PlayerTickEvent.Post event) {
-        if (event.getEntity() instanceof ServerPlayer player) {
-            PlayerSkillRecord record = getRecord(player);
-            // 时之环/晴空环：不依赖光环总开关（独立的时间/天气锁定，与攻击光环无关），
-            // 只要学了 + 技能开关开启就生效（修复整合包中不开总开关时不生效的问题）
-            boolean timeOn = record.getLearnedPoints(Skills.AURA_TIME) > 0 && record.isEnabled(Skills.AURA_TIME);
-            updateTimeLock(player, timeOn);
-            // ⚠️ 2026-08-28 性能：enforce 每 5 tick 检查一次（gamerule 读取/比较是每玩家每 tick 开销；与 1.20.1 对齐）
-            if (timeOn && player.tickCount % 5 == 0) {
-                enforceTimeLock(player);
-            }
-            // 晴空环：同理
-            boolean weatherOn = record.getLearnedPoints(Skills.AURA_WEATHER) > 0 && record.isEnabled(Skills.AURA_WEATHER);
-            updateWeatherLock(player, weatherOn);
-            if (weatherOn && player.tickCount % 5 == 0) {
-                enforceWeatherLock(player);
-            }
-            // ⚠️ 2026-08-28 订阅改界面驱动（见 OpenSkillTreeC2SPacket）：打开技能树 → 订阅全部全局状态；
-            //    关闭界面 → 取消订阅。此处不再按技能开关订阅（原先关闭/重置后订阅被清 → 全局状态不再推送）。
-            // 攻击/治疗光环：直接按各技能开关执行（不再有总开关；K 键只控制伤害/速度）
-            auraAttack(player, record);
-            auraHeal(player, record);
-            // 汲灵之环（光环被动）：每秒获得经验
-            auraXp(player, record);
+    /**
+     * Z-Link 门面迁移（2026-09-09）：原 onPlayerTick 中"时环/晴空环"部分抽为 tickGlobalLocks，
+     * 由 system/GlobalRuleModule 调度调用（学了时环/晴空环任一才唤醒）。逻辑一字未改。
+     * ⚠️ auraAttack/auraHeal/auraXp 已由各自 Module 调度，此处不再处理。
+     */
+    public static void tickGlobalLocks(ServerPlayer player, PlayerSkillRecord record) {
+        if (player == null || record == null) {
+            return;
+        }
+        // 时之环/晴空环：不依赖光环总开关（独立的时间/天气锁定，与攻击光环无关），
+        // 只要学了 + 技能开关开启就生效（修复整合包中不开总开关时不生效的问题）
+        boolean timeOn = record.getLearnedPoints(Skills.AURA_TIME) > 0 && record.isEnabled(Skills.AURA_TIME);
+        updateTimeLock(player, timeOn);
+        // ⚠️ 2026-08-28 性能：enforce 每 5 tick 检查一次（gamerule 读取/比较是每玩家每 tick 开销；与 1.20.1 对齐）
+        if (timeOn && player.tickCount % 5 == 0) {
+            enforceTimeLock(player);
+        }
+        // 晴空环：同理
+        boolean weatherOn = record.getLearnedPoints(Skills.AURA_WEATHER) > 0 && record.isEnabled(Skills.AURA_WEATHER);
+        updateWeatherLock(player, weatherOn);
+        if (weatherOn && player.tickCount % 5 == 0) {
+            enforceWeatherLock(player);
         }
     }
 
@@ -248,24 +244,17 @@ public class AuraEvents {
     /** 单轮光环攻击目标上限（2026-08-15 性能优化）：刷怪塔海量目标时每轮最多处理 N 个，防单轮全打卡顿 */
     private static final int MAX_AURA_TARGETS = 64;
 
-    private static void auraAttack(ServerPlayer player, PlayerSkillRecord record) {
+    // ⚠️ 2026-09-09 Z-Link 门面迁移：光环方法改为 public，由 system/AuraXxxModule 调度调用；逻辑一字未改。
+    public static void auraAttack(ServerPlayer player, PlayerSkillRecord record) {
+        // ⚠️ 2026-09-08 性能：未学 伤害光环/虚空之矛 的玩家最前 1-2 次 map 读早退（多数玩家未学，
+        //    免去每 tick 的 interval 计算/缓存查询）。原 damageLevel<=0 && !voidSpear 兜底后移语义不变。
+        if (record.getLearnedPoints(Skills.AURA_DAMAGE) <= 0
+                && record.getLearnedPoints(Skills.AURA_VOID) <= 0) {
+            return;
+        }
         // ⚠️ 性能优化（2026-08-15）：间隔判断提到最前——大部分 tick 在此直接返回，
         //    后续所有开销（getLearnedPoints/isEnabled/扫描/伤害）只在触发 tick 执行。
-        int speedLevel = record.isEnabled(Skills.AURA_SPEED) ? record.getActiveLevel(Skills.AURA_SPEED) : 0;
-        // 间隔 per-player 缓存：speedLevel 不变直接复用（避免每 tick Math.pow）
-        UUID playerId = player.getUUID();
-        Integer cachedSpeed = cachedSpeedByPlayer.get(playerId);
-        Integer intervalObj = cachedIntervalByPlayer.get(playerId);
-        int interval;
-        if (cachedSpeed != null && cachedSpeed == speedLevel && intervalObj != null) {
-            interval = intervalObj;
-        } else {
-            int baseInterval = org.zifeng.skilltree.Config.AURA_BASE_INTERVAL_TICKS.get();
-            double reduction = org.zifeng.skilltree.Config.AURA_SPEED_INTERVAL_REDUCTION.get();
-            interval = Math.max(10, (int) Math.round(baseInterval * Math.pow(1 - reduction, speedLevel)));
-            cachedSpeedByPlayer.put(playerId, speedLevel);
-            cachedIntervalByPlayer.put(playerId, interval);
-        }
+        int interval = auraAttackInterval(player, record);
         if (player.level().getGameTime() % interval != 0) {
             return;
         }
@@ -301,13 +290,21 @@ public class AuraEvents {
         // 性能优化（大型整合包 mspt）：主扫描用 LivingEntity.class（物品/经验球/箭/矿车等非攻击目标不进遍历，
         // 大整合包实体多时可减 50-80% 遍历量）；DE 守卫水晶（非 LivingEntity）用独立小查询补上。
         var box = player.getBoundingBox().inflate(radius, radius, radius);
+        // ⚠️ 2026-09-08 防护选区（全服向）：区域内生物不判定为目标、直接跳过（含虚空秒杀等绕伤害
+        //    事件的直杀也不触发——根本不进目标列表）。防护者列表触发 tick 只算一次。
+        ServerLevel serverLevel0 = player.serverLevel();
+        java.util.List<PlayerSkillRecord> protectors = serverLevel0 != null
+                ? ZoneSkillEvents.activeProtectors(serverLevel0) : java.util.Collections.emptyList();
+        String dim = player.level().dimension().location().toString();
         List<Entity> targets = new java.util.ArrayList<>();
         targets.addAll(player.level().getEntitiesOfClass(LivingEntity.class, box,
-                target -> isTargetValid(player, target, mode)));
+                target -> isTargetValid(player, target, mode)
+                        && !ZoneSkillEvents.inAnyProtectOf(protectors, dim, target.blockPosition())));
         // DE 守卫水晶特判：GuardianCrystalEntity 直接继承 Entity（非 LivingEntity），单独扫一次补进目标
         if (empower) { // 只有学了光环·强化（能打水晶）才扫
             targets.addAll(player.level().getEntitiesOfClass(Entity.class, box,
-                    target -> isDraconicCrystal(target) && isTargetValid(player, target, mode)));
+                    target -> isDraconicCrystal(target) && isTargetValid(player, target, mode)
+                            && !ZoneSkillEvents.inAnyProtectOf(protectors, dim, target.blockPosition())));
         }
         if (targets.isEmpty()) {
             return;
@@ -325,103 +322,138 @@ public class AuraEvents {
         ItemStack weapon = player.getMainHandItem();
         // 对范围内全部有效目标逐个造成伤害（Draconic/ProjectE 全打思路），每个目标独立命中判定
         for (Entity targetEntity : targets) {
-            // 破盾（光环·强化）：目标举盾格挡 → 解除格挡 + 盾牌冷却（原版 Player.disableShield，参考 Draconic 穿透箭破盾逻辑）
-            if (empower && targetEntity instanceof Player p && p.isBlocking() && p.getUseItem().getItem() instanceof ShieldItem) {
-                p.disableShield();
-            }
-            // DE 守卫水晶特判（光环·强化）：GuardianCrystalEntity 是 Entity 不是 LivingEntity，
-            // 普通伤害完全免疫（getCrystalDamageModifier 返回 0），必须用混沌伤害源（chaotic 标签）攻击。
-            // ⚠️ 连击削盾：DE 守卫有单次伤害上限（500）+ hitCooldown 保护（伤害 < 上次×1.1 会被忽略），
-            //    用多次递增伤害（×1.15）绕过保护，一次光环攻击累计打出大量伤害。
-            if (empower && isDraconicCrystal(targetEntity)) {
-                DamageSource chaosSource = buildChaosSource(serverLevel, player);
-                if (chaosSource != null) {
-                    float base = Math.max(5000.0F, damage * 400.0F);
-                    boolean hit = false;
-                    for (int i = 0; i < 30; i++) {
-                        if (targetEntity.hurt(chaosSource, base * (float) Math.pow(1.15, i))) {
-                            hit = true;
-                        }
-                    }
-                    // 粒子已删除（2026-08-15 测试：排查粒子是否导致卡顿）
-                }
-                continue; // 水晶不参与 LivingEntity 逻辑
-            }
-            if (!(targetEntity instanceof LivingEntity target)) {
-                continue; // 其他非 LivingEntity 实体（如物品/箭）跳过
-            }
-            // 虚空之矛秒杀（参考虚空之矛 damageLoop + forceFinish）：对普通生物直接绝对秒杀（1 亿×循环+兜底强杀）
-            // 虚空之矛秒杀（2026-08-15 优化）：
-            //   · 普通怪：混沌伤害源秒杀（3 次 hurt + forceFinish），伤害挂 Boss 判定（chaotic 标签）
-            //   · Boss/DE 守卫：混沌秒杀优先（混沌伤害源可穿透 Boss 免疫），未击杀再走混沌连击削盾兜底
-            if (voidSpear && !isBossEntity(target)) {
-                voidSpearKill(serverLevel, player, target);
-                continue;
-            }
-            // 无视无敌帧：每次攻击前清空目标受击无敌帧，保证每 tick 攻击都真实造成伤害（光环速度升级效果）
-            if (ignoreIFrames) {
-                target.invulnerableTime = 0;
-            }
-            float healthBefore = target.getHealth();
-            DamageSource source = player.damageSources().playerAttack(player);
-            // 附魔加成：modifyDamage 把武器附魔的伤害增幅算入本次光环攻击（锋利/亡灵/节肢等）
-            float finalDamage = weapon.isEmpty() ? damage
-                    : EnchantmentHelper.modifyDamage(serverLevel, weapon, target, source, damage);
-            // Boss 分支（2026-08-15 需求：虚空之矛伤害挂 Boss 判定）：
-            //   · 学了虚空之矛 → 先用混沌伤害源对 Boss 尝试虚空秒杀（混沌秒杀挂 Boss 判定，可穿透 Boss 护盾/免疫）
-            //   · 未学虚空之矛 或 混沌秒杀未击杀（DE 守卫水晶护盾格挡）→ 降级混沌连击削盾
-            if (isBossEntity(target)) {
-                DamageSource chaosSource = buildChaosSource(serverLevel, player);
-                if (chaosSource != null) {
-                    if (voidSpear) {
-                        // 虚空之矛混沌秒杀 Boss：3 次混沌伤害（1 亿）→ 未死再 forceFinish
-                        voidSpearKill(serverLevel, player, target);
-                        if (!target.isAlive()) {
-                            continue; // 秒杀成功
-                        }
-                        // 未击杀（DE 守卫水晶护盾格挡）：继续走混沌连击
-                    }
-                    // 混沌连击削盾（正常伤害通道，empower 才触发；无 empower 不削盾）
-                    if (empower) {
-                        float base = Math.max(5000.0F, finalDamage * 400.0F);
-                        boolean hit = false;
-                        for (int i = 0; i < 30; i++) {
-                            if (target.hurt(chaosSource, base * (float) Math.pow(1.15, i))) {
-                                hit = true;
-                            }
-                        }
-                        // 无视水晶护盾直击：DE 混沌守卫在水晶存活时 hurt 会被 onGuardianAttacked 完全格挡，
-                        // 用反射调用 protected attackDragonFrom 绕过格挡直接扣血（不依赖 DE 编译，保留战斗节奏）
-                        if (isDraconicGuardian(target)) {
-                            attackDragonDirect(target, chaosSource, base * 2.0F);
-                            hit = true;
-                        }
-                        // 粒子已删除（2026-08-15 测试）
-                    }
-                    continue; // Boss 已用混沌伤害处理，跳过普通伤害
-                }
-            }
-            if (target.hurt(source, finalDamage)) {
-                // 触发武器附魔的命中效果（火焰附加点燃、冰霜之刃减速等）
-                if (!weapon.isEmpty()) {
-                    EnchantmentHelper.doPostAttackEffectsWithItemSource(serverLevel, target, source, weapon);
-                }
-                // 混沌伤害（光环·强化）：光环攻击附带无视护甲的真实伤害（参考龙之研究混沌武器——混沌能量无视护甲/无敌帧）
-                // 比例 Config 可调（默认主伤害的 20%），独立于护甲/减伤结算
-                double chaosRatio = org.zifeng.skilltree.Config.AURA_CHAOS_DAMAGE_RATIO.get();
-                if (empower && chaosRatio > 0) {
-                    float chaosDamage = Math.max(1.0F, finalDamage * (float) chaosRatio);
-                    // 魔法伤害无视护甲（混沌武器的真实伤害特性）
-                    target.hurt(player.damageSources().indirectMagic(player, player), chaosDamage);
-                    // 混沌能量粒子已删除（2026-08-15 测试）
-                }
-                // 伤害指示粒子已删除（2026-08-15 测试：排查粒子是否导致卡顿）
-                float damageDealt = healthBefore - target.getHealth();
-            }
+            dealAuraDamageToOne(player, serverLevel, targetEntity, damage, voidSpear, empower, ignoreIFrames, weapon);
         }
     }
 
-    private static boolean isTargetValid(ServerPlayer player, Entity target, int mode) {
+    /**
+     * 光环攻击间隔（tick）：速度光环等级越低间隔越大；per-player 缓存 speedLevel 复用（2026-09-08 抽取，供选区攻击同款频率）。
+     */
+    static int auraAttackInterval(ServerPlayer player, PlayerSkillRecord record) {
+        int speedLevel = record.isEnabled(Skills.AURA_SPEED) ? record.getActiveLevel(Skills.AURA_SPEED) : 0;
+        UUID playerId = player.getUUID();
+        Integer cachedSpeed = cachedSpeedByPlayer.get(playerId);
+        Integer intervalObj = cachedIntervalByPlayer.get(playerId);
+        if (cachedSpeed != null && cachedSpeed == speedLevel && intervalObj != null) {
+            return intervalObj;
+        }
+        int baseInterval = org.zifeng.skilltree.Config.AURA_BASE_INTERVAL_TICKS.get();
+        double reduction = org.zifeng.skilltree.Config.AURA_SPEED_INTERVAL_REDUCTION.get();
+        int interval = Math.max(10, (int) Math.round(baseInterval * Math.pow(1 - reduction, speedLevel)));
+        cachedSpeedByPlayer.put(playerId, speedLevel);
+        cachedIntervalByPlayer.put(playerId, interval);
+        return interval;
+    }
+
+    /**
+     * 杀戮光环攻击参数（选区攻击复用同款伤害链/开关语义，2026-09-08）：
+     * @return {damage, voidSpear, empower, ignoreIFrames} 由调用方按序解构使用。
+     */
+    static float[] auraAttackParams(ServerPlayer player, PlayerSkillRecord record) {
+        float damage = (float) player.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE);
+        boolean voidSpear = record.getLearnedPoints(Skills.AURA_VOID) > 0
+                && record.getLearnedPoints(Skills.AURA_DAMAGE) > 0
+                && record.isEnabled(Skills.AURA_DAMAGE);
+        boolean empower = record.getLearnedPoints(Skills.AURA_EMPOWER) > 0;
+        boolean ignoreIFrames = record.getLearnedPoints(Skills.AURA_SPEED) > 0 && record.isEnabled(Skills.AURA_SPEED);
+        return new float[]{damage, voidSpear ? 1 : 0, empower ? 1 : 0, ignoreIFrames ? 1 : 0};
+    }
+
+    /**
+     * 对单个目标执行完整杀戮光环伤害链（2026-09-08 从 auraAttack 抽取，供选区攻击复用同款伤害/频率逻辑）：
+     * 破盾 → DE 水晶混沌连击 → 虚空秒杀 → 附魔加成 → Boss 混沌处理 → 普通 hurt + 附魔命中效果 + 混沌附加。
+     */
+    static void dealAuraDamageToOne(ServerPlayer player, ServerLevel serverLevel, Entity targetEntity,
+                                    float damage, boolean voidSpear, boolean empower, boolean ignoreIFrames, ItemStack weapon) {
+        // 破盾（光环·强化）：目标举盾格挡 → 解除格挡 + 盾牌冷却（原版 Player.disableShield，参考 Draconic 穿透箭破盾逻辑）
+        if (empower && targetEntity instanceof Player p && p.isBlocking() && p.getUseItem().getItem() instanceof ShieldItem) {
+            p.disableShield();
+        }
+        // DE 守卫水晶特判（光环·强化）：GuardianCrystalEntity 是 Entity 不是 LivingEntity，
+        // 普通伤害完全免疫（getCrystalDamageModifier 返回 0），必须用混沌伤害源（chaotic 标签）攻击。
+        // ⚠️ 连击削盾：DE 守卫有单次伤害上限（500）+ hitCooldown 保护（伤害 < 上次×1.1 会被忽略），
+        //    用多次递增伤害（×1.15）绕过保护，一次光环攻击累计打出大量伤害。
+        if (empower && isDraconicCrystal(targetEntity)) {
+            DamageSource chaosSource = buildChaosSource(serverLevel, player);
+            if (chaosSource != null) {
+                float base = Math.max(5000.0F, damage * 400.0F);
+                for (int i = 0; i < 30; i++) {
+                    targetEntity.hurt(chaosSource, base * (float) Math.pow(1.15, i));
+                }
+                // 粒子已删除（2026-08-15 测试：排查粒子是否导致卡顿）
+            }
+            return; // 水晶不参与 LivingEntity 逻辑
+        }
+        if (!(targetEntity instanceof LivingEntity target)) {
+            return; // 其他非 LivingEntity 实体（如物品/箭）跳过
+        }
+        // 虚空之矛秒杀（参考虚空之矛 damageLoop + forceFinish）：对普通生物直接绝对秒杀（1 亿×循环+兜底强杀）
+        //   · 普通怪：混沌伤害源秒杀（3 次 hurt + forceFinish），伤害挂 Boss 判定（chaotic 标签）
+        //   · Boss/DE 守卫：混沌秒杀优先（混沌伤害源可穿透 Boss 免疫），未击杀再走混沌连击削盾兜底
+        if (voidSpear && !isBossEntity(target)) {
+            voidSpearKill(serverLevel, player, target);
+            return;
+        }
+        // 无视无敌帧：每次攻击前清空目标受击无敌帧，保证每 tick 攻击都真实造成伤害（光环速度升级效果）
+        if (ignoreIFrames) {
+            target.invulnerableTime = 0;
+        }
+        float healthBefore = target.getHealth();
+        DamageSource source = player.damageSources().playerAttack(player);
+        // 附魔加成：modifyDamage 把武器附魔的伤害增幅算入本次光环攻击（锋利/亡灵/节肢等）
+        float finalDamage = weapon.isEmpty() ? damage
+                : EnchantmentHelper.modifyDamage(serverLevel, weapon, target, source, damage);
+        // Boss 分支（2026-08-15 需求：虚空之矛伤害挂 Boss 判定）：
+        //   · 学了虚空之矛 → 先用混沌伤害源对 Boss 尝试虚空秒杀（混沌秒杀挂 Boss 判定，可穿透 Boss 护盾/免疫）
+        //   · 未学虚空之矛 或 混沌秒杀未击杀（DE 守卫水晶护盾格挡）→ 降级混沌连击削盾
+        if (isBossEntity(target)) {
+            DamageSource chaosSource = buildChaosSource(serverLevel, player);
+            if (chaosSource != null) {
+                if (voidSpear) {
+                    // 虚空之矛混沌秒杀 Boss：3 次混沌伤害（1 亿）→ 未死再 forceFinish
+                    voidSpearKill(serverLevel, player, target);
+                    if (!target.isAlive()) {
+                        return; // 秒杀成功
+                    }
+                    // 未击杀（DE 守卫水晶护盾格挡）：继续走混沌连击
+                }
+                // 混沌连击削盾（正常伤害通道，empower 才触发；无 empower 不削盾）
+                if (empower) {
+                    float base = Math.max(5000.0F, finalDamage * 400.0F);
+                    for (int i = 0; i < 30; i++) {
+                        target.hurt(chaosSource, base * (float) Math.pow(1.15, i));
+                    }
+                    // 无视水晶护盾直击：DE 混沌守卫在水晶存活时 hurt 会被 onGuardianAttacked 完全格挡，
+                    // 用反射调用 protected attackDragonFrom 绕过格挡直接扣血（不依赖 DE 编译，保留战斗节奏）
+                    if (isDraconicGuardian(target)) {
+                        attackDragonDirect(target, chaosSource, base * 2.0F);
+                    }
+                    // 粒子已删除（2026-08-15 测试）
+                }
+                return; // Boss 已用混沌伤害处理，跳过普通伤害
+            }
+        }
+        if (target.hurt(source, finalDamage)) {
+            // 触发武器附魔的命中效果（火焰附加点燃、冰霜之刃减速等）
+            if (!weapon.isEmpty()) {
+                EnchantmentHelper.doPostAttackEffectsWithItemSource(serverLevel, target, source, weapon);
+            }
+            // 混沌伤害（光环·强化）：光环攻击附带无视护甲的真实伤害（参考龙之研究混沌武器——混沌能量无视护甲/无敌帧）
+            // 比例 Config 可调（默认主伤害的 20%），独立于护甲/减伤结算
+            double chaosRatio = org.zifeng.skilltree.Config.AURA_CHAOS_DAMAGE_RATIO.get();
+            if (empower && chaosRatio > 0) {
+                float chaosDamage = Math.max(1.0F, finalDamage * (float) chaosRatio);
+                // 魔法伤害无视护甲（混沌武器的真实伤害特性）
+                target.hurt(player.damageSources().indirectMagic(player, player), chaosDamage);
+                // 混沌能量粒子已删除（2026-08-15 测试）
+            }
+            // 伤害指示粒子已删除（2026-08-15 测试：排查粒子是否导致卡顿）
+            float damageDealt = healthBefore - target.getHealth();
+        }
+    }
+
+    /** 目标有效性判定（2026-09-08 放开为包可见，供 ZoneSkillEvents 选区攻击复用同款敌我过滤） */
+    static boolean isTargetValid(ServerPlayer player, Entity target, int mode) {
         if (target == player || !target.isAlive() || target.isInvulnerable()) {
             return false;
         }
@@ -444,26 +476,14 @@ public class AuraEvents {
         };
     }
 
-    /** DE 类名缓存（2026-08-28 性能：按 Class 缓存判断结果，避免触发 tick 时对每个目标 getClass().getName() 分配字符串；与 1.20.1 对齐） */
-    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, Boolean> DRACONIC_CRYSTAL_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
-    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, Boolean> DRACONIC_GUARDIAN_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
-
-    /** DE 守卫水晶特判（GuardianCrystalEntity 是 Entity 不是 LivingEntity，用类名匹配不依赖 DE 编译） */
+    /** DE 守卫水晶特判（已抽至 system/ZTargets 共享，2026-09-09；此处保留委托避免改调用点） */
     private static boolean isDraconicCrystal(Entity target) {
-        return DRACONIC_CRYSTAL_CACHE.computeIfAbsent(target.getClass(), cls -> {
-            String name = cls.getName();
-            return name.startsWith("com.brandon3055.draconicevolution.entity.")
-                    && (name.contains("GuardianCrystal") || name.contains("ChaosCrystal"));
-        });
+        return org.zifeng.skilltree.system.ZTargets.isDraconicCrystal(target);
     }
 
-    /** DE 混沌守卫本体特判（类名匹配，不依赖 DE 编译） */
+    /** DE 混沌守卫本体特判（已抽至 system/ZTargets 共享） */
     private static boolean isDraconicGuardian(LivingEntity target) {
-        return DRACONIC_GUARDIAN_CACHE.computeIfAbsent(target.getClass(), cls -> {
-            String name = cls.getName();
-            return name.startsWith("com.brandon3055.draconicevolution.entity.")
-                    && (name.contains("DraconicGuardian") || name.contains("ChaosGuardian"));
-        });
+        return org.zifeng.skilltree.system.ZTargets.isDraconicGuardian(target);
     }
 
     /** 反射缓存：DE 守卫的 protected attackDragonFrom(DamageSource, float) 方法 */
@@ -597,7 +617,11 @@ public class AuraEvents {
 
     // ============ 治愈光环：给周围友方单位施加生命回复效果（等级 = 技能等级） ============
 
-    private static void auraHeal(ServerPlayer player, PlayerSkillRecord record) {
+    public static void auraHeal(ServerPlayer player, PlayerSkillRecord record) {
+        // ⚠️ 2026-09-08 性能：未学玩家每 tick 只做 1 次 map 读早退（多数玩家未学）
+        if (record.getLearnedPoints(Skills.AURA_HEAL) <= 0) {
+            return;
+        }
         int level = record.isEnabled(Skills.AURA_HEAL) ? record.getActiveLevel(Skills.AURA_HEAL) : 0;
         if (level <= 0) {
             return; // 关闭/未点亮：不加效果（有限时长会自然过期，无需主动回收，避免遍历范围造成卡顿）
@@ -640,10 +664,14 @@ public class AuraEvents {
     // 1 级 = 每秒 1000 经验点，每级 +1000（100 级 = 每秒 100000 点）。
     // 用原版 Player.giveExperiencePoints 直接加经验（绕弯实现：不走经验倍率/事件，简单快速），
     // 触发原版升级/附魔消耗统一结算。
-    private static void auraXp(ServerPlayer player, PlayerSkillRecord record) {
+    public static void auraXp(ServerPlayer player, PlayerSkillRecord record) {
+        // ⚠️ 2026-09-08 性能：未学玩家每 tick 只做 1 次 map 读早退（多数玩家未学）
+        if (record.getLearnedPoints(Skills.AURA_XP) <= 0) {
+            return; // 未学：零开销
+        }
         int level = record.isEnabled(Skills.AURA_XP) ? record.getActiveLevel(Skills.AURA_XP) : 0;
         if (level <= 0) {
-            return; // 未学/关闭
+            return; // 已学但关闭
         }
         if (player.tickCount % 20 != 0) {
             return; // 每秒一次
@@ -651,7 +679,8 @@ public class AuraEvents {
         player.giveExperiencePoints(1000 * level);
     }
 
-    private static PlayerSkillRecord getRecord(ServerPlayer player) {
+    /** Z-Link 门面迁移用：模块取玩家技能记录（原 private，改 public 供 system 包调用） */
+    public static PlayerSkillRecord getRecord(ServerPlayer player) {
         // 防御：登出瞬间 serverLevel 可能为 null（多模组环境下事件时序不可控）
         if (player == null || player.serverLevel() == null) {
             return new PlayerSkillRecord(player != null ? player.getUUID() : java.util.UUID.randomUUID());

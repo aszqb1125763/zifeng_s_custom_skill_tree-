@@ -11,7 +11,6 @@ import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
 import org.zifeng.skilltree.event.AuraEvents;
@@ -85,7 +84,7 @@ public class SkillTreeAdminCommands {
             UltimateEvents.clearPlayer(online); // 4) 清理终极被动 static 状态（连击/金身冷却等）
             AuraEvents.onPlayerLogout(online); // 5) 解除时之环/晴空环全局锁定计数并恢复 gamerule
             GiftEvents.onPlayerLogout(online); // 6) 清理子枫的馈赠在线计时
-            PacketDistributor.sendToPlayer(online, SkillTreeDataS2CPacket.from(record)); // 7) 全量同步客户端
+            org.zifeng.skilltree.network.ModNetwork.sendToPlayer(online, SkillTreeDataS2CPacket.from(record)); // 7) 全量同步客户端
             source.sendSuccess(() -> Component.translatable(LANG + "admin_reset_done_online", displayName(profile)), false);
         } else {
             source.sendSuccess(() -> Component.translatable(LANG + "admin_reset_done_offline", displayName(profile)), false);
@@ -136,7 +135,7 @@ public class SkillTreeAdminCommands {
     private static void syncIfOnline(CommandSourceStack source, UUID uuid, PlayerSkillRecord record) {
         ServerPlayer online = source.getServer().getPlayerList().getPlayer(uuid);
         if (online != null) {
-            PacketDistributor.sendToPlayer(online, SkillTreeDataS2CPacket.from(record));
+            org.zifeng.skilltree.network.ModNetwork.sendToPlayer(online, SkillTreeDataS2CPacket.from(record));
         }
     }
 

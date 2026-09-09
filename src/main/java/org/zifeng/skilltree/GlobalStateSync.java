@@ -114,7 +114,7 @@ public final class GlobalStateSync {
         if (sendAe >= 0) last[0] = snapshot[0];
         if (sendWeather >= 0) last[1] = snapshot[1];
         if (sendTime >= 0) last[2] = snapshot[2];
-        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+        org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                 new org.zifeng.skilltree.network.GlobalStateS2CPacket(sendAe, sendWeather, sendTime));
     }
 
@@ -146,7 +146,7 @@ public final class GlobalStateSync {
             if (sendAe >= 0) last[0] = snapshot[0];
             if (sendWeather >= 0) last[1] = snapshot[1];
             if (sendTime >= 0) last[2] = snapshot[2];
-            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player,
+            org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                     new org.zifeng.skilltree.network.GlobalStateS2CPacket(sendAe, sendWeather, sendTime));
         }
     }

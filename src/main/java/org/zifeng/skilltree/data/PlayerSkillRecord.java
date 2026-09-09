@@ -49,6 +49,121 @@ public class PlayerSkillRecord {
     private int lootVacuumZ;
     private int lootVacuumFace = 0;
     private String lootVacuumName = ""; // 容器方块显示名（如“箱子”）
+    // ============ 木棍工具层（2026-09-08：占位卡，不参与技能点体系） ============
+    /** 木棍工具总开关：true=木棍作为工具使用（占用左/右键手势）；false=还原原版木棍。
+     *  ⚠️ 只影响"木棍手势"，不影响任何技能被动逻辑（吸取/挪移直传/触发键等照常），
+     *  已绑容器 / 已选屏蔽区数据不受影响。 */
+    private boolean stickToolOn = true;
+    /** 木棍工具模式：0=BIND（潜行右键绑容器） 1=RANGE（左键框选磁铁屏蔽区）。
+     *  ⚠️ 仅决定"木棍手势当前路由给哪个功能模块"，模块间互相独立、切走不关闭任何功能。 */
+    private int stickToolMode = 0;
+
+    /** 木棍工具总开关是否开启（默认开） */
+    public boolean isStickToolOn() {
+        return stickToolOn;
+    }
+
+    public void setStickToolOn(boolean on) {
+        this.stickToolOn = on;
+    }
+
+    /** 木棍工具当前模式（0=BIND 1=RANGE） */
+    public int getStickToolMode() {
+        return stickToolMode;
+    }
+
+    /** 切换木棍工具模式（BIND↔RANGE 循环；非法值忽略） */
+    public void setStickToolMode(int mode) {
+        if (mode == 0 || mode == 1 || mode == 2 || mode == 3 || mode == 4 || mode == 5) {
+            this.stickToolMode = mode;
+        }
+    }
+
+    // ============ 机械共鸣·操作区（2026-09-08：放置/挖掘/攻击/防护各一块，单人生效，存玩家） ============
+    /** 技能ID → 该技能当前操作区（null=未框选） */
+    private final Map<String, OperZone> operZones = new HashMap<>();
+
+    /** 获取指定技能的操作区（放置/挖掘/攻击/防护；null=未框选） */
+    public OperZone getOperZone(String skillId) {
+        if (!Skills.isStickZoneSkill(skillId)) {
+            return null;
+        }
+        return operZones.get(skillId);
+    }
+
+    /** 设置/清除指定技能的操作区（null=清除） */
+    public void setOperZone(String skillId, OperZone zone) {
+        if (!Skills.isStickZoneSkill(skillId)) {
+            return;
+        }
+        if (zone == null) {
+            operZones.remove(skillId);
+        } else {
+            operZones.put(skillId, zone);
+        }
+    }
+
+    public Map<String, OperZone> getOperZones() {
+        return Collections.unmodifiableMap(operZones);
+    }
+
+    // ============ 防护区·多块列表（2026-09-08：防护可框选多块，上限 10，区内所有生物免疫） ============
+    /** 防护区上限 */
+    public static final int MAX_PROTECT_ZONES = 10;
+    /** 防护区列表（操作区 map 只承载 放置/挖掘/攻击 单块；防护区独立多块） */
+    private final java.util.List<OperZone> protectZones = new java.util.ArrayList<>();
+
+    /** 全部防护区（只读） */
+    public java.util.List<OperZone> getProtectZones() {
+        return java.util.Collections.unmodifiableList(protectZones);
+    }
+
+    /** 防护区当前数量 */
+    public int protectZoneCount() {
+        return protectZones.size();
+    }
+
+    /** 新增一块防护区（已达上限/重复返回 false） */
+    public boolean addProtectZone(OperZone zone) {
+        if (zone == null || protectZones.size() >= MAX_PROTECT_ZONES) {
+            return false; // 满 10 块：忽略
+        }
+        for (OperZone z : protectZones) {
+            if (z.minX() == zone.minX() && z.minY() == zone.minY() && z.minZ() == zone.minZ()
+                    && z.maxX() == zone.maxX() && z.maxY() == zone.maxY() && z.maxZ() == zone.maxZ()
+                    && z.dim().equals(zone.dim())) {
+                return false; // 重复块
+            }
+        }
+        protectZones.add(zone);
+        return true;
+    }
+
+    /** 移除包含该坐标（任一角点/内部点）的防护区；返回是否移除 */
+    public boolean removeProtectZoneAt(String dim, int x, int y, int z) {
+        java.util.Iterator<OperZone> it = protectZones.iterator();
+        while (it.hasNext()) {
+            OperZone oz = it.next();
+            if (oz.dim().equals(dim)
+                    && x >= oz.minX() && x <= oz.maxX()
+                    && y >= oz.minY() && y <= oz.maxY()
+                    && z >= oz.minZ() && z <= oz.maxZ()) {
+                it.remove();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 目标是否落在任一防护区内（区内所有生物免疫/跳过，2026-09-08） */
+    public boolean isInAnyProtectZone(String dim, net.minecraft.core.BlockPos pos) {
+        for (OperZone z : protectZones) {
+            if (z.dim().equals(dim) && z.contains(pos)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     public Set<Item> getAutoSmeltBlacklist() {
         return Collections.unmodifiableSet(autoSmeltBlacklist);
@@ -185,9 +300,14 @@ public class PlayerSkillRecord {
         return auraTargetModes.getOrDefault(skillId, 0);
     }
 
-    /** 设置指定光环技能的目标模式 */
+    /**
+     * 设置指定光环技能的目标模式。
+     * ⚠️ 子枫的搬运术（CONTAINER_HAUL，2026-09-07）复用该字段存搬运模式：
+     * 0=自动（开箱即搬） 1=手动（按键搬运）——clamp 上限按技能区分（光环 0-2，搬运术 0-1）。
+     */
     public void setAuraTargetMode(String skillId, int mode) {
-        auraTargetModes.put(skillId, Math.max(0, Math.min(2, mode)));
+        int max = Skills.isContainerHaul(skillId) ? 1 : 2;
+        auraTargetModes.put(skillId, Math.max(0, Math.min(max, mode)));
     }
 
     /** 全部光环目标模式（供网络同步） */
@@ -512,6 +632,38 @@ public class PlayerSkillRecord {
                     .ifPresent(key -> blacklist.add(StringTag.valueOf(key.location().toString())));
         }
         tag.put("AutoSmeltBlacklist", blacklist);
+        // 木棍工具层（2026-09-08）：总开关 + 模式
+        tag.putBoolean("StickToolOn", stickToolOn);
+        tag.putInt("StickToolMode", stickToolMode);
+        // 机械共鸣·操作区（2026-09-08）：技能ID → 区
+        ListTag operList = new ListTag();
+        for (Map.Entry<String, OperZone> e : operZones.entrySet()) {
+            CompoundTag zt = new CompoundTag();
+            zt.putString("Skill", e.getKey());
+            zt.putString("Dim", e.getValue().dim());
+            zt.putInt("AX", e.getValue().ax());
+            zt.putInt("AY", e.getValue().ay());
+            zt.putInt("AZ", e.getValue().az());
+            zt.putInt("BX", e.getValue().bx());
+            zt.putInt("BY", e.getValue().by());
+            zt.putInt("BZ", e.getValue().bz());
+            operList.add(zt);
+        }
+        tag.put("OperZones", operList);
+        // 防护区多块列表（2026-09-08）
+        ListTag pzList = new ListTag();
+        for (OperZone z : protectZones) {
+            CompoundTag zt = new CompoundTag();
+            zt.putString("Dim", z.dim());
+            zt.putInt("AX", z.ax());
+            zt.putInt("AY", z.ay());
+            zt.putInt("AZ", z.az());
+            zt.putInt("BX", z.bx());
+            zt.putInt("BY", z.by());
+            zt.putInt("BZ", z.bz());
+            pzList.add(zt);
+        }
+        tag.put("ProtectZones", pzList);
         // 凋落物挪移绑定
         if (lootVacuumDim != null) {
             tag.putString("LootVacuumDim", lootVacuumDim);
@@ -604,6 +756,39 @@ public class PlayerSkillRecord {
             record.lootVacuumZ = tag.getInt("LootVacuumZ");
             record.lootVacuumFace = tag.getInt("LootVacuumFace");
             record.lootVacuumName = tag.contains("LootVacuumName", Tag.TAG_STRING) ? tag.getString("LootVacuumName") : "";
+        }
+        // 木棍工具层（2026-09-08：旧存档无此字段 → 默认开 + BIND 模式）
+        record.stickToolOn = !tag.contains("StickToolOn") || tag.getBoolean("StickToolOn");
+        record.stickToolMode = tag.contains("StickToolMode", Tag.TAG_INT)
+                ? Math.max(0, Math.min(5, tag.getInt("StickToolMode"))) : 0;
+        // 机械共鸣·操作区（2026-09-08：旧存档无此字段默认空）
+        if (tag.contains("OperZones", Tag.TAG_LIST)) {
+            ListTag operList = tag.getList("OperZones", Tag.TAG_COMPOUND);
+            for (int i = 0; i < operList.size(); i++) {
+                CompoundTag zt = operList.getCompound(i);
+                String skill = zt.getString("Skill");
+                String dim = zt.getString("Dim");
+                if (skill.isBlank() || dim.isBlank()) {
+                    continue;
+                }
+                record.operZones.put(skill, new OperZone(dim,
+                        zt.getInt("AX"), zt.getInt("AY"), zt.getInt("AZ"),
+                        zt.getInt("BX"), zt.getInt("BY"), zt.getInt("BZ")));
+            }
+        }
+        // 防护区多块列表（2026-09-08：旧存档无此字段默认空）
+        if (tag.contains("ProtectZones", Tag.TAG_LIST)) {
+            ListTag pzList = tag.getList("ProtectZones", Tag.TAG_COMPOUND);
+            for (int i = 0; i < pzList.size() && record.protectZones.size() < MAX_PROTECT_ZONES; i++) {
+                CompoundTag zt = pzList.getCompound(i);
+                String dim = zt.getString("Dim");
+                if (dim.isBlank()) {
+                    continue;
+                }
+                record.protectZones.add(new OperZone(dim,
+                        zt.getInt("AX"), zt.getInt("AY"), zt.getInt("AZ"),
+                        zt.getInt("BX"), zt.getInt("BY"), zt.getInt("BZ")));
+            }
         }
         return record;
     }
