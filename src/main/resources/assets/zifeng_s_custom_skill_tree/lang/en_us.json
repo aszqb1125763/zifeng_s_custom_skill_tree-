@@ -549,7 +549,7 @@
   "ui.zifeng_s_custom_skill_tree.panel_page_hint": "◀▶ Scroll to page",
   "chat.zifeng_s_custom_skill_tree.gift_activated": "🎁 %s activated! Turn on the toggle to earn points over time",
   "chat.zifeng_s_custom_skill_tree.no_mod_learn": "⚠ %s not installed, learning %s is invalid",
-  "chat.zifeng_s_custom_skill_tree.welcome_intro": "§6[Zifeng Skill Tree] §fv%s §7— turn spare FE energy into skill points, unlock 117 skills in a 9-column tree!",
+  "chat.zifeng_s_custom_skill_tree.welcome_intro": "§6[Zifeng Skill Tree] §fv%s §7— turn spare FE energy into skill points, unlock 122 skills in a 10-column tree!",
   "chat.zifeng_s_custom_skill_tree.welcome_author": "§aMade by 不无聊的子枫哥 §7(developed with AI, fully open-source MIT)",
   "chat.zifeng_s_custom_skill_tree.welcome_modern_ui": "§bTip: §fInstall §eModern UI §ffor better font rendering & UI!",
   "chat.zifeng_s_custom_skill_tree.admin_reset_done_online": "✅ Cleared %s's skill data & zeroed points (applied immediately)",

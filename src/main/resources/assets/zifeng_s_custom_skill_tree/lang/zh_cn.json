@@ -549,7 +549,7 @@
   "ui.zifeng_s_custom_skill_tree.panel_page_hint": "◀▶ 滚轮翻页",
   "chat.zifeng_s_custom_skill_tree.gift_activated": "🎁 %s 已激活！开启开关后按时间自动获得技能点",
   "chat.zifeng_s_custom_skill_tree.no_mod_learn": "⚠ 未安装%s，学习「%s」无效",
-  "chat.zifeng_s_custom_skill_tree.welcome_intro": "§6[子枫技能树] §fv%s §7—— 把多余 FE 能量转化为技能点，解锁九列技能树 117 种技能！",
+  "chat.zifeng_s_custom_skill_tree.welcome_intro": "§6[子枫技能树] §fv%s §7—— 把多余 FE 能量转化为技能点，解锁十列技能树 122 种技能！",
   "chat.zifeng_s_custom_skill_tree.welcome_author": "§a作者：不无聊的子枫哥 §7（AI 辅助开发，完全开源 MIT）",
   "chat.zifeng_s_custom_skill_tree.welcome_modern_ui": "§b提示：§f推荐安装 §eModern UI §f优化字体与界面显示！",
   "chat.zifeng_s_custom_skill_tree.admin_reset_done_online": "✅ 已清空玩家 %s 的技能数据并归零技能点（已即时生效）",
