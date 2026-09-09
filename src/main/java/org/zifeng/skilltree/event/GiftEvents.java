@@ -5,7 +5,6 @@ import net.minecraft.stats.Stats;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.event.TickEvent.PlayerTickEvent;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
 import org.zifeng.skilltree.network.SkillTreeDataS2CPacket;
@@ -86,9 +85,13 @@ public final class GiftEvents {
         }
     }
 
-    @SubscribeEvent
-    public static void onPlayerTick(net.minecraftforge.event.TickEvent.PlayerTickEvent event) {
-        if (!(event.player instanceof ServerPlayer player)) {
+    /**
+     * Z-Link 门面迁移（2026-09-09）：原 onPlayerTick 事件 body 抽为 tickGift，
+     * 由 system/GiftModule 调度调用（学了任一馈赠技能才唤醒，未学全冬眠零开销）。
+     * ⚠️ 累计逻辑一字未改；事件触发（PlayerTickEvent 每玩家必进）已移除。
+     */
+    public static void tickGift(ServerPlayer player) {
+        if (player == null) {
             return;
         }
         // ⚠️ 2026-08-25：馈赠只对真玩家生效——FakePlayer（模拟玩家机器）不累计/不发放

@@ -73,6 +73,13 @@ public class SkillEvents {
             // 回发技能数据：客户端缓存（万物挖掘等技能状态判断）进世界即有，无需先打开技能树
             org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                     org.zifeng.skilltree.network.SkillTreeDataS2CPacket.from(record));
+            // 磁铁屏蔽区列表回发（2026-09-07 / 2026-09-08 全局共享）：服务器全局区列表——
+            // 任何玩家框选的屏蔽区全服生效，进服即同步全量（空则不必要发）
+            var zoneData = org.zifeng.skilltree.data.MagnetZoneGlobalData.get(level);
+            if (!zoneData.getZones().isEmpty()) {
+                org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
+                        new org.zifeng.skilltree.network.MagnetExclusionS2CPacket(zoneData.getZones()));
+            }
             // 进服欢迎推送（2026-08-29）：模组版本 + 简短简介 + 作者署名（中文名不翻译）+ Modern UI 推荐
             String version = net.minecraftforge.fml.ModList.get().getModContainerById(org.zifeng.skilltree.SkillTreeMod.MOD_ID)
                     .map(c -> c.getModInfo().getVersion().toString()).orElse("?");
@@ -173,8 +180,11 @@ public class SkillEvents {
     }
 
     // ============ 闪现（BLINK，2026-09-06）：向视线方向传送 ============
-    /** 闪现冷却：玩家 UUID → 上次传送的 tickCount（冷却 2 tick 防连点） */
-    private static final java.util.Map<java.util.UUID, Integer> BLINK_LAST = new java.util.HashMap<>();
+    /** 闪现冷却：玩家 UUID → 上次传送的世界时间戳（冷却 2 tick 防连点）
+     *  ⚠️ 2026-09-07 修复：原用 player.tickCount（实体时间），玩家死亡重生后新 ServerPlayer
+     *  的 tickCount 从 0 重计 → now - last 为巨大负数 < 2 恒成立 → 闪现永久失效直到重启。
+     *  改用 level().getGameTime()（世界时间单调递增，与凤凰涅槃/全能精通等冷却一致）。 */
+    private static final java.util.Map<java.util.UUID, Long> BLINK_LAST = new java.util.HashMap<>();
 
     /**
      * 闪现（服务端权威，BlinkC2SPacket 调用）：
@@ -191,9 +201,9 @@ public class SkillEvents {
                 || !record.isEnabled(org.zifeng.skilltree.skill.Skills.BLINK)) {
             return; // 未学/关闭
         }
-        // 冷却 2 tick（用玩家 tickCount 时间戳）
-        int now = player.tickCount;
-        Integer last = BLINK_LAST.get(player.getUUID());
+        // 冷却 2 tick（用世界时间戳，死亡重生不重置；2026-09-07 原 tickCount 死亡后永久拦截）
+        long now = player.level().getGameTime();
+        Long last = BLINK_LAST.get(player.getUUID());
         if (last != null && now - last < 2) {
             return;
         }

@@ -33,6 +33,11 @@ public class ModNetwork {
                 .decoder(BlinkC2SPacket::decode)
                 .consumerMainThread(BlinkC2SPacket::handle)
                 .add();
+        CHANNEL.messageBuilder(ContainerHaulC2SPacket.class, id++)
+                .encoder(ContainerHaulC2SPacket::encode)
+                .decoder(ContainerHaulC2SPacket::decode)
+                .consumerMainThread(ContainerHaulC2SPacket::handle)
+                .add();
         CHANNEL.messageBuilder(LearnSkillC2SPacket.class, id++)
                 .encoder(LearnSkillC2SPacket::encode)
                 .decoder(LearnSkillC2SPacket::decode)
@@ -88,6 +93,24 @@ public class ModNetwork {
                 .decoder(WeatherModeC2SPacket::decode)
                 .consumerMainThread(WeatherModeC2SPacket::handle)
                 .add();
+        // 磁铁屏蔽区（2026-09-07）：C2S 加/删区
+        CHANNEL.messageBuilder(MagnetExclusionC2SPacket.class, id++)
+                .encoder(MagnetExclusionC2SPacket::encode)
+                .decoder(MagnetExclusionC2SPacket::decode)
+                .consumerMainThread(MagnetExclusionC2SPacket::handle)
+                .add();
+        // 木棍工具层（2026-09-08）：C2S 总开关/模式
+        CHANNEL.messageBuilder(StickToolC2SPacket.class, id++)
+                .encoder(StickToolC2SPacket::encode)
+                .decoder(StickToolC2SPacket::decode)
+                .consumerMainThread(StickToolC2SPacket::handle)
+                .add();
+        // 机械共鸣·操作区（2026-09-08）：C2S 框选设置/清除/触发放置挖掘
+        CHANNEL.messageBuilder(ZoneC2SPacket.class, id++)
+                .encoder(ZoneC2SPacket::encode)
+                .decoder(ZoneC2SPacket::decode)
+                .consumerMainThread(ZoneC2SPacket::handle)
+                .add();
         // ===== 服务端 → 客户端 =====
         CHANNEL.messageBuilder(SkillTreeDataS2CPacket.class, id++)
                 .encoder(SkillTreeDataS2CPacket::encode)
@@ -113,6 +136,12 @@ public class ModNetwork {
                 .encoder(SkillPointDeltaS2CPacket::encode)
                 .decoder(SkillPointDeltaS2CPacket::decode)
                 .consumerMainThread(SkillPointDeltaS2CPacket::handle)
+                .add();
+        // 磁铁屏蔽区列表同步（2026-09-07）：S2C 回发
+        CHANNEL.messageBuilder(MagnetExclusionS2CPacket.class, id++)
+                .encoder(MagnetExclusionS2CPacket::encode)
+                .decoder(MagnetExclusionS2CPacket::decode)
+                .consumerMainThread(MagnetExclusionS2CPacket::handle)
                 .add();
     }
 

@@ -10,7 +10,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.loading.FMLLoader;
 import org.slf4j.Logger;
 import org.zifeng.skilltree.client.ClientRegistrar;
-import org.zifeng.skilltree.event.AuraEvents;
+import org.zifeng.skilltree.event.ContainerHaulEvents;
 import org.zifeng.skilltree.event.GiftEvents;
 import org.zifeng.skilltree.event.LockEvents;
 import org.zifeng.skilltree.event.LootVacuumEvents;
@@ -62,16 +62,58 @@ public class SkillTreeMod {
         // GAME 总线手动注册（避免 @EventBusSubscriber 双重注册）
         MinecraftForge.EVENT_BUS.register(SkillEvents.class);
         MinecraftForge.EVENT_BUS.register(UltimateEvents.class);
-        MinecraftForge.EVENT_BUS.register(AuraEvents.class);
+        // ⚠️ 2026-09-09 Z-Link 迁移后 AuraEvents/ZoneSkillEvents 已无 @SubscribeEvent 方法 → 不再 register
+        //    （逻辑已由 ZModules 模块接管；NeoForge 1.21.1 注册空类会直接崩，Forge 宽松但也应移除）
         MinecraftForge.EVENT_BUS.register(MagnetEvents.class);
         MinecraftForge.EVENT_BUS.register(LockEvents.class);
         MinecraftForge.EVENT_BUS.register(LootVacuumEvents.class);
+        MinecraftForge.EVENT_BUS.register(ContainerHaulEvents.class);
         MinecraftForge.EVENT_BUS.register(GiftEvents.class);
         // 主系统 Tick 末合并推送（2026-08-28 架构升级：一 tick 内多次 markDirty → 末尾合并成一次）
         MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.event.TickEvent.ServerTickEvent event) -> {
             if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
                 org.zifeng.skilltree.GlobalStateSync.onServerTickEnd();
             }
+        });
+        // Z-Link 模块登记（2026-09-09）：集中登记所有功能模块（调度器按条件驱动/冬眠）。
+        // 【系统清单】每迁一个技能在此 +1 行；未登记 = 该技能仍走原事件（调度零影响）。
+        //   · 磁力光环（磁铁吸物/吸经验）—— 已迁 MagnetModule
+        //   · 杀戮光环·伤害（含虚空之矛/强化）—— 已迁 AuraDamageModule
+        //   · 治愈光环 —— 已迁 AuraHealModule
+        //   · 汲灵之环 —— 已迁 AuraXpModule
+        //   · 终极节点/常驻效果 tick 链 —— 已迁 UltimateTickModule（2026-09-09）
+        //   · 子枫的馈赠（时间/移动/飞行累计）—— 已迁 GiftModule（2026-09-09）
+        //   · 机械共鸣·选区攻击 —— 已迁 ZoneAttackModule（2026-09-09）
+        //   · 时之环/晴空环（全局 gamerule 锁定）—— 已迁 GlobalRuleModule（2026-09-09）
+        org.zifeng.skilltree.system.ZModules.registerAll(
+                org.zifeng.skilltree.system.MagnetModule.INSTANCE,
+                org.zifeng.skilltree.system.AuraDamageModule.INSTANCE,
+                org.zifeng.skilltree.system.AuraHealModule.INSTANCE,
+                org.zifeng.skilltree.system.AuraXpModule.INSTANCE,
+                org.zifeng.skilltree.system.UltimateTickModule.INSTANCE,
+                org.zifeng.skilltree.system.GiftModule.INSTANCE,
+                org.zifeng.skilltree.system.ZoneAttackModule.INSTANCE,
+                org.zifeng.skilltree.system.GlobalRuleModule.INSTANCE);
+        // Z-Link 模块调度器（2026-09-09 骨架 v1）：每服务器 tick 末驱动一次全部已登记模块
+        // （条件不满足的模块自动冬眠，零开销；未登记模块时整个调度直接 return）。
+        // ⚠️ 调度器只负责"叫醒该跑的模块"，现有技能逻辑未迁移前不改变任何行为。
+        MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.event.TickEvent.ServerTickEvent event) -> {
+            if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
+                net.minecraft.server.MinecraftServer server = event.getServer();
+                if (server != null && server.overworld() != null) {
+                    org.zifeng.skilltree.system.ZModules.onServerTick(server.overworld());
+                }
+            }
+        });
+        // Z-Link 玩家登出清理（2026-09-09）：广播模块清理该玩家临时状态（防跨服残留）
+        MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) -> {
+            if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp) {
+                org.zifeng.skilltree.system.ZModules.onPlayerLogout(sp);
+            }
+        });
+        // Z-Link 服务器停止清理（2026-09-09）：广播模块清理全局状态 + 清空注册表
+        MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.event.server.ServerStoppedEvent event) -> {
+            org.zifeng.skilltree.system.ZModules.onServerStop();
         });
 
         if (FMLLoader.getDist().isClient()) {

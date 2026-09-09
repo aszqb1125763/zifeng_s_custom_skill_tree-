@@ -49,6 +49,8 @@ public class SkillTreeScreen extends Screen {
     private static final int KEY_BOX_WIDTH = 44;
     /** 第二列按键框宽度（2026-08-13：等级/目标循环快捷键，位于第一框右侧） */
     private static final int KEY2_BOX_WIDTH = 44;
+    /** 第三列按键框宽度（2026-09-07：功能触发键——主动技在场景内按一下触发一次，如搬运术手动搬运） */
+    private static final int KEY3_BOX_WIDTH = 44;
     /** 按键框与按钮间隙 */
     private static final int KEY_BOX_GAP = 3;
     private static final int HORIZONTAL_SPACING = 30;
@@ -82,6 +84,9 @@ public class SkillTreeScreen extends Screen {
     /** 第二列按键框（等级/目标循环）监听状态：当前正在设置的技能（null = 无） */
     private String levelKeyBindSkillId = null;
     private boolean levelKeyBindListening = false;
+    /** 第三列按键框（功能触发键）监听状态：当前正在设置的技能（null = 无；2026-09-07） */
+    private String triggerKeyBindSkillId = null;
+    private boolean triggerKeyBindListening = false;
 
     /** 当前打开的子界面（null = 无；2026-09-01 子界面系统） */
     private SkillSubScreen activeSubScreen = null;
@@ -111,18 +116,10 @@ public class SkillTreeScreen extends Screen {
     }
 
     /** 是否可设置等级/目标循环快捷键（2026-08-13 优化）：
-     *  光环仅 伤害/速度/治愈 使用目标模式（敌我过滤）；时之环/磁力/锁定/强化/虚空之矛 无目标模式不显示。
-     *  晴空环（寰宇法则，2026-08-27）：第二键循环天气模式（晴/雨/雷暴）。
-     *  其余技能：可调等级（上限>1）可循环生效等级。 */
+     *  ⚠️ 2026-09-07 规范 v1.0 收编：直接读 Skills 集中注册表 hasSub2
+     *  （子2 = 有模式循环(敌我/天气/搬运) 或 可调等级>1），不再本地散落特判。 */
     private boolean isLevelBindable(String skillId) {
-        if (Skills.AURA_SKILLS.contains(skillId)) {
-            return Skills.AURA_DAMAGE.equals(skillId) || Skills.AURA_SPEED.equals(skillId) || Skills.AURA_HEAL.equals(skillId);
-        }
-        // 晴空环：第二键循环天气模式
-        if (Skills.AURA_WEATHER.equals(skillId)) {
-            return true;
-        }
-        return Skills.getMaxPoints(skillId) > 1; // 可调等级技能（基础/增幅/多级终极/魔法/多级光环）
+        return Skills.hasSub2(skillId);
     }
 
     /** 指定光环技能的目标模式文字（0 敌对 / 1 友好 / 2 所有） */
@@ -132,6 +129,27 @@ public class SkillTreeScreen extends Screen {
             case 2 -> t("mode_all");
             default -> t("mode_hostile");
         };
+    }
+
+    /** 子2 能力类型（2026-09-07 规范 v1.0：第二框配色/文案分派）：0=等级循环 1=敌我目标 2=天气 3=搬运 */
+    private int modeKindOf(String skillId) {
+        if (Skills.isAuraTargetSkill(skillId)) {
+            return 1;
+        }
+        if (Skills.AURA_WEATHER.equals(skillId)) {
+            return 2;
+        }
+        if (Skills.isContainerHaul(skillId)) {
+            return 3;
+        }
+        return 0;
+    }
+
+    /** 子枫的搬运术模式文字（2026-09-07：0 自动 / 1 手动） */
+    private String haulModeTextOf(String skillId) {
+        return auraTargetModes.getOrDefault(skillId, 0) == 1
+                ? t("haul_mode_manual")
+                : t("haul_mode_auto");
     }
 
     /** 晴空环天气模式文字（0 晴 / 1 雨 / 2 雷暴；2026-08-28：优先服务器全局值，未同步回退本地缓存） */
@@ -193,8 +211,8 @@ public class SkillTreeScreen extends Screen {
      *    280 > 244 保证列与列完全不重叠（原 240 会贴住/重叠）。 */
     private void rebuildButtons() {
         buttons.clear();
-        // 9 列中心 x：间距统一 280（9 列总宽 2240，默认缩放 0.55 可见全列；2026-08-27 新增寰宇法则列）
-        int[] colCenters = {-1120, -840, -560, -280, 0, 280, 560, 840, 1120};
+        // 10 列中心 x：间距统一 300（2026-09-08 新增第10列木棍工具）
+        int[] colCenters = {-1350, -1050, -750, -450, -150, 150, 450, 750, 1050, 1350};
         placeColumn(Skills.MAGIC_SKILLS, colCenters[0]);
         placeColumn(Skills.BASE_SKILLS, colCenters[1]);
         placeColumn(Skills.AMPLIFY_SKILLS, colCenters[2]);
@@ -204,6 +222,7 @@ public class SkillTreeScreen extends Screen {
         placeColumn(Skills.GLOBAL_SKILLS, colCenters[6]);
         placeColumn(Skills.MACHINE_SKILLS, colCenters[7]);
         placeColumn(Skills.GIFT_SKILLS, colCenters[8]);
+        placeColumn(Skills.TOOL_SKILLS, colCenters[9]); // 木棍工具占位（2026-09-08）
     }
 
     /** 五列统一顶部 y（上方对齐）：按钮区上方留空间给列标题（加大后标题占 30px 高） */
@@ -293,7 +312,8 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.pose().scale((float) scale, (float) scale, 1.0F);
 
         // 列标题（大字号 + 类型色边框背景，跟随各列顶部；与按钮区保持间距）
-        int[] colCenters = {-1120, -840, -560, -280, 0, 280, 560, 840, 1120};
+        // 2026-09-08：间距 300，10 列（新增最右木棍工具列）
+        int[] colCenters = {-1350, -1050, -750, -450, -150, 150, 450, 750, 1050, 1350};
         renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_magic").getString(), colCenters[0], 0xFF55FFAA);
         renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_base").getString(), colCenters[1], 0xFF87CEEB);
         renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_amplify").getString(), colCenters[2], 0xFFFFAA55);
@@ -303,25 +323,37 @@ public class SkillTreeScreen extends Screen {
         renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_global").getString(), colCenters[6], 0xFF66CCFF); // 2026-08-27 新增：全局更改类
         renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_machine").getString(), colCenters[7], 0xFFD7D7D7);
         renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_gift").getString(), colCenters[8], 0xFFE0B6C8);
+        renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_tool").getString(), colCenters[9], 0xFFC8A87C); // 木棍工具列（2026-09-08）
 
-        // 按键框列标题（2026-08-13 需求：按键框上方加标题，标明两列用途）
-        // 第一框（开关）：按钮右缘 + 3；第二框（等级/目标）：再右移 44+3
+        // 按键框列标题（2026-08-13 需求：按键框上方加标题，标明各列用途；2026-09-07 加第三列"触发"）
+        // 第一框（开关）：按钮右缘 + 3；第二框（等级/目标/模式）：再右移 44+3；第三框（功能触发）：再右移 44+3
         // 位置：按钮区顶部上方 24px（列标题下方），小字号 ×0.9
         for (int i = 0; i < colCenters.length; i++) {
             int btnRight = colCenters[i] + BUTTON_WIDTH / 2;
             int k1x = btnRight + KEY_BOX_GAP;
             int k2x = btnRight + KEY_BOX_GAP + KEY_BOX_WIDTH + KEY_BOX_GAP;
+            int k3x = k2x + KEY2_BOX_WIDTH + KEY_BOX_GAP;
             int titleY = COLUMN_TOP - 24;
             renderKeyColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.key_toggle_col").getString(), k1x, titleY, 0xFFFFD700, KEY_BOX_WIDTH);
             // 该列是否有可绑定第二键的技能（光环 或 可调等级技能）
             boolean hasLevelBindable = columnHasLevelBindable(i);
             if (hasLevelBindable) {
-                // 列索引：0魔法 1基础 2增幅 3终极 4被动 5光环 6寰宇 7机械 8馈赠（2026-08-27 九列）
-                boolean auraCol = (i == 5);    // 光环列 → 目标循环
+                // 列索引：0魔法 1基础 2增幅 3终极 4被动 5光环 6寰宇 7机械 8馈赠 9工具（2026-09-08 十列）
+                boolean auraCol = (i == 5);    // 光环列 → 目标/模式循环
                 boolean globalCol = (i == 6);  // 寰宇列 → 天气/等级循环
-                String secondTitle = auraCol ? Component.translatable("ui.zifeng_s_custom_skill_tree.key_target_col").getString() : (globalCol ? Component.translatable("ui.zifeng_s_custom_skill_tree.key_weather_col").getString() : Component.translatable("ui.zifeng_s_custom_skill_tree.key_level_col").getString());
+                boolean toolCol = (i == 9);    // 工具列 → BIND/RANGE 模式循环
+                String secondTitle;
+                if (toolCol) {
+                    secondTitle = Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode_col").getString();
+                } else {
+                    secondTitle = auraCol ? Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode_col").getString() : (globalCol ? Component.translatable("ui.zifeng_s_custom_skill_tree.key_weather_col").getString() : Component.translatable("ui.zifeng_s_custom_skill_tree.key_level_col").getString());
+                }
                 renderKeyColumnTitle(guiGraphics, secondTitle, k2x, titleY,
-                        auraCol ? 0xFFBB77FF : (globalCol ? 0xFF66CCFF : 0xFF87CEEB), KEY2_BOX_WIDTH);
+                        toolCol ? 0xFFC8A87C : (auraCol ? 0xFFBB77FF : (globalCol ? 0xFF66CCFF : 0xFF87CEEB)), KEY2_BOX_WIDTH);
+            }
+            // 第三列标题：该列含可绑功能触发键的技能才显示（触发键=场景内主动技，绿色系区分）
+            if (columnHasTriggerBindable(i)) {
+                renderKeyColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger_col").getString(), k3x, titleY, 0xFF66EE66, KEY3_BOX_WIDTH);
             }
         }
 
@@ -331,7 +363,7 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.pose().popPose();
     }
 
-    /** 该列是否含可绑定第二键的技能（光环 或 上限>1 的可调等级技能） */
+    /** 该列是否含可绑定第二键的技能（光环 或 上限>1 的可调等级技能；工具列含模式键） */
     private boolean columnHasLevelBindable(int colIndex) {
         List<String> col = switch (colIndex) {
             case 0 -> Skills.MAGIC_SKILLS;
@@ -342,10 +374,33 @@ public class SkillTreeScreen extends Screen {
             case 5 -> Skills.AURA_SKILLS;
             case 6 -> Skills.GLOBAL_SKILLS;
             case 7 -> Skills.MACHINE_SKILLS;
-            default -> Skills.GIFT_SKILLS;
+            case 8 -> Skills.GIFT_SKILLS;
+            default -> Skills.TOOL_SKILLS; // 工具列（2026-09-08）
         };
         for (String skillId : col) {
             if (isLevelBindable(skillId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 该列是否含可绑「功能触发键」的技能（2026-09-07 第三类快捷键） */
+    private boolean columnHasTriggerBindable(int colIndex) {
+        List<String> col = switch (colIndex) {
+            case 0 -> Skills.MAGIC_SKILLS;
+            case 1 -> Skills.BASE_SKILLS;
+            case 2 -> Skills.AMPLIFY_SKILLS;
+            case 3 -> Skills.ULTIMATE_SKILLS;
+            case 4 -> Skills.SPECIAL_SKILLS;
+            case 5 -> Skills.AURA_SKILLS;
+            case 6 -> Skills.GLOBAL_SKILLS;
+            case 7 -> Skills.MACHINE_SKILLS;
+            case 8 -> Skills.GIFT_SKILLS;
+            default -> Skills.TOOL_SKILLS; // 工具列（2026-09-08）
+        };
+        for (String skillId : col) {
+            if (Skills.isTriggerBindable(skillId)) {
                 return true;
             }
         }
@@ -436,7 +491,7 @@ public class SkillTreeScreen extends Screen {
                     if (Skills.AURA_DAMAGE.equals(skillId)) {
                         String modeText = modeTextOf(skillId);
                         lines = java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_target", Skills.getDisplayNameComponent(skillId)),
+                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
                                 Component.literal(t("tip_aura_dmg_target") + "【" + modeText + "】"),
                                 Component.literal(t("tip_aura_mode_desc")),
                                 Component.literal(boundText),
@@ -445,7 +500,7 @@ public class SkillTreeScreen extends Screen {
                     } else if (Skills.AURA_SPEED.equals(skillId)) {
                         String modeText = modeTextOf(skillId);
                         lines = java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_target", Skills.getDisplayNameComponent(skillId)),
+                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
                                 Component.literal(t("tip_aura_speed_target") + "【" + modeText + "】"),
                                 Component.literal(t("tip_aura_speed_desc")),
                                 Component.literal(boundText),
@@ -454,9 +509,19 @@ public class SkillTreeScreen extends Screen {
                     } else if (Skills.AURA_HEAL.equals(skillId)) {
                         String modeText = modeTextOf(skillId);
                         lines = java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_target", Skills.getDisplayNameComponent(skillId)),
+                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
                                 Component.literal(t("tip_aura_heal_target") + "【" + modeText + "】"),
                                 Component.literal(t("tip_aura_heal_desc")),
+                                Component.literal(boundText),
+                                Component.literal(t("tip_bind_hint")),
+                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                    } else if (Skills.isContainerHaul(skillId)) {
+                        // 子枫的搬运术：第二键 = 搬运模式循环（自动⇄手动）
+                        String haulMode = haulModeTextOf(skillId);
+                        lines = java.util.List.of(
+                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
+                                Component.literal(t("tip_haul_mode") + "【" + haulMode + "】"),
+                                Component.literal(t("tip_haul_mode_desc")),
                                 Component.literal(boundText),
                                 Component.literal(t("tip_bind_hint")),
                                 Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
@@ -474,6 +539,43 @@ public class SkillTreeScreen extends Screen {
                                 Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
                     }
                     guiGraphics.renderTooltip(font, lines, java.util.Optional.empty(), mouseX, mouseY + 12);
+                    return;
+                }
+            }
+            // 第三列按键框悬停提示（2026-09-07：功能触发键——主动技场景内按一下触发一次）
+            if (Skills.isTriggerBindable(button.skillId())) {
+                int k3x = (isLevelBindable(button.skillId())
+                        ? kx + KEY_BOX_WIDTH + KEY_BOX_GAP + KEY2_BOX_WIDTH + KEY_BOX_GAP
+                        : kx + KEY_BOX_WIDTH + KEY_BOX_GAP);
+                if (lx >= k3x && lx <= k3x + KEY3_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
+                    String skillId = button.skillId();
+                    var trig = org.zifeng.skilltree.client.SkillKeyBinds.getTriggerKey(skillId);
+                    String trigText = trig != null ? t("tip_bound") + ": " + trig.getDisplayName().getString() : t("tip_unbound");
+                    if (Skills.isContainerHaul(skillId)) {
+                        guiGraphics.renderTooltip(font, java.util.List.of(
+                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
+                                        Component.literal(t("tip_haul_trigger")),
+                                        Component.literal(trigText),
+                                        Component.literal(t("tip_bind_hint")),
+                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
+                                java.util.Optional.empty(), mouseX, mouseY + 12);
+                    } else if (Skills.BLINK.equals(skillId)) {
+                        // 闪现（2026-09-07 规范改造）：触发键 = 按下向视线方向传送一次
+                        guiGraphics.renderTooltip(font, java.util.List.of(
+                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
+                                        Component.literal(t("tip_blink_trigger")),
+                                        Component.literal(trigText),
+                                        Component.literal(t("tip_bind_hint")),
+                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
+                                java.util.Optional.empty(), mouseX, mouseY + 12);
+                    } else {
+                        guiGraphics.renderTooltip(font, java.util.List.of(
+                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
+                                        Component.literal(trigText),
+                                        Component.literal(t("tip_bind_hint")),
+                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
+                                java.util.Optional.empty(), mouseX, mouseY + 12);
+                    }
                     return;
                 }
             }
@@ -596,6 +698,57 @@ public class SkillTreeScreen extends Screen {
         Skills.SkillType type = Skills.getType(button.skillId());
         String skillId = button.skillId();
         int points = learnedSkills.getOrDefault(skillId, 0);
+
+        // ===== 木棍工具占位（2026-09-08）：专属 tooltip——不算技能不显示学习/消耗 =====
+        if (Skills.isStickTool(skillId)) {
+            boolean toolOn = org.zifeng.skilltree.client.ModKeyBindingEvents.isStickToolOnClient();
+            int toolMode = org.zifeng.skilltree.client.ModKeyBindingEvents.getStickToolModeClient();
+            boolean magnet = org.zifeng.skilltree.client.ModKeyBindingEvents.isMagnetLearnedClientOnly();
+            boolean bindSkill = org.zifeng.skilltree.client.ModKeyBindingEvents.hasAnyStickToolSkillClient();
+            java.util.List<TooltipLine> lines = new java.util.ArrayList<>();
+            lines.add(new TooltipLine("[" + t("type_tool") + "] " + Skills.getDisplayNameComponent(skillId).getString(),
+                    0xFFC8A87C, 1.15F));
+            lines.add(new TooltipLine("———————————————————", 0xFF555555, 1.0F));
+            for (String line : Skills.getDescriptionComponent(skillId).getString().split("\\n")) {
+                lines.add(new TooltipLine(line, 0xFFDDDDDD, 1.0F));
+            }
+            // 已学功能模块（决定各模式手势是否可用；6 模式按解锁技能勾选）
+            lines.add(new TooltipLine(t("stick_tool_modules"), 0xFF888888, 1.0F));
+            for (int m = 0; m < Skills.stickModeCount(); m++) {
+                if (m == Skills.STICK_MODE_BIND) { // 绑定模块=两绑技能
+                    String label = "  " + (bindSkill ? "✓ " : "✗ ") + Component.translatable(
+                            "skill.zifeng_s_custom_skill_tree.aura_loot_vacuum.name").getString() + " / "
+                            + Component.translatable("skill.zifeng_s_custom_skill_tree.container_haul.name").getString()
+                            + " (" + t("stick_tool_mod_bind") + ")";
+                    lines.add(new TooltipLine(label, bindSkill ? 0xFF55FF55 : 0xFF777777, 1.0F));
+                    continue;
+                }
+                if (m == Skills.STICK_MODE_RANGE) { // RANGE=磁铁
+                    String label = "  " + (magnet ? "✓ " : "✗ ") + Component.translatable(
+                            "skill.zifeng_s_custom_skill_tree.aura_magnet.name").getString()
+                            + " (" + t("stick_tool_mod_range") + ")";
+                    lines.add(new TooltipLine(label, magnet ? 0xFF55FF55 : 0xFF777777, 1.0F));
+                    continue;
+                }
+                // 区块技能模式（放置/挖掘/攻击/防护）：勾选 = 对应技能已学
+                String zSkill = Skills.skillForStickMode(m);
+                boolean zLearned = zSkill != null && org.zifeng.skilltree.client.ModKeyBindingEvents
+                        .isSkillLearnedAnywhere(zSkill);
+                String zLabel = "  " + (zLearned ? "✓ " : "✗ ") + Component.translatable(
+                        "skill.zifeng_s_custom_skill_tree." + zSkill + ".name").getString()
+                        + " (" + t(org.zifeng.skilltree.client.StickToolModes.modLang(m)) + ")";
+                lines.add(new TooltipLine(zLabel, zLearned ? 0xFF55FF55 : 0xFF777777, 1.0F));
+            }
+            lines.add(new TooltipLine(" ", 0xFF000000, 0.6F));
+            lines.add(new TooltipLine(t("stick_tool_state") + "：" + t(toolOn ? "stick_tool_on" : "stick_tool_off"),
+                    toolOn ? 0xFF55FF55 : 0xFFAAAAAA, 0.9F));
+            lines.add(new TooltipLine(t("stick_tool_mode") + "："
+                            + t(org.zifeng.skilltree.client.StickToolModes.modeLang(toolMode)),
+                    org.zifeng.skilltree.client.StickToolModes.colorOfMode(toolMode), 0.9F));
+            lines.add(new TooltipLine(" ", 0xFF000000, 0.6F));
+            lines.add(new TooltipLine(t("hint_tool_switch") + "   " + t("hint_tool_mode"), 0xFFD7A55A, 0.9F));
+            return lines;
+        }
         boolean enabled = toggles.getOrDefault(skillId, Boolean.TRUE);
         java.util.List<TooltipLine> lines = new java.util.ArrayList<>();
 
@@ -631,13 +784,14 @@ public class SkillTreeScreen extends Screen {
         }
         // 2.4 机械共鸣系列：弱兼容红字警告（2026-09-05 用户需求）
         //  共鸣技能靠"模拟玩家机器触发游戏事件"的弱兼容机制生效，非强兼容——不保证所有机器生效
-        if (Skills.MACHINE_SKILLS.contains(skillId)) {
+        //  ⚠️ 2026-09-08：木棍工具区块技能（放置/挖掘/攻击/防护）不是机器兼容类，不显示该警告
+        if (Skills.MACHINE_SKILLS.contains(skillId) && !Skills.isStickZoneSkill(skillId)) {
             for (String line : t("machine_weak_warn").split("\\n")) {
                 lines.add(new TooltipLine(line, 0xFFFF5555, 0.9F));
             }
         }
-        // 2.5 凋落物挪移：显示当前绑定容器（2026-08-24 需求：描述下方新增"绑定容器+坐标"）
-        if (Skills.AURA_LOOT_VACUUM.equals(skillId)) {
+        // 2.5 容器绑定技能（子枫挪移术/子枫的搬运术）：显示当前绑定容器（2026-08-24 需求；2026-09-07 扩展两技能共用绑定）
+        if (Skills.isContainerBindSkill(skillId)) {
             String bind = org.zifeng.skilltree.client.ModKeyBindingEvents.getLootVacuumBindClient();
             if (bind == null) {
                 lines.add(new TooltipLine("§7" + t("tip_no_container"), 0xFF888888, 1.0F));
@@ -933,10 +1087,13 @@ public class SkillTreeScreen extends Screen {
 
     private void renderSkillButton(GuiGraphics guiGraphics, SkillButton button) {
         boolean hovered = button.isHovered(lastMouseX, lastMouseY, this);
+        boolean isTool = Skills.isStickTool(button.skillId()); // 木棍工具占位（不算技能）
         Skills.SkillType type = Skills.getType(button.skillId());
         boolean canLearn = canLearn(button.skillId());
-        boolean learned = learnedSkills.getOrDefault(button.skillId(), 0) > 0;
-        boolean enabled = toggles.getOrDefault(button.skillId(), Boolean.TRUE);
+        boolean learned = isTool ? true : learnedSkills.getOrDefault(button.skillId(), 0) > 0;
+        // 工具卡状态 = 工具层总开关（服务端校准缓存）；其余技能 = toggles
+        boolean enabled = isTool ? org.zifeng.skilltree.client.ModKeyBindingEvents.isStickToolOnClient()
+                : toggles.getOrDefault(button.skillId(), Boolean.TRUE);
 
         int bg = switch (type) {
             case MAGIC -> hovered ? 0xFF2A8A6A : 0xFF1E6E4E;
@@ -949,6 +1106,10 @@ public class SkillTreeScreen extends Screen {
             case MACHINE -> hovered ? 0xFF6A6A6A : 0xFF4A4A4A; // 机械共鸣：铁灰（机械主题）
             case GIFT -> hovered ? 0xFFD3A8B8 : 0xFFB08A98; // 子枫的馈赠：柔和藕粉系
         };
+        // 木棍工具：木褐色系（2026-09-08）
+        if (isTool) {
+            bg = hovered ? 0xFF8A6A3E : 0xFF5E4430;
+        }
         int borderColor;
         if (!enabled) {
             borderColor = 0xFF444444; // 禁用：暗灰无金色描边
@@ -1024,17 +1185,24 @@ public class SkillTreeScreen extends Screen {
         // 数据
         int points = learnedSkills.getOrDefault(button.skillId(), 0);
         double nextCost = recordNextCost(button.skillId());
+        // 木棍工具：当前模式（BIND 绑定 ↔ RANGE 范围）颜色区分
+        int toolMode = org.zifeng.skilltree.client.ModKeyBindingEvents.getStickToolModeClient();
 
-        // 第2行：等级/上限显示（所有技能统一，与杀戮光环风格一致）
-        String effectText = points + t("unit_lv") + "/" + Skills.getMaxPoints(button.skillId());
+        // 第2行：等级/上限显示（工具卡 = 当前模式名；其余技能统一等级）
+        String effectText = isTool
+                ? t(org.zifeng.skilltree.client.StickToolModes.modeLang(toolMode))
+                : points + t("unit_lv") + "/" + Skills.getMaxPoints(button.skillId());
         while (!effectText.isEmpty() && font.width(effectText) > BUTTON_WIDTH - 30) {
             effectText = effectText.substring(0, effectText.length() - 1);
         }
-        guiGraphics.drawString(font, effectText, button.x() + 22, button.y() + 17, 0xFF55FF55);
+        guiGraphics.drawString(font, effectText, button.x() + 22, button.y() + 17,
+                isTool ? org.zifeng.skilltree.client.StickToolModes.colorOfMode(toolMode) : 0xFF55FF55);
 
-        // 第3行：消耗总数量（已消耗 + 下一级）
+        // 第3行：消耗总数量（工具卡 = 当前模式模块说明；其余按类别）
         String costText;
-        if (type == Skills.SkillType.AURA) {
+        if (isTool) {
+            costText = t(org.zifeng.skilltree.client.StickToolModes.lineLang(toolMode));
+        } else if (type == Skills.SkillType.AURA) {
             if (Skills.AURA_MAGNET.equals(button.skillId())) {
                 costText = points > 0 ? t("btn_unlocked") : t("btn_need") + (long) (double) org.zifeng.skilltree.Config.MAGNET_COST.get() + t("btn_pt");
             } else if (Skills.AURA_LOCK.equals(button.skillId())) {
@@ -1177,14 +1345,21 @@ public class SkillTreeScreen extends Screen {
                     && toPanelY(lastMouseY) >= ky && toPanelY(lastMouseY) <= ky + k2h;
             boolean k2Listening = button.skillId().equals(levelKeyBindSkillId) && levelKeyBindListening;
             var k2key = org.zifeng.skilltree.client.SkillKeyBinds.getLevelKey(button.skillId());
-            // 背景/边框（与第一框同风格；光环用紫调区分目标模式）
-            boolean isAura = Skills.AURA_SKILLS.contains(button.skillId());
-            int k2bg = k2Listening ? (isAura ? 0xFF5A2A6A : 0xFF7A4A00)
-                    : k2Hovered ? (k2key != null ? (isAura ? 0xFF5A3A6A : 0xFF6E5A00) : 0xFF3A3A4A)
-                    : k2key != null ? (isAura ? 0xFF3A2A4A : 0xFF4A4200) : 0xFF2A2A3A;
+            // 背景/边框（2026-09-07 规范 v1.0：按能力类型分色）——
+            //   敌我目标=紫 / 天气=青 / 搬运=青（模式循环统一紫青调）
+            //   可调等级=蓝（等级循环）；悬停/监听提亮
+            int k2Kind = modeKindOf(button.skillId()); // 0=等级 1=敌我 2=天气 3=搬运
+            boolean k2Mode = k2Kind > 0; // 模式循环（紫/青）
+            int k2BgMode = k2Kind == 1 ? 0xFF5A2A6A : 0xFF2A4A5A; // 敌我紫 / 天气搬运青
+            int k2BgLevel = 0xFF1A2A4A; // 等级蓝
+            int k2BordMode = k2Kind == 1 ? 0xFFCC88FF : 0xFF66CCFF;
+            int k2BordLevel = 0xFF66AAFF;
+            int k2bg = k2Listening ? (k2Mode ? k2BgMode : 0xFF2A3A5A)
+                    : k2Hovered ? (k2key != null ? (k2Mode ? 0xFF3A3A5A : 0xFF2A3A5A) : 0xFF3A3A4A)
+                    : k2key != null ? (k2Mode ? k2BgMode : k2BgLevel) : 0xFF2A2A3A;
             guiGraphics.fill(k2x, ky, k2x + k2w, ky + k2h, k2bg);
-            int k2bord = k2Listening ? (isAura ? 0xFFCC88FF : 0xFFFFAA55)
-                    : (k2key != null ? (isAura ? 0xFFBB77FF : 0xFFFFD700) : 0xFF555566);
+            int k2bord = k2Listening ? (k2Mode ? k2BordMode : 0xFF88BBFF)
+                    : (k2key != null ? (k2Mode ? k2BordMode : k2BordLevel) : 0xFF555566);
             guiGraphics.fill(k2x, ky, k2x + k2w, ky + 1, k2bord);
             guiGraphics.fill(k2x, ky + k2h - 1, k2x + k2w, ky + k2h, k2bord);
             guiGraphics.fill(k2x, ky, k2x + 1, ky + k2h, k2bord);
@@ -1207,6 +1382,48 @@ public class SkillTreeScreen extends Screen {
             }
             guiGraphics.drawCenteredString(font, k2Text, k2x + k2w / 2, ky + (k2h - font.lineHeight) / 2, k2Color);
         }
+
+        // ============ 第三列按键框（2026-09-07：功能触发键——主动技场景内触发一次） ============
+        // 配色：绿色系（触发=执行动作），与 开关键(金) / 模式循环(紫/青/蓝) 区分
+        if (Skills.isTriggerBindable(button.skillId())) {
+            int k3x = (isLevelBindable(button.skillId())
+                    ? kx + kw + KEY_BOX_GAP + KEY2_BOX_WIDTH + KEY_BOX_GAP   // 有第二框：接第二框右侧
+                    : kx + kw + KEY_BOX_GAP);                                 // 无第二框：接第一框右侧
+            int k3w = KEY3_BOX_WIDTH, k3h = BUTTON_HEIGHT;
+            boolean k3Hovered = lastMouseX >= 0 && lastMouseY >= 0
+                    && toPanelX(lastMouseX) >= k3x && toPanelX(lastMouseX) <= k3x + k3w
+                    && toPanelY(lastMouseY) >= ky && toPanelY(lastMouseY) <= ky + k3h;
+            boolean k3Listening = button.skillId().equals(triggerKeyBindSkillId) && triggerKeyBindListening;
+            var k3key = org.zifeng.skilltree.client.SkillKeyBinds.getTriggerKey(button.skillId());
+            // 背景（监听=亮绿黑，有绑定=暗绿，悬停提亮，默认=深灰）
+            int k3bg = k3Listening ? 0xFF1A4A2A
+                    : k3Hovered ? (k3key != null ? 0xFF1A4A3A : 0xFF2A3A3A)
+                    : k3key != null ? 0xFF123A2A : 0xFF1A2A2A;
+            guiGraphics.fill(k3x, ky, k3x + k3w, ky + k3h, k3bg);
+            // 边框（监听=亮绿，有绑定=绿，默认=暗蓝灰）
+            int k3bord = k3Listening ? 0xFF88FF88
+                    : (k3key != null ? 0xFF66EE66 : 0xFF557766);
+            guiGraphics.fill(k3x, ky, k3x + k3w, ky + 1, k3bord);
+            guiGraphics.fill(k3x, ky + k3h - 1, k3x + k3w, ky + k3h, k3bord);
+            guiGraphics.fill(k3x, ky, k3x + 1, ky + k3h, k3bord);
+            guiGraphics.fill(k3x + k3w - 1, ky, k3x + k3w, ky + k3h, k3bord);
+            String k3Text;
+            int k3Color;
+            if (k3Listening) {
+                k3Text = "> " + (k3key != null ? k3key.getDisplayName().getString() : "?") + " <";
+                k3Color = 0xFFAAFFAA;
+            } else if (k3key != null) {
+                k3Text = k3key.getDisplayName().getString();
+                k3Color = 0xFFFFFFFF;
+            } else {
+                k3Text = t("tip_unbound");
+                k3Color = 0xFF888888;
+            }
+            while (font.width(k3Text) > k3w - 6) {
+                k3Text = k3Text.substring(0, k3Text.length() - 1);
+            }
+            guiGraphics.drawCenteredString(font, k3Text, k3x + k3w / 2, ky + (k3h - font.lineHeight) / 2, k3Color);
+        }
     }
 
     /** 估算下一级消耗（客户端显示用） */
@@ -1221,6 +1438,9 @@ public class SkillTreeScreen extends Screen {
 
     /** 客户端可学判定 */
     private boolean canLearn(String skillId) {
+        if (Skills.isStickTool(skillId)) {
+            return false; // 木棍工具占位：不算技能不可学（2026-09-08）
+        }
         Skills.SkillType type = Skills.getType(skillId);
         int current = learnedSkills.getOrDefault(skillId, 0);
         if (type == Skills.SkillType.BASE && current >= Skills.BASE_MAX_POINTS) return false;
@@ -1775,6 +1995,21 @@ public class SkillTreeScreen extends Screen {
                         return true;
                     }
                 }
+                // 第三列按键框（2026-09-07：功能触发键——主动技场景内触发一次）
+                if (Skills.isTriggerBindable(skillButton.skillId())) {
+                    int k3x = (isLevelBindable(skillButton.skillId())
+                            ? kx + KEY_BOX_WIDTH + KEY_BOX_GAP + KEY2_BOX_WIDTH + KEY_BOX_GAP
+                            : kx + KEY_BOX_WIDTH + KEY_BOX_GAP);
+                    if (lx >= k3x && lx <= k3x + KEY3_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
+                        if (triggerKeyBindSkillId != null && triggerKeyBindSkillId.equals(skillButton.skillId()) && triggerKeyBindListening) {
+                            triggerKeyBindListening = false;
+                        } else {
+                            triggerKeyBindSkillId = skillButton.skillId();
+                            triggerKeyBindListening = true;
+                        }
+                        return true;
+                    }
+                }
                 if (skillButton.isHovered(mouseX, mouseY, this)) {
                     if (canLearn(skillButton.skillId())) {
                         if (Screen.hasShiftDown() && Screen.hasControlDown()) {
@@ -1827,12 +2062,36 @@ public class SkillTreeScreen extends Screen {
             for (SkillButton skillButton : buttons) {
                 if (skillButton.isHovered(mouseX, mouseY, this)) {
                     String skillId = skillButton.skillId();
-                    if (Skills.getType(skillId) == Skills.SkillType.AURA && isShiftHeld()) {
-                        // 切换该光环自己的目标模式（本地乐观更新，重进时由服务端回发校准）
-                        int cur = auraTargetModes.getOrDefault(skillId, 0);
-                        int mode = (cur + 1) % 3;
-                        auraTargetModes.put(skillId, mode);
-                        org.zifeng.skilltree.network.ModNetwork.sendToServer(new AuraTargetC2SPacket(skillId, mode));
+                    // 木棍工具占位：右键=工具总开关，Shift+右键=切模式（按已解锁模式循环，2026-09-08）
+                    if (Skills.isStickTool(skillId)) {
+                        if (isShiftHeld()) {
+                            int next = org.zifeng.skilltree.client.ModKeyBindingEvents.nextUnlockedStickMode(
+                                    org.zifeng.skilltree.client.ModKeyBindingEvents.getStickToolModeClient());
+                            org.zifeng.skilltree.client.ModKeyBindingEvents.setStickToolModeClient(next);
+                            org.zifeng.skilltree.network.ModNetwork.sendToServer(new org.zifeng.skilltree.network.StickToolC2SPacket(1, next));
+                        } else {
+                            boolean now = !org.zifeng.skilltree.client.ModKeyBindingEvents.isStickToolOnClient();
+                            org.zifeng.skilltree.client.ModKeyBindingEvents.setStickToolOnClient(now);
+                            org.zifeng.skilltree.network.ModNetwork.sendToServer(new org.zifeng.skilltree.network.StickToolC2SPacket(0, 0));
+                        }
+                        return true;
+                    }
+                    // Shift+右键：有模式循环的技能循环其模式（2026-09-07 规范 v1.0 收编读注册表）；
+                    // 晴空环=天气循环（走全局通道）；敌我/搬运=auraTargetModes；其余技能 → 普通开关
+                    if (isShiftHeld() && Skills.hasModeCycle(skillId)) {
+                        if (Skills.AURA_WEATHER.equals(skillId)) {
+                            // 晴空环：循环天气（0晴→1雨→2雷暴；客户端乐观 + 服务端 WeatherMode 通道）
+                            int cur = org.zifeng.skilltree.client.ModKeyBindingEvents.getWeatherModeClient();
+                            int next = (cur + 1) % 3;
+                            org.zifeng.skilltree.client.ModKeyBindingEvents.setWeatherModeClient(next);
+                            org.zifeng.skilltree.network.ModNetwork.sendToServer(new org.zifeng.skilltree.network.WeatherModeC2SPacket(next));
+                        } else {
+                            int span = Math.max(2, Skills.getModeCount(skillId));
+                            int cur = auraTargetModes.getOrDefault(skillId, 0);
+                            int mode = (cur + 1) % span;
+                            auraTargetModes.put(skillId, mode);
+                            org.zifeng.skilltree.network.ModNetwork.sendToServer(new AuraTargetC2SPacket(skillId, mode));
+                        }
                     } else {
                         boolean now = !toggles.getOrDefault(skillId, Boolean.TRUE);
                         toggles.put(skillId, now);
@@ -1880,6 +2139,20 @@ public class SkillTreeScreen extends Screen {
                 var key = com.mojang.blaze3d.platform.InputConstants.getKey(keyCode, scanCode);
                 org.zifeng.skilltree.client.SkillKeyBinds.setLevelKey(levelKeyBindSkillId, key);
                 levelKeyBindListening = false;
+            }
+            return true;
+        }
+        // 第三列按键框监听（2026-09-07：功能触发键——主动技场景内触发一次）
+        if (triggerKeyBindSkillId != null && triggerKeyBindListening) {
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+                triggerKeyBindListening = false;
+            } else if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_BACKSPACE || keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_DELETE) {
+                org.zifeng.skilltree.client.SkillKeyBinds.clearTriggerKey(triggerKeyBindSkillId);
+                triggerKeyBindListening = false;
+            } else {
+                var key = com.mojang.blaze3d.platform.InputConstants.getKey(keyCode, scanCode);
+                org.zifeng.skilltree.client.SkillKeyBinds.setTriggerKey(triggerKeyBindSkillId, key);
+                triggerKeyBindListening = false;
             }
             return true;
         }

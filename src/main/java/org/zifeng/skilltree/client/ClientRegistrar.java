@@ -16,6 +16,8 @@ public class ClientRegistrar {
         modEventBus.addListener(SkillPointConverterScreen::registerScreens);
         // GAME 总线客户端事件手动注册（确保触发）
         MinecraftForge.EVENT_BUS.register(ModKeyBindingEvents.class);
+        // 客户端会话层（2026-09-09：认链接/世界时钟/会话回收广播——死亡重生等场景清模块临时态，修木棍概率失效）
+        MinecraftForge.EVENT_BUS.register(ClientSession.class);
         // ⚠️ 玩家渲染层（杀戮光环星空环）：EntityRenderersEvent.AddLayers 是 MOD 总线事件（RegisterEvent 类），
         //    必须注册到 modEventBus！注册到 GAME 总线永不触发（这就是之前第三人称看不到光环的原因）
         modEventBus.register(ClientRenderLayers.class);
@@ -29,11 +31,23 @@ public class ClientRegistrar {
         MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientTreasureEvents.class);
         // 技能点变动左下角 HUD 提示（2026-08-25：不刷聊天栏，显示在聊天栏下方）
         MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.SkillPointHudRenderer.class);
+        // 磁铁屏蔽区：木棍左键选区 + 选区渲染（2026-09-07）
+        MinecraftForge.EVENT_BUS.register(MagnetExclusionInputHandler.class);
+        MinecraftForge.EVENT_BUS.register(MagnetExclusionRenderer.class);
+        // 机械共鸣·操作区：框选 + 渲染（2026-09-08，木棍工具模式 2-5）
+        MinecraftForge.EVENT_BUS.register(ZoneSelectionInputHandler.class);
+        MinecraftForge.EVENT_BUS.register(ZoneSkillRenderer.class);
+        // 木棍工具层屏幕信息栏（2026-09-08：右上角状态/模式/操作提示）
+        MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.StickToolHudRenderer.class);
+        // 容器绑定瞄准提示（2026-09-08：BIND 模式下准星指向可绑容器时黄绿选框）
+        MinecraftForge.EVENT_BUS.register(BindTargetRenderer.class);
         // 断开连接清空客户端缓存（2026-08-25 多人防跨服数据残留：HUD 技能点/凤凰涅槃冷却/技能缓存）
         MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingOut event) -> {
             org.zifeng.skilltree.client.SkillPointHudRenderer.onDisconnect();
             org.zifeng.skilltree.client.ReviveHudRenderer.setCooldown(false, 0);
             org.zifeng.skilltree.client.ModKeyBindingEvents.onDisconnect();
+            org.zifeng.skilltree.client.MagnetExclusionClientState.onDisconnect(); // 磁铁屏蔽区缓存重置（防跨服残留）
+            org.zifeng.skilltree.client.ZoneExclusionClientState.onDisconnect(); // 机械共鸣选区第一角重置（防跨服残留）
             org.zifeng.skilltree.client.ClientGlobalState.reset(); // 2026-08-28：全局状态缓存重置（防跨服残留）
         });
     }
