@@ -46,6 +46,14 @@ public class SkillKeyBinds {
     /** 满值数字显示开关（2026-09-11：默认<b>关</b>；开后在当前值后追加 "/ 满值"）
      * <p>生命/吸收/护甲三个数字<b>共用</b>此开关（用户要求） */
     private static boolean hudShowMaxValue = false;
+    /**
+     * 属性面板数据源（2026-09-11 新增面板内 UI 开关）：
+     * <p>{@code null} = 玩家未曾用面板按钮改过 → 跟随配置项 {@code panelUseVanillaAttributes}（默认 true）；
+     * 非 null = 玩家点过面板按钮 → 以此为准。
+     * <p>用客户端本地持久化（而非直接改 TOML），避免与服务端 COMMON 配置同步冲突，
+     * 且与其它 HUD 开关（血量/吸收/护甲数字）的存储方式保持一致。
+     */
+    private static Boolean panelUseVanillaAttr = null;
     /** 子界面位置（2026-09-01：子界面标识 → [x, y] 面板左上角，持久化拖动结果） */
     private static final Map<String, int[]> SUB_SCREEN_POS = new HashMap<>();
 
@@ -324,6 +332,31 @@ public class SkillKeyBinds {
         save();
     }
 
+    // ============ 属性面板数据源开关（2026-09-11：面板标题栏按钮） ============
+
+    /**
+     * 属性面板是否读取<b>原版实时属性值</b>（含装备/药水/其他模组加成）。
+     * <p>优先级：玩家在面板里点过的值 &gt; 配置项 {@code panelUseVanillaAttributes}。
+     */
+    public static boolean isPanelUseVanillaAttr() {
+        return panelUseVanillaAttr != null
+                ? panelUseVanillaAttr
+                : org.zifeng.skilltree.Config.PANEL_USE_VANILLA_ATTR.get();
+    }
+
+    /** 切换属性面板数据源（面板按钮调用），返回切换后的值 */
+    public static boolean togglePanelUseVanillaAttr() {
+        boolean now = !isPanelUseVanillaAttr();
+        panelUseVanillaAttr = now;
+        save();
+        return now;
+    }
+
+    /** 是否已被玩家在面板里手动改过（false = 仍跟随配置文件） */
+    public static boolean hasPanelUseVanillaAttrOverride() {
+        return panelUseVanillaAttr != null;
+    }
+
     // ============ 子界面位置持久化（2026-09-01） ============
 
     /** 获取子界面上次位置 [x, y]（null = 未保存过，用默认位置） */
@@ -399,6 +432,8 @@ public class SkillKeyBinds {
             hudArmorNumber = data.hudArmorNumber == null || data.hudArmorNumber;
             // 满值显示：旧配置无此字段 / null → 默认<b>关闭</b>
             hudShowMaxValue = data.hudShowMaxValue != null && data.hudShowMaxValue;
+            // 属性面板数据源：null = 未改过 → 继续跟随配置文件
+            panelUseVanillaAttr = data.panelUseVanillaAttr;
             // 子界面位置（2026-09-01）
             SUB_SCREEN_POS.clear();
             if (data.subScreenPos != null) {
@@ -442,6 +477,7 @@ public class SkillKeyBinds {
             data.hudAbsorptionNumber = hudAbsorptionNumber;
             data.hudArmorNumber = hudArmorNumber;
             data.hudShowMaxValue = hudShowMaxValue;
+            data.panelUseVanillaAttr = panelUseVanillaAttr;
             data.subScreenPos = new HashMap<>();
             for (Map.Entry<String, int[]> e : SUB_SCREEN_POS.entrySet()) {
                 data.subScreenPos.put(e.getKey(), new int[]{e.getValue()[0], e.getValue()[1]});
@@ -467,6 +503,7 @@ public class SkillKeyBinds {
         Boolean hudAbsorptionNumber; // 伤害吸收数字开关（2026-09-11）
         Boolean hudArmorNumber;      // 护甲数字开关（2026-09-11）
         Boolean hudShowMaxValue;     // 满值数字开关（2026-09-11；三数字共用，默认关）
+        Boolean panelUseVanillaAttr; // 属性面板数据源（2026-09-11；null=跟随配置文件）
         Map<String, int[]> subScreenPos; // 子界面位置（2026-09-01）
     }
 }

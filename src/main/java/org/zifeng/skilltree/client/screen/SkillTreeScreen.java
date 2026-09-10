@@ -1870,7 +1870,7 @@ public class SkillTreeScreen extends Screen {
     /**
      * 属性值读取（数据源可切换，2026-09-11）：
      * <ul>
-     *   <li>{@code Config.PANEL_USE_VANILLA_ATTR = true}（默认）：直接读<b>原版实时属性值</b>
+     *   <li>{@code true}（默认）：直接读<b>原版实时属性值</b>
      *       （{@code AttributeInstance.getValue()}）——自动包含装备 / 药水 / 其他模组的属性修饰符</li>
      *   <li>{@code false}：旧行为，仅按技能内部计算（不含外部修饰符）</li>
      * </ul>
@@ -1880,7 +1880,7 @@ public class SkillTreeScreen extends Screen {
     private double attrVal(net.minecraft.world.entity.player.Player player,
                            net.minecraft.world.entity.ai.attributes.Attribute attribute,
                            org.zifeng.skilltree.data.PlayerSkillRecord rec) {
-        if (org.zifeng.skilltree.Config.PANEL_USE_VANILLA_ATTR.get()) {
+        if (org.zifeng.skilltree.client.SkillKeyBinds.isPanelUseVanillaAttr()) {
             net.minecraft.world.entity.ai.attributes.AttributeInstance inst = player.getAttribute(attribute);
             if (inst != null) {
                 return inst.getValue();
