@@ -17,6 +17,14 @@ import java.util.List;
  * 客户端用于渲染红框（全服同一份）与删除命中预判。
  */
 public record MagnetExclusionS2CPacket(List<MagnetExclusionZone> zones) implements CustomPacketPayload {
+    /**
+     * ⚠️ 2026-09-10 修复：紧凑构造器做【不可变快照】。
+     * 传入的 list 可能是 SavedData 的 {@code unmodifiableList} 视图，而 encode 在 Netty
+     * 网络线程执行、服务端线程同时在增删屏蔽区 → 遍历时 CME → 编码失败 → 玩家被踢下线。
+     */
+    public MagnetExclusionS2CPacket {
+        zones = List.copyOf(zones);
+    }
     public static final Type<MagnetExclusionS2CPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "magnet_exclusion_sync"));
     public static final StreamCodec<FriendlyByteBuf, MagnetExclusionS2CPacket> STREAM_CODEC = new StreamCodec<>() {
         @Override
