@@ -77,15 +77,12 @@ public class SkillTreeMod {
         });
         // Z-Link 模块登记（2026-09-09）：集中登记所有功能模块（调度器按条件驱动/冬眠）。
         // 【系统清单】每迁一个技能在此 +1 行；未登记 = 该技能仍走原事件（调度零影响）。
-        //   · 磁力光环（磁铁吸物/吸经验）—— 已迁 MagnetModule
-        //   · 杀戮光环·伤害（含虚空之矛/强化）—— 已迁 AuraDamageModule
-        //   · 治愈光环 —— 已迁 AuraHealModule
-        //   · 汲灵之环 —— 已迁 AuraXpModule
-        //   · 终极节点/常驻效果 tick 链 —— 已迁 UltimateTickModule（2026-09-09）
-        //   · 子枫的馈赠（时间/移动/飞行累计）—— 已迁 GiftModule（2026-09-09）
-        //   · 机械共鸣·选区攻击 —— 已迁 ZoneAttackModule（2026-09-09）
-        //   · 时之环/晴空环（全局 gamerule 锁定）—— 已迁 GlobalRuleModule（2026-09-09）
-        org.zifeng.skilltree.system.ZModules.registerAll(
+        //
+        // ⚠️ 2026-09-10 修复（严重 bug）：注册动作提取为可重复执行的 Runnable，
+        //    并在【服务器每次启动】时幂等重跑（registerAll 内部 putIfAbsent，重复安全）。
+        //    原因：旧实现只在 mod 构造器注册一次，而 onServerStop 会清空注册表 →
+        //    单人游戏"退出世界→重进世界"后注册表永久为空 → 8 个模块全不跑。
+        java.lang.Runnable zlinkRegister = () -> org.zifeng.skilltree.system.ZModules.registerAll(
                 org.zifeng.skilltree.system.MagnetModule.INSTANCE,
                 org.zifeng.skilltree.system.AuraDamageModule.INSTANCE,
                 org.zifeng.skilltree.system.AuraHealModule.INSTANCE,
@@ -94,14 +91,21 @@ public class SkillTreeMod {
                 org.zifeng.skilltree.system.GiftModule.INSTANCE,
                 org.zifeng.skilltree.system.ZoneAttackModule.INSTANCE,
                 org.zifeng.skilltree.system.GlobalRuleModule.INSTANCE);
+        zlinkRegister.run(); // 首次登记（构造期）
+        org.zifeng.skilltree.system.ZModules.setHealAction(zlinkRegister); // 注册表异常时的自愈动作
+        // 双保险：服务器启动时再幂等登记一次（自愈任何意外清空）
+        MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.event.server.ServerStartedEvent event) -> zlinkRegister.run());
         // Z-Link 模块调度器（2026-09-09 骨架 v1）：每服务器 tick 末驱动一次全部已登记模块
         // （条件不满足的模块自动冬眠，零开销；未登记模块时整个调度直接 return）。
-        // ⚠️ 调度器只负责"叫醒该跑的模块"，现有技能逻辑未迁移前不改变任何行为。
+        // ⚠️ 2026-09-10 修复（链接玩家，不分维度）：旧实现传 server.overworld() 后 ZModules 内部
+        //    取 ServerLevel.players() —— 那只返回【主世界】的玩家 → 玩家离开主世界（下界/末地/模组维度）
+        //    后 8 个模块全部冬眠（飞行不授予、馈赠不累计、磁铁不吸物…严重 bug）。
+        //    现改为直接传 server（驱动源 = 全服在线玩家，与原版 tickChildren 同款）。
         MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.event.TickEvent.ServerTickEvent event) -> {
             if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
                 net.minecraft.server.MinecraftServer server = event.getServer();
-                if (server != null && server.overworld() != null) {
-                    org.zifeng.skilltree.system.ZModules.onServerTick(server.overworld());
+                if (server != null) {
+                    org.zifeng.skilltree.system.ZModules.onServerTick(server);
                 }
             }
         });

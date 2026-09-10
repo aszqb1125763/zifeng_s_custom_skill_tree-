@@ -256,7 +256,11 @@ public final class ZoneSkillEvents {
     // ============ 防护区：区内生物对玩家光环/攻击完全不可见（多块，上限 10，全服向） ============
 
     /**
-     * 收集当前维度已开启防护区且至少有一块的玩家 record 列表（光环触发 tick 只算一次，供过滤复用）。
+     * 收集已开启防护区且至少有一块的玩家 record 列表（光环触发 tick 只算一次，供过滤复用）。
+     * <p><b>⚠️ 2026-09-10 修复（链接玩家，不分维度）</b>：改用全服在线玩家
+     * （{@code level.getServer().getPlayerList().getPlayers()}）—— 旧实现用 {@code level.players()}
+     * 只拿到【与目标同维度】的布防者，导致其他维度玩家布的防护区失效。
+     * 区域本身仍按 dim 匹配（在维度 X 布的防护区只保护维度 X 内的目标）。
      */
     public static java.util.List<PlayerSkillRecord> activeProtectors(ServerLevel level) {
         java.util.List<PlayerSkillRecord> out = new java.util.ArrayList<>();
@@ -264,7 +268,11 @@ public final class ZoneSkillEvents {
             return out;
         }
         PlayerSkillSavedData data = PlayerSkillSavedData.get(level);
-        for (ServerPlayer p : level.players()) {
+        net.minecraft.server.MinecraftServer server = level.getServer();
+        // ⚠️ 链接玩家：全服在线玩家（不分维度）；server 为 null 时降级为当前维度玩家
+        java.util.List<ServerPlayer> online = server != null
+                ? server.getPlayerList().getPlayers() : level.players();
+        for (ServerPlayer p : online) {
             PlayerSkillRecord rec = data.getOrCreatePlayer(p.getUUID());
             if (rec.getLearnedPoints(Skills.MACHINE_ZONE_PROTECT) > 0
                     && rec.isEnabled(Skills.MACHINE_ZONE_PROTECT)

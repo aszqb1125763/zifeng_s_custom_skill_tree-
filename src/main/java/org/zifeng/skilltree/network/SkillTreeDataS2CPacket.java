@@ -116,17 +116,31 @@ public class SkillTreeDataS2CPacket {
         return new SkillTreeDataS2CPacket(skillPoints, learnedSkills, toggles, activeLevels, auraEnabled, auraTargetModes, lootVacuumBind, weatherMode, stickToolOn, stickToolMode, operZones, protectZones);
     }
 
-    /** 从玩家技能记录构建数据包（统一便捷入口） */
+    /**
+     * 从玩家技能记录构建数据包（统一便捷入口）。
+     * <p><b>⚠️ 2026-09-10 修复（严重）：所有集合必须【深拷贝快照】。</b>
+     * 原因：{@code record.getXxx()} 返回的是 {@code Collections.unmodifiableMap(...)} 的
+     * <b>视图</b>而非拷贝；而本包 encode 在 <b>Netty 网络线程</b> 执行，服务端线程同时在改
+     * 底层 HashMap（学技能/加点/切开关）→ 遍历时抛 {@code ConcurrentModificationException}
+     * → 编码失败 → <b>玩家被踢下线</b>。
+     */
     public static SkillTreeDataS2CPacket from(org.zifeng.skilltree.data.PlayerSkillRecord record) {
         // ⚠️ 2026-08-15 需求：光环状态只跟伤害光环（开关分离——速度只加速不决定是否攻击）
         boolean auraOn = record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.AURA_DAMAGE) > 0
                 && record.isEnabled(org.zifeng.skilltree.skill.Skills.AURA_DAMAGE);
-        return new SkillTreeDataS2CPacket(record.getSkillPoints(), record.getLearnedSkills(), record.getToggles(),
-                record.getActiveLevels(), auraOn, record.getAuraTargetModes(), record.hasLootVacuumBind()
+        return new SkillTreeDataS2CPacket(record.getSkillPoints(),
+                new java.util.HashMap<>(record.getLearnedSkills()),
+                new java.util.HashMap<>(record.getToggles()),
+                new java.util.HashMap<>(record.getActiveLevels()),
+                auraOn,
+                new java.util.HashMap<>(record.getAuraTargetModes()),
+                record.hasLootVacuumBind()
                         ? record.getLootVacuumDim() + "|" + record.getLootVacuumName() + "|" + record.getLootVacuumX()
                         + "|" + record.getLootVacuumY() + "|" + record.getLootVacuumZ()
-                        : null, record.getWeatherMode(), record.isStickToolOn(), record.getStickToolMode(),
-                        record.getOperZones(), record.getProtectZones());
+                        : null,
+                record.getWeatherMode(), record.isStickToolOn(), record.getStickToolMode(),
+                new java.util.HashMap<>(record.getOperZones()),
+                new java.util.ArrayList<>(record.getProtectZones()));
     }
 
     public static void handle(SkillTreeDataS2CPacket packet, Supplier<NetworkEvent.Context> ctxSupplier) {

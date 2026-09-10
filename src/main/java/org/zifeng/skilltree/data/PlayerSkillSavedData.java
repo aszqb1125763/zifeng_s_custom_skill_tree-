@@ -37,6 +37,11 @@ public class PlayerSkillSavedData extends SavedData {
         return players.get(uuid);
     }
 
+    /** 已存档的玩家记录数（⚠️ 临时诊断用：排查“技能不生效”时验证数据是否正确加载） */
+    public int playerCount() {
+        return players.size();
+    }
+
     public void bindMachine(String machineKey, UUID owner) {
         if (machineKey == null || machineKey.isBlank() || owner == null) {
             return;
@@ -59,12 +64,28 @@ public class PlayerSkillSavedData extends SavedData {
     private static volatile PlayerSkillSavedData cachedData;
 
     public static PlayerSkillSavedData get(ServerLevel level) {
-        net.minecraft.server.MinecraftServer server = level.getServer();
+        net.minecraft.server.MinecraftServer server = level != null ? level.getServer() : null;
+        if (server == null) {
+            // ⚠️ 2026-09-10 防御：登出瞬间 / level 未挂服务器（多模组环境时序不可控）
+            //    → 返回临时实例，绝不 NPE 崩玩家（数据不落盘，仅本次调用兜底）
+            return new PlayerSkillSavedData();
+        }
         PlayerSkillSavedData cached = cachedData;
         if (cached != null && cachedServer == server) {
             return cached;
         }
         ServerLevel overworld = server.overworld();
+        if (overworld == null) {
+            // ⚠️ 2026-09-10 防御：原版保证主世界存在（缺失服务器会直接启动失败），
+            //    此处仅为极端情况兜底——降级到第一个可用维度，再不行返回临时实例。
+            for (ServerLevel l : server.getAllLevels()) {
+                overworld = l;
+                break;
+            }
+            if (overworld == null) {
+                return new PlayerSkillSavedData();
+            }
+        }
         // 1.20.1 computeIfAbsent(Function<CompoundTag,T>, Supplier<T>, String)（1.21 才是 Factory 双参）
         PlayerSkillSavedData data = overworld.getDataStorage()
                 .computeIfAbsent(PlayerSkillSavedData::load, PlayerSkillSavedData::new, DATA_NAME);

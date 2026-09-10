@@ -19,7 +19,9 @@ public class MagnetExclusionS2CPacket {
     private final List<MagnetExclusionZone> zones;
 
     public MagnetExclusionS2CPacket(List<MagnetExclusionZone> zones) {
-        this.zones = zones;
+        // ⚠️ 2026-09-10 修复：拷贝为不可变快照。传入的可能是 SavedData 的 unmodifiableList 视图，
+        //    而 encode 在网络线程执行、服务端线程同时在增删屏蔽区 → 遍历时 CME → 编码失败 → 玩家被踢。
+        this.zones = List.copyOf(zones);
     }
 
     public void encode(FriendlyByteBuf buf) {
