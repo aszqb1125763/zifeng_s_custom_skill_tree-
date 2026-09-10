@@ -6,14 +6,16 @@ import net.minecraft.client.gui.screens.Screen;
 /**
  * HUD 调整子界面（2026-09-01 子界面系统）：
  * <p>悬浮在玩家屏幕中间的不透明面板，用于调整技能点 HUD 的显示与位置。
- * <p>行1：HUD 开关；行2：X 位置（左/右箭头 + 滚轮）；行3：Y 位置；行4：重置归零。
+ * <p>行1：HUD 开关；行2：X 位置（左/右箭头 + 滚轮）；行3：Y 位置；
+ * 行4：真实血量数字开关；行5：伤害吸收数字开关（2026-09-11）；
+ * 行6：护甲数字开关；行7：满值数字开关（三数字共用，默认关）；行8：重置归零。
  * <p>步进与技能点切换一致：普通=1，Shift=10，Ctrl=100。
  */
 public class HudAdjustSubScreen extends SkillSubScreen {
     /** 面板宽 */
     private static final int PANEL_W = 220;
-    /** 面板高 */
-    private static final int PANEL_H = 130;
+    /** 面板高（2026-09-11：4 行 → 8 行，+4×22） */
+    private static final int PANEL_H = 218;
     /** 行高 */
     private static final int ROW_H = 18;
     /** 行起始 y（标题栏下方） */
@@ -45,7 +47,7 @@ public class HudAdjustSubScreen extends SkillSubScreen {
         renderRows(gui, mouseX, mouseY);
     }
 
-    /** 渲染 4 行控制：开关 / X / Y / 重置 */
+    /** 渲染 8 行控制：开关 / X / Y / 血量数字 / 吸收数字 / 护甲数字 / 满值数字 / 重置 */
     private void renderRows(GuiGraphics gui, int mouseX, int mouseY) {
         var overlay = net.minecraft.client.renderer.RenderType.guiOverlay();
         // 行1：开关
@@ -60,8 +62,40 @@ public class HudAdjustSubScreen extends SkillSubScreen {
         drawPosRow(gui, 1, t("hud_x"), org.zifeng.skilltree.client.SkillPointHudRenderer.getHudOffsetX(), mouseX, mouseY);
         // 行3：Y 位置
         drawPosRow(gui, 2, t("hud_y"), org.zifeng.skilltree.client.SkillPointHudRenderer.getHudOffsetY(), mouseX, mouseY);
-        // 行4：重置按钮（红色系）
-        drawRow(gui, 3, t("hud_reset"), 0xFFFF5555, 0xFF3A2A2A, 0xFFDD5555, mouseX, mouseY);
+        // 行4：真实血量数字开关（2026-09-11）
+        boolean hpNum = org.zifeng.skilltree.client.SkillKeyBinds.isHudHealthNumber();
+        drawRow(gui, 3,
+                t("hud_health_number") + ": " + (hpNum ? t("hud_on") : t("hud_off")),
+                hpNum ? 0xFF55FF55 : 0xFFFF5555,
+                hpNum ? 0xFF2A4A2A : 0xFF4A2A2A,
+                hpNum ? 0xFF55FF55 : 0xFFFF5555,
+                mouseX, mouseY);
+        // 行5：伤害吸收数字开关（2026-09-11）
+        boolean absNum = org.zifeng.skilltree.client.SkillKeyBinds.isHudAbsorptionNumber();
+        drawRow(gui, 4,
+                t("hud_absorption_number") + ": " + (absNum ? t("hud_on") : t("hud_off")),
+                absNum ? 0xFF55FF55 : 0xFFFF5555,
+                absNum ? 0xFF2A4A2A : 0xFF4A2A2A,
+                absNum ? 0xFF55FF55 : 0xFFFF5555,
+                mouseX, mouseY);
+        // 行6：护甲数字开关（2026-09-11）
+        boolean armorNum = org.zifeng.skilltree.client.SkillKeyBinds.isHudArmorNumber();
+        drawRow(gui, 5,
+                t("hud_armor_number") + ": " + (armorNum ? t("hud_on") : t("hud_off")),
+                armorNum ? 0xFF55FF55 : 0xFFFF5555,
+                armorNum ? 0xFF2A4A2A : 0xFF4A2A2A,
+                armorNum ? 0xFF55FF55 : 0xFFFF5555,
+                mouseX, mouseY);
+        // 行7：满值数字开关（三数字共用，默认关）
+        boolean showMax = org.zifeng.skilltree.client.SkillKeyBinds.isHudShowMaxValue();
+        drawRow(gui, 6,
+                t("hud_show_max") + ": " + (showMax ? t("hud_on") : t("hud_off")),
+                showMax ? 0xFF55FF55 : 0xFFFF5555,
+                showMax ? 0xFF2A4A2A : 0xFF4A2A2A,
+                showMax ? 0xFF55FF55 : 0xFFFF5555,
+                mouseX, mouseY);
+        // 行8：重置按钮（红色系）
+        drawRow(gui, 7, t("hud_reset"), 0xFFFF5555, 0xFF3A2A2A, 0xFFDD5555, mouseX, mouseY);
         // 步进提示（右下角小字）
         gui.drawString(parent.font(), t("hud_step_hint"), panelX + PAD, panelY + panelH - 10, 0xFF888888);
     }
@@ -153,8 +187,32 @@ public class HudAdjustSubScreen extends SkillSubScreen {
             }
             return true;
         }
-        // 行4：重置
+        // 行4：血量数字开关
         if (rowHit(mouseX, mouseY, 3, x, w)) {
+            org.zifeng.skilltree.client.SkillKeyBinds.setHudHealthNumber(
+                    !org.zifeng.skilltree.client.SkillKeyBinds.isHudHealthNumber());
+            return true;
+        }
+        // 行5：吸收数字开关
+        if (rowHit(mouseX, mouseY, 4, x, w)) {
+            org.zifeng.skilltree.client.SkillKeyBinds.setHudAbsorptionNumber(
+                    !org.zifeng.skilltree.client.SkillKeyBinds.isHudAbsorptionNumber());
+            return true;
+        }
+        // 行6：护甲数字开关
+        if (rowHit(mouseX, mouseY, 5, x, w)) {
+            org.zifeng.skilltree.client.SkillKeyBinds.setHudArmorNumber(
+                    !org.zifeng.skilltree.client.SkillKeyBinds.isHudArmorNumber());
+            return true;
+        }
+        // 行7：满值数字开关（三数字共用）
+        if (rowHit(mouseX, mouseY, 6, x, w)) {
+            org.zifeng.skilltree.client.SkillKeyBinds.setHudShowMaxValue(
+                    !org.zifeng.skilltree.client.SkillKeyBinds.isHudShowMaxValue());
+            return true;
+        }
+        // 行8：重置
+        if (rowHit(mouseX, mouseY, 7, x, w)) {
             org.zifeng.skilltree.client.SkillPointHudRenderer.resetOffset();
             return true;
         }

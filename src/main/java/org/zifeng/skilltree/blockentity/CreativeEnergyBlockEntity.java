@@ -19,8 +19,16 @@ import org.zifeng.skilltree.init.ModBlockEntities;
 public class CreativeEnergyBlockEntity extends BlockEntity {
 
     private static final int OUTPUT_PER_TICK = Integer.MAX_VALUE;
-    /** 每方向每 tick 循环灌上限：100000 次 × 21.4亿 ≈ 2140 万亿 FE/t（等效 64 位无限输出） */
+    /** 每方向每 tick 循环灌上限（备选安全上限，防止无限循环） */
     private static final int MAX_LOOPS_PER_TICK = 100_000;
+    /**
+     * 单方向单 tick 时间预算（纳秒）。
+     * <p>⚠️ 2026-09-11 性能修复：原实现硬跑 {@code MAX_LOOPS_PER_TICK} 次循环，
+     * 目标无速率限制时每个方块每 tick 最多 6×100000 = <b>60 万次</b>跨模组虚接口调用，
+     * 多方块叠加直接卡服务器。改为「循环到目标拒绝 <b>或</b> 超出本预算为止」：
+     * 正常目标（有速率限制/会灌满）行为完全不变，极端情况也不再挂住 tick。
+     */
+    private static final long DIR_TIME_BUDGET_NANOS = 1_000_000L; // 1ms/方向，6 方向共 6ms 上限
 
     private final IEnergyStorage energyStorage = new IEnergyStorage() {
         @Override
@@ -73,10 +81,15 @@ public class CreativeEnergyBlockEntity extends BlockEntity {
             if (cap != null && cap.canReceive()) {
                 // 64 位无限输出：单次 int 接口上限 21.4 亿 → 循环灌直到目标拒绝（满/速率限制）。
                 // 目标有速率限制时第一次就返回剩余额度、第二次返回 0 立即 break（不浪费）；
-                // 目标无限制（如转换机开无限制输入）时持续灌，每 tick 累积远超 21.4 亿。
+                // 目标无限制（如转换机开无限制输入）时持续灌，累积远超 21.4 亿。
+                // ⚠️ 2026-09-11：加时间预算，避免无限制目标把 tick 卡死（见常量注释）。
+                long deadline = System.nanoTime() + DIR_TIME_BUDGET_NANOS;
                 for (int i = 0; i < MAX_LOOPS_PER_TICK; i++) {
                     if (cap.receiveEnergy(OUTPUT_PER_TICK, false) <= 0) {
                         break; // 目标已满 / 速率限制拒绝
+                    }
+                    if (System.nanoTime() >= deadline) {
+                        break; // 本方向时间预算用尽，让出 tick（下一 tick 继续灌）
                     }
                 }
             }

@@ -109,14 +109,29 @@ public class PlayerRingLayer extends RenderLayer<AbstractClientPlayer, PlayerMod
         }
     }
 
+    /**
+     * 预计算的分段角度 sin/cos（2026-09-11 性能优化）。
+     * <p>环带顶点的角度<b>只与段索引 i 有关、与帧无关</b>，原实现每帧对每个被渲染的
+     * 玩家重复计算 8 个环带 × 48 段 × 2 组 sin/cos = <b>768 次三角函数</b>。
+     * 改为类加载时一次性算好（用 double 保留与原实现完全相同的精度）。
+     */
+    private static final double[] SEG_SIN = new double[SEGMENTS + 1];
+    private static final double[] SEG_COS = new double[SEGMENTS + 1];
+
+    static {
+        for (int i = 0; i <= SEGMENTS; i++) {
+            double a = i * Math.PI * 2 / SEGMENTS;
+            SEG_SIN[i] = Math.sin(a);
+            SEG_COS[i] = Math.cos(a);
+        }
+    }
+
     /** 星空环带（只有位置，末地传送门 shader 上色） */
     private static void drawRingBand(VertexConsumer consumer, Matrix4f matrix, float py,
                                      float inner, float outer) {
         for (int i = 0; i < SEGMENTS; i++) {
-            double a0 = i * Math.PI * 2 / SEGMENTS;
-            double a1 = (i + 1) * Math.PI * 2 / SEGMENTS;
-            double sin0 = Math.sin(a0), cos0 = Math.cos(a0);
-            double sin1 = Math.sin(a1), cos1 = Math.cos(a1);
+            double sin0 = SEG_SIN[i], cos0 = SEG_COS[i];
+            double sin1 = SEG_SIN[i + 1], cos1 = SEG_COS[i + 1];
             consumer.addVertex(matrix, (float) (cos0 * inner), py, (float) (sin0 * inner));
             consumer.addVertex(matrix, (float) (cos0 * outer), py, (float) (sin0 * outer));
             consumer.addVertex(matrix, (float) (cos1 * outer), py, (float) (sin1 * outer));
@@ -128,10 +143,8 @@ public class PlayerRingLayer extends RenderLayer<AbstractClientPlayer, PlayerMod
     private static void drawRingBandColor(VertexConsumer consumer, Matrix4f matrix, float py,
                                           float inner, float outer, int r, int g, int b, int a) {
         for (int i = 0; i < SEGMENTS; i++) {
-            double a0 = i * Math.PI * 2 / SEGMENTS;
-            double a1 = (i + 1) * Math.PI * 2 / SEGMENTS;
-            double sin0 = Math.sin(a0), cos0 = Math.cos(a0);
-            double sin1 = Math.sin(a1), cos1 = Math.cos(a1);
+            double sin0 = SEG_SIN[i], cos0 = SEG_COS[i];
+            double sin1 = SEG_SIN[i + 1], cos1 = SEG_COS[i + 1];
             consumer.addVertex(matrix, (float) (cos0 * inner), py, (float) (sin0 * inner)).setColor(r, g, b, a);
             consumer.addVertex(matrix, (float) (cos0 * outer), py, (float) (sin0 * outer)).setColor(r, g, b, a);
             consumer.addVertex(matrix, (float) (cos1 * outer), py, (float) (sin1 * outer)).setColor(r, g, b, a);

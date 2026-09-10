@@ -3,7 +3,6 @@ package org.zifeng.skilltree.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.client.event.RenderGuiEvent;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -47,6 +46,11 @@ public class SkillPointHudRenderer {
     /** 基准点 */
     private static final int BASE_X = 4 + 10;
     private static final int BASE_Y_OFFSET = -115 + 70 + 15;
+
+    /** 技能点 HUD 的 GUI 层 ID（2026-09-11：改用 layered draw，避免被其他 HUD 模组覆盖） */
+    private static final net.minecraft.resources.ResourceLocation LAYER_ID =
+            net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
+                    org.zifeng.skilltree.SkillTreeMod.MOD_ID, "skill_point_hud");
 
     /** 行消失时长：1 秒（馈赠/通用） */
     private static final long LIFETIME_MS = 1000;
@@ -175,8 +179,19 @@ public class SkillPointHudRenderer {
         org.zifeng.skilltree.client.SkillKeyBinds.setHudOffset(hudOffsetX, hudOffsetY);
     }
 
-    @SubscribeEvent
-    public static void onRenderGui(RenderGuiEvent.Post event) {
+    /**
+     * MOD 总线：把技能点 HUD 注册为一个 GUI 层（2026-09-11）。
+     * <p><b>层级</b>：注册在 {@link net.neoforged.neoforge.client.gui.VanillaGuiLayers#EXPERIENCE_LEVEL}
+     * （第 13 层）之上——高于所有血条相关层与 ClassicBar 这类血条 mod，
+     * 但<b>低于聊天栏</b>（{@code CHAT} 第 22 层），符合"不超过聊天栏"的要求。
+     * <p>⚠️ 之前用 {@code RenderGuiEvent.Post} 会被其他用 layered draw 的 HUD 模组覆盖。
+     */
+    public static void registerGuiLayers(net.neoforged.neoforge.client.event.RegisterGuiLayersEvent event) {
+        event.registerAbove(net.neoforged.neoforge.client.gui.VanillaGuiLayers.EXPERIENCE_LEVEL, LAYER_ID,
+                (guiGraphics, deltaTracker) -> renderHud(guiGraphics));
+    }
+
+    public static void renderHud(GuiGraphics gui) {
         if (!hudVisible) {
             return;
         }
@@ -188,7 +203,6 @@ public class SkillPointHudRenderer {
         if (mc.player.isSpectator()) {
             return;
         }
-        GuiGraphics gui = event.getGuiGraphics();
         int height = mc.getWindow().getGuiScaledHeight();
         int x = BASE_X + hudOffsetX;
         int totalY = height + BASE_Y_OFFSET + hudOffsetY;

@@ -221,19 +221,12 @@ public class ClientTreasureEvents {
     }
 
     /**
-     * Iris 光影软检测（无 Iris 时返回 false）：光影激活且处于阴影 pass → 跳过渲染。
-     * 反射调用 IrisApi（避免编译期依赖 iris jar）。
+     * Iris 光影软检测（无 Iris 时返回 false）：阴影 pass → 跳过渲染。
+     * <p>⚠️ 2026-09-11：改用共享 {@link IrisCompat}。原实现<b>完全无缓存</b>，
+     * 每帧执行 {@code Class.forName} + 3 次 {@code getMethod}（每次返回新 Method 副本）；
+     * 未装 Iris 时每帧抛 ClassNotFoundException。
      */
     private static boolean isIrisShadowPass() {
-        try {
-            Class<?> irisApiCls = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
-            Object instance = irisApiCls.getMethod("getInstance").invoke(null);
-            if (!(Boolean) irisApiCls.getMethod("isShaderPackInUse").invoke(instance)) {
-                return false; // 无光影激活 → 正常渲染
-            }
-            return (Boolean) irisApiCls.getMethod("isRenderingShadowPass").invoke(instance);
-        } catch (Throwable ignored) {
-            return false; // 无 Iris 或 API 变动 → 正常渲染
-        }
+        return IrisCompat.isShadowPass();
     }
 }

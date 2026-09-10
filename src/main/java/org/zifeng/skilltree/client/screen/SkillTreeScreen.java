@@ -1532,9 +1532,9 @@ public class SkillTreeScreen extends Screen {
         java.util.List<String[]> rows = new java.util.ArrayList<>();
         // 分隔标题行（灰色小字，按功能分组）
         rows.add(new String[]{"—— " + t("panel_cat_combat") + " ——", "", "#777777"});
-        addRow(rows, t("panel_atk_dmg"), SkillEffects.getComputedValue(player, Attributes.ATTACK_DAMAGE, rec), "%.1f");
-        addRow(rows, t("panel_atk_speed"), SkillEffects.getComputedValue(player, Attributes.ATTACK_SPEED, rec), "%.2f");
-        addRow(rows, t("panel_knockback"), SkillEffects.getComputedValue(player, Attributes.ATTACK_KNOCKBACK, rec), "%.1f");
+        addRow(rows, t("panel_atk_dmg"), attrVal(player, Attributes.ATTACK_DAMAGE, rec), "%.1f");
+        addRow(rows, t("panel_atk_speed"), attrVal(player, Attributes.ATTACK_SPEED, rec), "%.2f");
+        addRow(rows, t("panel_knockback"), attrVal(player, Attributes.ATTACK_KNOCKBACK, rec), "%.1f");
         addRow(rows, t("panel_crit_chance"), SkillEffects.getCritChance(rec) * 100, "%.0f%%");
         addRow(rows, t("panel_crit_dmg"), SkillEffects.getCritMultiplier(rec), "%.1f" + t("unit_x"));
         addRow(rows, t("panel_armor_pen"), SkillEffects.getArmorPenPercent(rec) * 100, "%.0f%%");
@@ -1542,17 +1542,17 @@ public class SkillTreeScreen extends Screen {
         addRow(rows, t("panel_thorns"), SkillEffects.getThornsDamage(rec), "%.1f");
 
         rows.add(new String[]{"—— " + t("panel_cat_defense") + " ——", "", "#777777"});
-        addRow(rows, t("panel_hp"), SkillEffects.getComputedValue(player, Attributes.MAX_HEALTH, rec), "%.0f");
-        addRow(rows, t("panel_armor"), SkillEffects.getComputedValue(player, Attributes.ARMOR, rec), "%.1f");
-        addRow(rows, t("panel_toughness"), SkillEffects.getComputedValue(player, Attributes.ARMOR_TOUGHNESS, rec), "%.1f");
+        addRow(rows, t("panel_hp"), attrVal(player, Attributes.MAX_HEALTH, rec), "%.0f");
+        addRow(rows, t("panel_armor"), attrVal(player, Attributes.ARMOR, rec), "%.1f");
+        addRow(rows, t("panel_toughness"), attrVal(player, Attributes.ARMOR_TOUGHNESS, rec), "%.1f");
         // 物理减伤（自定义属性）：护甲减伤 80% 封顶后继续叠的独立减伤层
-        addRow(rows, t("panel_dmg_reduce"), SkillEffects.getComputedValue(player, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION, rec) * 100, "%.0f%%");
+        addRow(rows, t("panel_dmg_reduce"), attrVal(player, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION, rec) * 100, "%.0f%%");
         // 全能精通：全伤害减免（对所有伤害类型生效，含真伤/混沌/指令）
         boolean masterOn = rec.getLearnedPoints(Skills.ULT_MASTER) > 0 && rec.isEnabled(Skills.ULT_MASTER);
         if (masterOn) {
             addRow(rows, t("panel_all_reduce"), org.zifeng.skilltree.Config.MASTER_DAMAGE_REDUCTION.get() * 100, "%.0f%%");
         }
-        addRow(rows, t("panel_kb_resist"), SkillEffects.getComputedValue(player, Attributes.KNOCKBACK_RESISTANCE, rec), "%.1f");
+        addRow(rows, t("panel_kb_resist"), attrVal(player, Attributes.KNOCKBACK_RESISTANCE, rec), "%.1f");
         // 耐久减免：未满显示百分比，封顶（100%）显示"工具不毁"
         double durReduction = SkillEffects.getToolDurabilityReduction(rec);
         if (durReduction >= 1.0) {
@@ -1563,21 +1563,21 @@ public class SkillTreeScreen extends Screen {
 
         rows.add(new String[]{"—— " + t("panel_cat_movement") + " ——", "", "#777777"});
         // 速度显示为每秒方块数：移速 0.1→4.317方/秒，飞行 0.05→10.8方/秒，游泳→3.35方/秒
-        addRow(rows, t("panel_move_speed"), SkillEffects.getComputedValue(player, Attributes.MOVEMENT_SPEED, rec) * 43.17, "%.2f" + t("unit_bps"));
+        addRow(rows, t("panel_move_speed"), attrVal(player, Attributes.MOVEMENT_SPEED, rec) * 43.17, "%.2f" + t("unit_bps"));
         // 飞速：实际飞行速度 = abilities.flyingSpeed（每 tick 由 FLYING_SPEED 属性÷8 同步）；0.05 → 10.8 方/秒
         addRow(rows, t("panel_fly_speed"), player.getAbilities().getFlyingSpeed() * 216, "%.2f" + t("unit_bps"));
         // 游泳：SWIM_SPEED 默认 1.0 → 原版游泳 ≈ 3.35 方/秒
         double swim = player.getAttribute(net.neoforged.neoforge.common.NeoForgeMod.SWIM_SPEED) != null
-                ? SkillEffects.getComputedValue(player, net.neoforged.neoforge.common.NeoForgeMod.SWIM_SPEED, rec) * 3.35 : 0;
+                ? attrVal(player, net.neoforged.neoforge.common.NeoForgeMod.SWIM_SPEED, rec) * 3.35 : 0;
         addRow(rows, t("panel_swim"), swim, "%.2f" + t("unit_bps"));
         // 跳跃高度（格）= JUMP_STRENGTH² × 6.25（无药水时）
-        double jump = SkillEffects.getComputedValue(player, Attributes.JUMP_STRENGTH, rec);
+        double jump = attrVal(player, Attributes.JUMP_STRENGTH, rec);
         addRow(rows, t("panel_jump"), jump * jump * 6.25, "%.2f" + t("unit_block"));
 
         rows.add(new String[]{"—— " + t("panel_cat_production") + " ——", "", "#777777"});
         // 挖速用原版 Attributes.MINING_EFFICIENCY（NeoForge 合入的加数属性，直接反映实际挖掘加速）
-        addRow(rows, t("panel_mining"), SkillEffects.getComputedValue(player, Attributes.MINING_EFFICIENCY, rec), "%.1f");
-        addRow(rows, t("panel_luck"), SkillEffects.getComputedValue(player, Attributes.LUCK, rec), "%.1f");
+        addRow(rows, t("panel_mining"), attrVal(player, Attributes.MINING_EFFICIENCY, rec), "%.1f");
+        addRow(rows, t("panel_luck"), attrVal(player, Attributes.LUCK, rec), "%.1f");
         addRow(rows, t("panel_regen"), SkillEffects.getRegenPerSecond(rec), "%.1f");
         addRow(rows, t("panel_mob_drop"), SkillEffects.getMobDropMultiplier(rec), "%.2f" + t("unit_x"));
         addRow(rows, t("panel_block_drop"), SkillEffects.getBlockDropMultiplier(rec), "%.2f" + t("unit_x"));
@@ -1598,7 +1598,7 @@ public class SkillTreeScreen extends Screen {
         if (hasAnyAura) {
             rows.add(new String[]{"—— " + t("panel_cat_aura") + " ——", "", "#777777"});
             if (hasAuraDamage) {
-                addRow(rows, t("panel_aura_dmg"), SkillEffects.getComputedValue(player, Attributes.ATTACK_DAMAGE, rec), "%.1f");
+                addRow(rows, t("panel_aura_dmg"), attrVal(player, Attributes.ATTACK_DAMAGE, rec), "%.1f");
             }
             if (hasAuraSpeed) {
                 // 光环攻击频率 = 基础间隔(10秒) × 0.9^光环速度等级（乘法递减）
@@ -1850,6 +1850,29 @@ public class SkillTreeScreen extends Screen {
 
     private void addRow(java.util.List<String[]> rows, String name, double value, String fmt) {
         rows.add(new String[]{name, String.format(fmt, value)});
+    }
+
+    /**
+     * 属性值读取（数据源可切换，2026-09-11）：
+     * <ul>
+     *   <li>{@code Config.PANEL_USE_VANILLA_ATTR = true}（默认）：直接读<b>原版实时属性值</b>
+     *       （{@code AttributeInstance.getValue()}）——自动包含装备 / 药水 / 其他模组的属性修饰符</li>
+     *   <li>{@code false}：旧行为，仅按技能内部计算（不含外部修饰符）</li>
+     * </ul>
+     * 客户端属性值由 NeoForge 的 {@code ClientboundUpdateAttributesPacket} 同步，因此能读到服务端技能加成。
+     * 若某个属性未被同步，读到的会是基础值 → 可用配置项切回旧行为。
+     */
+    private double attrVal(net.minecraft.world.entity.player.Player player,
+                           net.minecraft.core.Holder<net.minecraft.world.entity.ai.attributes.Attribute> attribute,
+                           org.zifeng.skilltree.data.PlayerSkillRecord rec) {
+        if (org.zifeng.skilltree.Config.PANEL_USE_VANILLA_ATTR.get()) {
+            net.minecraft.world.entity.ai.attributes.AttributeInstance inst = player.getAttribute(attribute);
+            if (inst != null) {
+                return inst.getValue();
+            }
+        }
+        // 回退：技能内部计算（旧行为）。⚠️ 必须直调 SkillEffects，不能递归调用本方法。
+        return SkillEffects.getComputedValue(player, attribute, rec);
     }
 
     /** 解析 #RRGGBB 颜色字符串 → ARGB int（默认白色） */

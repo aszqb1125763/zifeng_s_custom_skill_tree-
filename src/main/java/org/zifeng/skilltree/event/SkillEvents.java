@@ -72,17 +72,32 @@ public class SkillEvents {
                 org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                         new org.zifeng.skilltree.network.MagnetExclusionS2CPacket(zoneData.getZones()));
             }
-            // 进服欢迎推送（2026-08-29）：模组版本 + 简短简介 + 作者署名（中文名不翻译）+ Modern UI 推荐
-            // 仅推送给真玩家（ServerPlayer），机器 FakePlayer 不推送
-            String version = net.neoforged.fml.ModList.get().getModContainerById(org.zifeng.skilltree.SkillTreeMod.MOD_ID)
-                    .map(c -> c.getModInfo().getVersion().toString()).orElse("?");
-            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                    "chat.zifeng_s_custom_skill_tree.welcome_intro", version));
-            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                    "chat.zifeng_s_custom_skill_tree.welcome_author"));
-            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                    "chat.zifeng_s_custom_skill_tree.welcome_modern_ui"));
+            // 注：进服欢迎推送（模组版本/作者/Modern UI 推荐）已移至
+            //     {@link #onPlayerLoggedIn}——原先放在本事件里会【每次切换维度都重复刷屏】。
         }
+    }
+
+    /**
+     * 进服欢迎推送（2026-08-29；<b>2026-09-11 移到本事件</b>）：模组版本 + 简短简介 +
+     * 作者署名（中文名不翻译）+ Modern UI 推荐。
+     * <p>⚠️ <b>为什么不能用 {@code EntityJoinLevelEvent}</b>：该事件在玩家
+     * <b>每次跨维度传送</b>时也会触发（玩家实体重新加入新维度 level）→ 提示重复刷屏。
+     * 改用 {@link PlayerEvent.PlayerLoggedInEvent}：只在真正登录/进入世界时触发一次，
+     * 切换维度、死亡重生（同一实体）均<b>不再触发</b>。
+     */
+    @SubscribeEvent
+    public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return; // 仅真玩家（排除机器 FakePlayer 等）
+        }
+        String version = net.neoforged.fml.ModList.get().getModContainerById(org.zifeng.skilltree.SkillTreeMod.MOD_ID)
+                .map(c -> c.getModInfo().getVersion().toString()).orElse("?");
+        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                "chat.zifeng_s_custom_skill_tree.welcome_intro", version));
+        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                "chat.zifeng_s_custom_skill_tree.welcome_author"));
+        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                "chat.zifeng_s_custom_skill_tree.welcome_modern_ui"));
     }
 
     /**

@@ -269,7 +269,13 @@ public final class ZoneSkillEvents {
         java.util.List<ServerPlayer> online = server != null
                 ? server.getPlayerList().getPlayers() : level.players();
         for (ServerPlayer p : online) {
-            PlayerSkillRecord rec = data.getOrCreatePlayer(p.getUUID());
+            // ⚠️ 2026-09-11 性能修复：改用只读 getPlayer（不创建）——
+            // 原 getOrCreatePlayer 会为【从没学过技能的玩家】创建空记录，
+            // 而本方法每次光环攻击触发都跑一遍全服玩家（高频），会白建记录 + 白写存档。
+            PlayerSkillRecord rec = data.getPlayer(p.getUUID());
+            if (rec == null) {
+                continue; // 无技能数据 → 不可能有防护区，跳过
+            }
             if (rec.getLearnedPoints(Skills.MACHINE_ZONE_PROTECT) > 0
                     && rec.isEnabled(Skills.MACHINE_ZONE_PROTECT)
                     && !rec.getProtectZones().isEmpty()) {

@@ -6,10 +6,13 @@
   "mixins": [
     "RangedAttributeMixin",
     "ItemStackMixin",
-    "PlayerRendererMixin",
     "BlockStateMixin",
-    "EntityFireImmuneMixin",
-    "FogRendererMixin"
+    "EntityFireImmuneMixin"
+  ],
+  "client": [
+    "GuiHeartsCompressMixin",
+    "FogRendererMixin",
+    "PlayerRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 0

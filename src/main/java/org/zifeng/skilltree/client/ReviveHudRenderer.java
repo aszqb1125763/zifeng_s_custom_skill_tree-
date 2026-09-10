@@ -43,6 +43,13 @@ public class ReviveHudRenderer {
     }
 
     /**
+     * 不死图腾图标（2026-09-11 性能修复：缓存共享实例）。
+     * <p>原实现每帧 {@code new ItemStack(...)} 分配新对象（HUD 每帧渲染 ≈ 每秒 60 次纯浪费）。
+     * 这里只用于 {@code renderItem} 只读渲染，不改 stack 内容，故共享安全。
+     */
+    private static final ItemStack TOTEM_ICON = new ItemStack(Items.TOTEM_OF_UNDYING);
+
+    /**
      * 由技能点 HUD 模块调用：在 (x, y) 处绘制不死图腾图标 + 冷却倒计时 / 就绪提示。
      * 模块已统一处理 hudVisible / 旁观 / 开界面隐藏，此处只画内容。
      */
@@ -51,8 +58,8 @@ public class ReviveHudRenderer {
             return; // 未学/已重置/已关闭：隐藏
         }
         Minecraft mc = Minecraft.getInstance();
-        // 不死图腾图标 16×16
-        gui.renderItem(new ItemStack(Items.TOTEM_OF_UNDYING), x, y);
+        // 不死图腾图标 16×16（使用缓存的共享实例，避免每帧分配）
+        gui.renderItem(TOTEM_ICON, x, y);
         if (cooldownRemainingTicks > 0) {
             // 冷却中：暗色遮罩 + 剩余秒数
             gui.fill(x, y, x + 16, y + 16, 0x88000000);

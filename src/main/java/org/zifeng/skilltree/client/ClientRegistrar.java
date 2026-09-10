@@ -24,8 +24,12 @@ public class ClientRegistrar {
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientFlightEvents.class);
         // 寻宝大师：64格内战利品容器/考古点发光轮廓（2026-08-27，RenderLevelStageEvent）
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientTreasureEvents.class);
-        // 技能点变动左下角 HUD 提示（2026-08-25：不刷聊天栏，显示在聊天栏下方）
-        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.SkillPointHudRenderer.class);
+        // 技能点 HUD（2026-09-11）：改用 GUI 层注册（MOD 总线），层级在聊天栏之下、血条类层之上。
+        // ⚠️ 必须从 GAME 总线的 register(...) 中移除——该类已无 @SubscribeEvent 方法，
+        //    NeoForge 会直接崩："has no @SubscribeEvent methods, but register was called anyway"。
+        modEventBus.addListener(org.zifeng.skilltree.client.SkillPointHudRenderer::registerGuiLayers);
+        // 真实血量数字（2026-09-11）：同样改用 GUI 层注册，置于最顶层，避免被其他血条模组（layered draw）覆盖
+        modEventBus.addListener(org.zifeng.skilltree.client.HealthNumberRenderer::registerGuiLayers);
         // 磁铁屏蔽区：木棍左键选区 + 选区渲染（2026-09-07）
         NeoForge.EVENT_BUS.register(MagnetExclusionInputHandler.class);
         NeoForge.EVENT_BUS.register(MagnetExclusionRenderer.class);
