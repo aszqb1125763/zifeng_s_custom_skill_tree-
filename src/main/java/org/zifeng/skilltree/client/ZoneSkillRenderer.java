@@ -235,27 +235,12 @@ public final class ZoneSkillRenderer {
         buf.vertex(matrix, x1, y1, z0).color(r, g, b, a).endVertex();
     }
 
-    /** Iris 光影软检测（无 Iris 时返回 false）：光影激活且处于阴影 pass → 跳过渲染。 */
-    private static java.lang.reflect.Method IRIS_GET_INSTANCE, IRIS_IS_SHADER_IN_USE, IRIS_IS_SHADOW_PASS;
-
+    /**
+     * Iris 光影软检测（无 Iris 时返回 false）：阴影 pass → 跳过渲染。
+     * <p>⚠️ 2026-09-11：改用共享 {@link IrisCompat}（修复「未装 Iris 时每帧抛
+     * ClassNotFoundException」，并消除重复实现）。
+     */
     private static boolean isIrisShadowPass() {
-        try {
-            if (IRIS_GET_INSTANCE == null) {
-                Class<?> irisApiCls = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
-                IRIS_GET_INSTANCE = irisApiCls.getMethod("getInstance");
-                IRIS_IS_SHADER_IN_USE = irisApiCls.getMethod("isShaderPackInUse");
-                IRIS_IS_SHADOW_PASS = irisApiCls.getMethod("isRenderingShadowPass");
-            }
-            Object instance = IRIS_GET_INSTANCE.invoke(null);
-            if (instance == null) {
-                return false;
-            }
-            if (!(Boolean) IRIS_IS_SHADER_IN_USE.invoke(instance)) {
-                return false; // 未开光影
-            }
-            return (Boolean) IRIS_IS_SHADOW_PASS.invoke(instance); // 阴影 pass
-        } catch (Throwable t) {
-            return false; // 无 Iris：不跳
-        }
+        return IrisCompat.isShadowPass();
     }
 }

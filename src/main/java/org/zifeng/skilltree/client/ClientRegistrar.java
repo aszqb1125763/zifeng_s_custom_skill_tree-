@@ -31,6 +31,8 @@ public class ClientRegistrar {
         MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientTreasureEvents.class);
         // 技能点变动左下角 HUD 提示（2026-08-25：不刷聊天栏，显示在聊天栏下方）
         MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.SkillPointHudRenderer.class);
+        // 真实血量数字（2026-09-11：血条压缩后显示真实值；独立于血条渲染，兼容其他血条模组）
+        MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.HealthNumberRenderer.class);
         // 磁铁屏蔽区：木棍左键选区 + 选区渲染（2026-09-07）
         MinecraftForge.EVENT_BUS.register(MagnetExclusionInputHandler.class);
         MinecraftForge.EVENT_BUS.register(MagnetExclusionRenderer.class);

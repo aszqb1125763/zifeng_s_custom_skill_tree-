@@ -539,12 +539,20 @@ public class AuraEvents {
      * </ol>
      * 攻击者是玩家（attacker=player）→ DE 守卫本体也认（attackEntityPartFrom 要求攻击者是 Player）。
      */
+    /**
+     * DE 混沌伤害类型键（2026-09-11 性能优化：原本<b>每次调用都重建</b> ResourceKey +
+     * ResourceLocation；虚空秒杀/水晶连击对每个目标调用一次，刷怪塔场景 N 目标 = N 次重建）。
+     * 这是纯常量，静态初始化一次即可。
+     */
+    private static final net.minecraft.resources.ResourceKey<net.minecraft.world.damagesource.DamageType> DE_CHAOS_IMPLOSION_KEY =
+            net.minecraft.resources.ResourceKey.create(
+                    net.minecraft.core.registries.Registries.DAMAGE_TYPE,
+                    new net.minecraft.resources.ResourceLocation("draconicevolution", "chaos_implosion"));
+
     private static DamageSource buildChaosSource(ServerLevel level, Player player) {
         var registry = level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE);
         // 1. DE chaos_implosion（自带 chaotic 标签）
-        var deKey = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DAMAGE_TYPE,
-                new net.minecraft.resources.ResourceLocation("draconicevolution", "chaos_implosion"));
-        var deHolder = registry.getHolder(deKey).orElse(null);
+        var deHolder = registry.getHolder(DE_CHAOS_IMPLOSION_KEY).orElse(null);
         if (deHolder != null) {
             return new DamageSource(deHolder, player);
         }
@@ -565,17 +573,29 @@ public class AuraEvents {
      *   <li>超高血量（≥500）：大多数 Boss 特征（防御性兜底，覆盖其他模组 Boss）</li>
      * </ul>
      */
+    /**
+     * DE 守卫/水晶类名判定缓存（2026-09-11 性能优化）。
+     * <p>原实现每目标都调 {@code getClass().getName()}（分配新字符串）+ 多次 contains；
+     * 改为 {@link ClassValue} 按类缓存（每个类只算一次），且不变类名字符串到堆上。
+     */
+    private static final ClassValue<Boolean> DE_GUARDIAN_CLASS = new ClassValue<>() {
+        @Override
+        protected Boolean computeValue(Class<?> type) {
+            String name = type.getName();
+            return name.startsWith("com.brandon3055.draconicevolution.entity.")
+                    && (name.contains("DraconicGuardian") || name.contains("GuardianCrystal")
+                        || name.contains("ChaosGuardian") || name.contains("ChaosCrystal"));
+        }
+    };
+
     private static boolean isBossEntity(LivingEntity target) {
         // 1. 原版 Boss（末影龙/凋灵）
         if (target instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon
                 || target instanceof net.minecraft.world.entity.boss.wither.WitherBoss) {
             return true;
         }
-        // 2. DE 守卫/水晶（类名匹配，不依赖 DE 编译）
-        String name = target.getClass().getName();
-        if (name.startsWith("com.brandon3055.draconicevolution.entity.")
-                && (name.contains("DraconicGuardian") || name.contains("GuardianCrystal")
-                    || name.contains("ChaosGuardian") || name.contains("ChaosCrystal"))) {
+        // 2. DE 守卫/水晶（类名匹配，不依赖 DE 编译）—— 按类缓存，不每目标重算
+        if (DE_GUARDIAN_CLASS.get(target.getClass())) {
             return true;
         }
         // 3. 其他 Boss 兜底：有 Boss 血条的模组 Boss 通常有超高血量（≥500）

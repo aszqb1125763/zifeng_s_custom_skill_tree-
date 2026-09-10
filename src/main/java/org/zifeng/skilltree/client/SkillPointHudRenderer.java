@@ -176,7 +176,12 @@ public class SkillPointHudRenderer {
         org.zifeng.skilltree.client.SkillKeyBinds.setHudOffset(hudOffsetX, hudOffsetY);
     }
 
-    @SubscribeEvent
+    /**
+     * 渲染技能点 HUD。
+     * <p><b>层级（2026-09-11）</b>：1.20.1 Forge 没有 NeoForge 的 layered draw 图层系统，
+     * 只能用事件优先级把绘制压到<b>最后</b>（= 最上层），避免被其他 HUD 模组覆盖。
+     */
+    @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.LOWEST)
     public static void onRenderGui(RenderGuiEvent.Post event) {
         if (!hudVisible) {
             return;

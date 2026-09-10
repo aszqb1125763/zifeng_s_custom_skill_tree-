@@ -283,6 +283,13 @@ public class ModKeyBindingEvents {
 
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
+        // ⚠️ 2026-09-11 修复：Forge 的 ClientTickEvent 每 tick 触发 START + END 两次
+        //  （NeoForge 1.21.1 拆成 ClientTickEvent.Pre/Post，各只触发一次）。
+        //  旧代码未判 phase → 整个按键轮询（含绑定表遍历 + GLFW isKeyDown 原生调用）
+        //  每 tick 跑 2 遍。边沿检测本身幂等，故行为不变，仅减半开销。
+        if (event.phase != TickEvent.Phase.START) {
+            return;
+        }
         org.zifeng.skilltree.client.SkillKeyBinds.load(); // 确保技能绑定已加载
         // 技能独立开关快捷键（2026-08-13：每个技能可单独绑定，SkillKeyBinds 本地持久化）
         // 按下即切换该技能开关；未学的技能不处理（等服务端校准）

@@ -7,7 +7,6 @@ import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.TickEvent;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
-import org.zifeng.skilltree.network.SkillTreeDataS2CPacket;
 import org.zifeng.skilltree.skill.Skills;
 
 import java.util.HashMap;
@@ -256,8 +255,13 @@ public final class GiftEvents {
         rates.put("gift:" + baptismSkill, (double) total);
         org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                 new org.zifeng.skilltree.network.SkillPointRateS2CPacket(record.getSkillPoints(), rates));
+        // ⚠️ 2026-09-11 性能修复：原本每次发放都回发【全量】SkillTreeDataS2CPacket
+        //   （122 技能规模 = 数 KB：learnedSkills/toggles/activeLevels/光环模式/绑定/操作区/防护区…全量重传）。
+        //   但 grant() 只改「技能点」，上述字段均未变化（变更时各有专用包推送）
+        //   → 改用 16 字节增量包（语义保留：通知客户端技能点已更新，HUD 实时刷新）。
+        //   距离类馈赠（移动/飞行）可达每秒多次触发，此优化收益显著。
         org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
-                SkillTreeDataS2CPacket.from(record));
+                new org.zifeng.skilltree.network.SkillPointDeltaS2CPacket(total, record.getSkillPoints()));
     }
 
     /** 取统计距离（cm）：移动 = 行走 + 疾跑；飞行 = 飞行 */

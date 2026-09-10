@@ -37,6 +37,14 @@ public class Config {
     /** Attribute panel position: 0=right, 1=bottom. 属性面板位置 */
     public static final ForgeConfigSpec.IntValue PANEL_POSITION;
 
+    // ============ 血条压缩 + 真实血量数字（2026-09-11，1.4.0 血条卡顿修复） ============
+    /** 是否压缩原版血条心数（超原版血量时；关闭则恢复原版行为） */
+    public static final ForgeConfigSpec.BooleanValue HEALTH_BAR_COMPRESS;
+    /** 是否在血条左侧显示真实血量数字 */
+    public static final ForgeConfigSpec.BooleanValue HEALTH_NUMBER_ENABLED;
+    /** 属性面板数据源：true=直接读取原版实时属性值（含装备/药水/其他模组加成），false=旧行为（仅技能内部计算） */
+    public static final ForgeConfigSpec.BooleanValue PANEL_USE_VANILLA_ATTR;
+
     /** Converter GUI progress bar color (starlight blue, ARGB). 机器进度条颜色 */
     public static final ForgeConfigSpec.IntValue MACHINE_PROGRESS_COLOR;
 
@@ -303,6 +311,26 @@ public class Config {
         PANEL_POSITION = builder
                 .comment("Attribute panel position (0=right, 1=bottom; Shift+click the panel toggle to switch).\n属性面板位置")
                 .defineInRange("panelPosition", 0, 0, 1);
+        // ============ 血条压缩 + 真实血量数字（2026-09-11）============
+        HEALTH_BAR_COMPRESS = builder
+                .comment("Compress the vanilla heart bar when max health is above 20 (skill-boosted HP can reach tens of thousands,\n"
+                        + "and vanilla draws one heart per 2 HP -> massive lag). Only the values fed to vanilla rendering are\n"
+                        + "scaled (vanilla rendering code is untouched, so other health-bar mods keep working).\n"
+                        + "Set false to restore exact vanilla behaviour.\n"
+                        + "最大生命超过 20 时压缩原版血条（技能血量可达数万，原版每 2 点血 1 颗心 -> 严重卡顿）。\n"
+                        + "仅压缩“喂给原版渲染的数值”，不改原版渲染代码（兼容其他血条模组）。设 false 恢复原版行为。")
+                .define("healthBarCompress", true);
+        HEALTH_NUMBER_ENABLED = builder
+                .comment("Show the real health number to the left of the hearts (e.g. 51510.0 / 51510.0) when health is compressed.\n"
+                        + "Reads the real vanilla values, so it includes HP added by other mods/equipment/potions.\n"
+                        + "压缩血条时在血条左侧显示真实血量数字（例 51510.0 / 51510.0）。读取原版实时值，\n"
+                        + "自动包含其他模组/装备/药水增加的生命值。")
+                .define("healthNumberEnabled", true);
+        PANEL_USE_VANILLA_ATTR = builder
+                .comment("Attribute panel data source: true = read live vanilla attribute values (includes equipment, potions and\n"
+                        + "other mods' modifiers), false = old behaviour (skill bonuses only, no external modifiers).\n"
+                        + "属性面板数据源：true=读取原版实时属性值（含装备/药水/其他模组加成），false=旧行为（仅技能计算值）。")
+                .define("panelUseVanillaAttributes", true);
         builder.pop();
 
         builder.comment("Economy: costs for leveling / ultimate unlocks / aura. Reopen the screen or press N to refresh after changes.\n技能树经济数值")

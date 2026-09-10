@@ -37,6 +37,15 @@ public class SkillKeyBinds {
     /** 技能点 HUD 位置偏移（2026-08-25：持久化，重启不重置；基准点 = 用户测试调好的位置，默认 0,0） */
     private static int hudOffsetX = 0;
     private static int hudOffsetY = 0;
+    /** 真实血量数字显示开关（2026-09-11：HUD 设置里可关；在血条左侧显示真实生命值） */
+    private static boolean hudHealthNumber = true;
+    /** 伤害吸收数字显示开关（2026-09-11：HUD 设置里可关；吸收行在生命行上方） */
+    private static boolean hudAbsorptionNumber = true;
+    /** 护甲数字显示开关（2026-09-11：HUD 设置里可关；超阈值时在护甲条左侧显示） */
+    private static boolean hudArmorNumber = true;
+    /** 满值数字显示开关（2026-09-11：默认<b>关</b>；开后在当前值后追加 "/ 满值"）
+     * <p>生命/吸收/护甲三个数字<b>共用</b>此开关（用户要求） */
+    private static boolean hudShowMaxValue = false;
     /** 子界面位置（2026-09-01：子界面标识 → [x, y] 面板左上角，持久化拖动结果） */
     private static final Map<String, int[]> SUB_SCREEN_POS = new HashMap<>();
 
@@ -273,6 +282,48 @@ public class SkillKeyBinds {
         save();
     }
 
+    // ============ 血条数字显示开关（2026-09-11：HUD 设置面板可关） ============
+
+    /** 是否显示真实血量数字 */
+    public static boolean isHudHealthNumber() {
+        return hudHealthNumber;
+    }
+
+    public static void setHudHealthNumber(boolean on) {
+        hudHealthNumber = on;
+        save();
+    }
+
+    /** 是否显示伤害吸收数字 */
+    public static boolean isHudAbsorptionNumber() {
+        return hudAbsorptionNumber;
+    }
+
+    public static void setHudAbsorptionNumber(boolean on) {
+        hudAbsorptionNumber = on;
+        save();
+    }
+
+    /** 是否显示护甲数字 */
+    public static boolean isHudArmorNumber() {
+        return hudArmorNumber;
+    }
+
+    public static void setHudArmorNumber(boolean on) {
+        hudArmorNumber = on;
+        save();
+    }
+
+    /** 是否显示满值（生命/吸收/护甲三个数字共用；默认关） */
+    public static boolean isHudShowMaxValue() {
+        return hudShowMaxValue;
+    }
+
+    public static void setHudShowMaxValue(boolean on) {
+        hudShowMaxValue = on;
+        save();
+    }
+
     // ============ 子界面位置持久化（2026-09-01） ============
 
     /** 获取子界面上次位置 [x, y]（null = 未保存过，用默认位置） */
@@ -342,6 +393,12 @@ public class SkillKeyBinds {
             // 2026-08-28：加载时 clamp 到新调整范围（X ±400 / Y ±200），防止旧配置残留超范围值
             hudOffsetX = Math.max(-400, Math.min(400, data.hudOffsetX));
             hudOffsetY = Math.max(-200, Math.min(200, data.hudOffsetY));
+            // 血条数字显示开关（2026-09-11；旧配置无此字段 → Gson 给 null → 用包装类型兼容默认开）
+            hudHealthNumber = data.hudHealthNumber == null || data.hudHealthNumber;
+            hudAbsorptionNumber = data.hudAbsorptionNumber == null || data.hudAbsorptionNumber;
+            hudArmorNumber = data.hudArmorNumber == null || data.hudArmorNumber;
+            // 满值显示：旧配置无此字段 / null → 默认<b>关闭</b>
+            hudShowMaxValue = data.hudShowMaxValue != null && data.hudShowMaxValue;
             // 子界面位置（2026-09-01）
             SUB_SCREEN_POS.clear();
             if (data.subScreenPos != null) {
@@ -381,6 +438,10 @@ public class SkillKeyBinds {
             data.scale = lastScale;
             data.hudOffsetX = hudOffsetX;
             data.hudOffsetY = hudOffsetY;
+            data.hudHealthNumber = hudHealthNumber;
+            data.hudAbsorptionNumber = hudAbsorptionNumber;
+            data.hudArmorNumber = hudArmorNumber;
+            data.hudShowMaxValue = hudShowMaxValue;
             data.subScreenPos = new HashMap<>();
             for (Map.Entry<String, int[]> e : SUB_SCREEN_POS.entrySet()) {
                 data.subScreenPos.put(e.getKey(), new int[]{e.getValue()[0], e.getValue()[1]});
@@ -402,6 +463,10 @@ public class SkillKeyBinds {
         double scale = 1.0;
         int hudOffsetX = 0; // 基准点 = 用户测试调好的位置，显示从 0 开始
         int hudOffsetY = 0;
+        Boolean hudHealthNumber;     // 真实血量数字开关（2026-09-11；Boolean 可空以兼容旧配置）
+        Boolean hudAbsorptionNumber; // 伤害吸收数字开关（2026-09-11）
+        Boolean hudArmorNumber;      // 护甲数字开关（2026-09-11）
+        Boolean hudShowMaxValue;     // 满值数字开关（2026-09-11；三数字共用，默认关）
         Map<String, int[]> subScreenPos; // 子界面位置（2026-09-01）
     }
 }

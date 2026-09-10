@@ -14,7 +14,8 @@
     "VillagerMixin"
   ],
   "client": [
-    "FogRendererMixin"
+    "FogRendererMixin",
+    "GuiHeartsCompressMixin"
   ],
   "injectors": {
     "defaultRequire": 0

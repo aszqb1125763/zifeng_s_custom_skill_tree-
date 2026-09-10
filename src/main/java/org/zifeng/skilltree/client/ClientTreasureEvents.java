@@ -116,9 +116,17 @@ public class ClientTreasureEvents {
         return dx * dx + dz * dz <= SCAN_RADIUS_SQ && dy * dy <= SCAN_Y_RADIUS_SQ;
     }
 
-    /** 每秒扫描一次 64 格内的战利品容器/考古刷扫点 */
+    /** 每秒扫描一次 64 格内的战利品容器/考古刷扫点
+     *  <p>⚠️ 2026-09-11 修复：Forge 的 {@code PlayerTickEvent} 每 tick 触发 <b>START + END 两次</b>
+     *  （NeoForge 1.21.1 拆成 Pre/Post 独立事件只触发一次）。旧代码未判 phase，
+     *  {@code scanTimer++} 每 tick 走 2 次 → 实际每 1 秒扫描一次（注释写 2 秒，
+     *  且与 1.21.1 行为不一致，81 区块全 BE 扫描开销翻倍）。
+     */
     @SubscribeEvent
     public static void onPlayerTick(net.minecraftforge.event.TickEvent.PlayerTickEvent event) {
+        if (event.phase != net.minecraftforge.event.TickEvent.Phase.START) {
+            return; // 每 tick 只处理一次（START），与 1.21.1 的 PlayerTickEvent.Pre 对齐
+        }
         if (!(event.player instanceof LocalPlayer)) {
             return;
         }
@@ -284,26 +292,11 @@ public class ClientTreasureEvents {
     }
 
     /**
-     * Iris 光影软检测（无 Iris 时返回 false）：光影激活且处于阴影 pass → 跳过渲染。
-     * 反射调用 IrisApi（避免编译期依赖 iris jar）。Method 对象首次成功后缓存（避免每帧 getMethod）。
+     * Iris 光影软检测（无 Iris 时返回 false）：阴影 pass → 跳过渲染。
+     * <p>⚠️ 2026-09-11：改用共享 {@link IrisCompat}（修复「未装 Iris 时每帧抛
+     * ClassNotFoundException」，并消除 4 份重复实现）。
      */
-    private static java.lang.reflect.Method IRIS_GET_INSTANCE, IRIS_IS_SHADER_IN_USE, IRIS_IS_SHADOW_PASS;
-
     private static boolean isIrisShadowPass() {
-        try {
-            if (IRIS_GET_INSTANCE == null) {
-                Class<?> irisApiCls = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
-                IRIS_GET_INSTANCE = irisApiCls.getMethod("getInstance");
-                IRIS_IS_SHADER_IN_USE = irisApiCls.getMethod("isShaderPackInUse");
-                IRIS_IS_SHADOW_PASS = irisApiCls.getMethod("isRenderingShadowPass");
-            }
-            Object instance = IRIS_GET_INSTANCE.invoke(null);
-            if (!(Boolean) IRIS_IS_SHADER_IN_USE.invoke(instance)) {
-                return false; // 无光影激活 → 正常渲染
-            }
-            return (Boolean) IRIS_IS_SHADOW_PASS.invoke(instance);
-        } catch (Throwable ignored) {
-            return false; // 无 Iris 或 API 变动 → 正常渲染
-        }
+        return IrisCompat.isShadowPass();
     }
 }

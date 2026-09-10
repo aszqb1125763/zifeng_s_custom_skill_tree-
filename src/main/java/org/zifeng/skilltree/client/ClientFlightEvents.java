@@ -20,6 +20,12 @@ public class ClientFlightEvents {
 
     @SubscribeEvent
     public static void onPlayerTick(net.minecraftforge.event.TickEvent.PlayerTickEvent event) {
+        // ⚠️ 2026-09-11 修复：Forge 的 PlayerTickEvent 每 tick 触发 START+END 两次
+        //  （NeoForge 1.21.1 拆成 Pre/Post 只触发一次）。本方法虽幂等，
+        //  但每 tick 白跑一遍（含属性/状态读取），加上 phase 守卫与 1.21.1 对齐。
+        if (event.phase != net.minecraftforge.event.TickEvent.Phase.START) {
+            return;
+        }
         if (!(event.player instanceof LocalPlayer player)) {
             return;
         }
