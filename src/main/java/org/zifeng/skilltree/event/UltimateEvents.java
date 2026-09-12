@@ -578,20 +578,113 @@ public class UltimateEvents {
         }
     }
 
-    // ============ 凌空采掘（FLY_MINING，2026-08-27）：飞行中挖掘无视原版空中 5 倍惩罚 ============
-    // 原版 Player.getDestroySpeed：!onGround() → 挖掘速度 /5。本事件在速度计算后触发，×5 恢复。
+    // ============ 挖掘速度（MINING 采掘熟稔 / AMP_MINING 采掘增幅）+ 凌空采掘（FLY_MINING） ============
+    //
+    // ⚠️ 2026-09-12（1.4.1）：1.20.1 原版【没有】MINING_EFFICIENCY 属性（1.21 才合入原版）。
+    //   javap 实证 1.20.1 Player.getDigSpeed 的完整结构（offset = 字节码偏移）：
+    //     0-50    f = inventory.getDestroySpeed(state)；f > 1 时加效率附魔
+    //     51-73   if (MobEffectUtil.hasDigSpeed(this))  f *= 1.0F + (amp + 1) * 0.2F      ← 急迫
+    //     74-157  if (hasEffect(DIG_SLOWDOWN))          f *= {0.3, 0.09, 0.0027, 8.1E-4}   ← 挖掘疲劳
+    //     158-180 if (眼在水中 && !水下亲和)             f /= 5.0F                          ← 水下
+    //     181-193 if (!onGround())                       f /= 5.0F                          ← 空中
+    //     194-201 f = ForgeEventFactory.getBreakSpeed(this, state, f, pos)  ← 【本事件在此触发】
+    //   而 1.21.1 在 offset 26 处多一行（位于【所有乘数之前】）：
+    //     f += (float) this.getAttributeValue(Attributes.MINING_EFFICIENCY)
+    //   → 1.20.1 完全没有这个环节：本模组虽已注册 ModAttributes.MINING_EFFICIENCY 承接加点
+    //     （SkillEffects 的 ADD/MULT 修饰符写入正常），但原版不读它 → 技能点满毫无效果。
+    //
+    //   因此这里做两件事：
+    //     ① 把技能属性加成【按原版乘数还原】放回"乘数之前"的位置：
+    //          speed += eff × (急迫倍率 × 疲劳倍率 ÷ 水下 ÷ 空中)
+    //        这样才与 1.21.1 语义逐位一致（顺带修掉"有急迫/在水下时数值偏差"的问题）。
+    //     ② 再处理凌空采掘（原版空中 ÷5 → 这里 ×5 恢复，作用于整个 speed，含属性加成）。
+    //
+    //   ⚠️ 2026-09-12（1.4.1）第二处修复：本事件原实现只处理【服务端】（`instanceof ServerPlayer` 后 return），
+    //     而挖掘是【客户端预测 + 服务端校验】：客户端 `MultiPlayerGameMode` 用
+    //     `BlockState.getDestroyProgress → LocalPlayer.getDestroySpeed` 自行累计进度，
+    //     进度满才发包（客户端驱动节奏）。实测确认 LocalPlayer **没有**覆写 getDigSpeed
+    //     → 客户端也会走到本事件，但旧代码在客户端直接 return
+    //     → **客户端仍按 /5 慢速预测** → 体感"空中还是比地面慢"、挖掘进度条卡顿。
+    //     现改为【两端都处理】；客户端技能状态读本地缓存（服务端 S2CPacket 校准）。
     @SubscribeEvent
     public static void onBreakSpeed(net.minecraftforge.event.entity.player.PlayerEvent.BreakSpeed event) {
         Player player = event.getEntity();
-        if (!(player instanceof ServerPlayer sp)) {
-            return;
+        float speed = event.getOriginalSpeed();
+        net.minecraft.world.level.block.state.BlockState state = event.getState();
+
+        // ① 挖掘速度技能：ModAttributes.MINING_EFFICIENCY
+        //    （采掘熟稔 ADD + 采掘增幅 MULT 已由 SkillEffects 合成到该属性）
+        //    复刻原版「工具速度 > 1」门槛：空手/错误工具不享受加成（与 1.21.1 一致）
+        //    ⚠️ 两端都要算：客户端预测必须与服务端一致，否则挖掘进度会来回跳。
+        if (state != null && player.getMainHandItem().getDestroySpeed(state) > 1.0F) {
+            double eff = player.getAttributeValue(
+                    org.zifeng.skilltree.init.ModAttributes.MINING_EFFICIENCY.get());
+            if (eff > 0.0D) {
+                speed += (float) (eff * vanillaSpeedMultiplierBeforeBreakSpeed(player));
+            }
         }
-        PlayerSkillRecord record = getRecord(sp);
-        if (record.getLearnedPoints(Skills.FLY_MINING) > 0 && record.isEnabled(Skills.FLY_MINING)
-                && !player.onGround()) {
-            // 恢复空中 /5 惩罚（水下/水外惩罚独立计算，不受影响）
-            event.setNewSpeed(event.getOriginalSpeed() * 5.0F);
+
+        // ② 凌空采掘：飞行中挖掘无视原版空中 5 倍惩罚
+        if (!player.onGround() && isFlyMiningEnabled(player)) {
+            speed *= 5.0F;
         }
+
+        if (speed != event.getOriginalSpeed()) {
+            event.setNewSpeed(speed);
+        }
+    }
+
+    /**
+     * 凌空采掘是否生效（多人安全 + 双端可用）。
+     * <p>服务端查真实记录（权威防作弊）；客户端用本地缓存（服务端 S2CPacket 校准）。
+     * <p>⚠️ 客户端分支必须放在 {@code instanceof ServerPlayer} 的 else 里 —— 专服不会执行该分支，
+     * 因此不会加载仅客户端存在的 {@code ModKeyBindingEvents}（避免 NoClassDefFoundError）。
+     */
+    private static boolean isFlyMiningEnabled(Player player) {
+        if (player instanceof ServerPlayer sp) {
+            PlayerSkillRecord record = getRecord(sp);
+            return record.getLearnedPoints(Skills.FLY_MINING) > 0 && record.isEnabled(Skills.FLY_MINING);
+        }
+        // 客户端：本地缓存（服务端校准；懒加载安全，服务端不执行此分支）
+        return org.zifeng.skilltree.client.ModKeyBindingEvents.isSkillEnabledClient(Skills.FLY_MINING);
+    }
+
+    /**
+     * 复刻原版 {@code Player.getDigSpeed} 中、位于 breakSpeed 事件【之前】的全部乘数
+     * （2026-09-12 新增）。用于把技能属性加成还原到 1.21.1 的"乘数之前"位置。
+     *
+     * <p><b>常量来源</b>：javap 反汇编 1.20.1 {@code Player.getDigSpeed}
+     * （偏移与常量值见 {@link #onBreakSpeed} 注释；1.21.1 同逻辑、数值一致）。
+     * 若未来 MC 改动这些数值，本方法需同步（改动会在两版本间产生偏差，但不会报错）。
+     */
+    private static float vanillaSpeedMultiplierBeforeBreakSpeed(Player player) {
+        float mult = 1.0F;
+        // 急迫（Haste）：f *= 1.0F + (amp + 1) * 0.2F
+        if (net.minecraft.world.effect.MobEffectUtil.hasDigSpeed(player)) {
+            mult *= 1.0F
+                    + (net.minecraft.world.effect.MobEffectUtil.getDigSpeedAmplification(player) + 1) * 0.2F;
+        }
+        // 挖掘疲劳（Mining Fatigue）：amp0→0.3, amp1→0.09, amp2→0.0027, amp3+→8.1E-4
+        net.minecraft.world.effect.MobEffectInstance slow =
+                player.getEffect(net.minecraft.world.effect.MobEffects.DIG_SLOWDOWN);
+        if (slow != null) {
+            mult *= switch (slow.getAmplifier()) {
+                case 0 -> 0.3F;
+                case 1 -> 0.09F;
+                case 2 -> 0.0027F;
+                default -> 8.1E-4F;
+            };
+        }
+        // 水下：眼在水中且无水下亲和 → f /= 5
+        if (player.isEyeInFluid(net.minecraft.tags.FluidTags.WATER)
+                && !net.minecraft.world.item.enchantment.EnchantmentHelper.hasAquaAffinity(player)) {
+            mult /= 5.0F;
+        }
+        // 空中：f /= 5
+        if (!player.onGround()) {
+            mult /= 5.0F;
+        }
+        return mult;
     }
 
     // ============ 破暗之瞳（DARK_VISION，2026-08-27）：免疫黑暗效果（坚守者/古城） ============
@@ -1268,46 +1361,6 @@ public class UltimateEvents {
             }
         }
         return false;
-    }
-
-    /** 1.20.1：LootItemRandomChanceWithLootingLevelCondition 的 looting 字段（Registry<Enchantment>），反射失败返回 null */
-    private static java.util.concurrent.ConcurrentHashMap<Class<?>, java.lang.reflect.Field> LOOT_FIELD_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
-
-    private static Registry<Enchantment> lootingRegistry(Object condition) {
-        try {
-            java.lang.reflect.Field f = LOOT_FIELD_CACHE.computeIfAbsent(condition.getClass(),
-                    cls -> {
-                        try {
-                            java.lang.reflect.Field field = cls.getDeclaredField("looting");
-                            field.setAccessible(true);
-                            return field;
-                        } catch (Exception e) {
-                            return null;
-                        }
-                    });
-            return f != null ? (Registry<Enchantment>) f.get(condition) : null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /** 1.20.1：LootingEnchantFunction 的 enchantment 字段（Registry<Enchantment>），反射失败返回 null */
-    private static Registry<Enchantment> lootingRegistryOf(Object func) {
-        try {
-            java.lang.reflect.Field f = LOOT_FIELD_CACHE.computeIfAbsent(func.getClass(),
-                    cls -> {
-                        try {
-                            java.lang.reflect.Field field = cls.getDeclaredField("enchantment");
-                            field.setAccessible(true);
-                            return field;
-                        } catch (Exception e) {
-                            return null;
-                        }
-                    });
-            return f != null ? (Registry<Enchantment>) f.get(func) : null;
-        } catch (Exception e) {
-            return null;
-        }
     }
 
     /**

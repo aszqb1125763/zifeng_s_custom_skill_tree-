@@ -73,6 +73,16 @@ public class MagnetExclusionC2SPacket {
                 if (!currentDim.equals(packet.dim)) {
                     return;
                 }
+                // ⚠️ 2026-09-12（1.4.1）新增服务端权威校验：单边 ≤ OperZone.MAX_SIDE
+                //    （原先只靠客户端本地校验 → 改造客户端可存超大区；与区块技能校验对齐）
+                int zMinX = Math.min(packet.ax, packet.bx), zMaxX = Math.max(packet.ax, packet.bx);
+                int zMinY = Math.min(packet.ay, packet.by), zMaxY = Math.max(packet.ay, packet.by);
+                int zMinZ = Math.min(packet.az, packet.bz), zMaxZ = Math.max(packet.az, packet.bz);
+                if (zMaxX - zMinX > org.zifeng.skilltree.data.OperZone.MAX_SIDE
+                        || zMaxY - zMinY > org.zifeng.skilltree.data.OperZone.MAX_SIDE
+                        || zMaxZ - zMinZ > org.zifeng.skilltree.data.OperZone.MAX_SIDE) {
+                    return;
+                }
                 global.addZone(packet.dim,
                         packet.ax, packet.ay, packet.az,
                         packet.bx, packet.by, packet.bz); // 内部处理持久化+全服广播

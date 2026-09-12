@@ -137,6 +137,7 @@ public class SkillTreeDataS2CPacket {
                 record.hasLootVacuumBind()
                         ? record.getLootVacuumDim() + "|" + record.getLootVacuumName() + "|" + record.getLootVacuumX()
                         + "|" + record.getLootVacuumY() + "|" + record.getLootVacuumZ()
+                        + "|" + record.getLootVacuumType()
                         : null,
                 record.getWeatherMode(), record.isStickToolOn(), record.getStickToolMode(),
                 new java.util.HashMap<>(record.getOperZones()),

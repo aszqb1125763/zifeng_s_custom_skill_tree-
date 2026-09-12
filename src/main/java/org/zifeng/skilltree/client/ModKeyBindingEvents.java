@@ -185,6 +185,8 @@ public class ModKeyBindingEvents {
     /** 绑定容器缓存字段（结构化串 + 解析出的维度/坐标；2026-09-08） */
     private static String bindDimClient = null;
     private static int bindXClient, bindYClient, bindZClient;
+    /** 绑定目标类型：0=普通物品容器 1=AE2 无线访问点（2026-09-12 1.4.1，绑定框配色用） */
+    private static int bindTypeClient = 0;
 
     /**
      * 获取凋落物挪移绑定的容器显示串（"name [x, y, z]"，null=未绑定；tooltip 等 UI 用）。
@@ -195,7 +197,7 @@ public class ModKeyBindingEvents {
             return null;
         }
         String[] p = lootVacuumBindClient.split("\\|");
-        if (p.length == 5) {
+        if (p.length >= 5) {
             return p[1] + " [" + p[2] + ", " + p[3] + ", " + p[4] + "]";
         }
         return lootVacuumBindClient; // 兼容旧存档数据格式
@@ -218,20 +220,28 @@ public class ModKeyBindingEvents {
         return bindZClient;
     }
 
-    /** 服务端回发校准凋落物挪移绑定容器（结构化 "dim|name|x|y|z"；null=未绑定） */
+    /** 绑定目标类型（0=普通容器 1=AE 无线访问点；绑定框配色用，2026-09-12 1.4.1） */
+    public static int getBindTypeClient() {
+        return bindTypeClient;
+    }
+
+    /** 服务端回发校准凋落物挪移绑定容器（结构化 "dim|name|x|y|z|type"；null=未绑定） */
     public static void setLootVacuumBindClient(String bind) {
         lootVacuumBindClient = bind;
         bindDimClient = null;
+        bindTypeClient = 0;
         if (bind == null) {
             return;
         }
         String[] p = bind.split("\\|");
-        if (p.length == 5) {
+        if (p.length >= 5) {
             bindDimClient = p[0];
             try {
                 bindXClient = Integer.parseInt(p[2]);
                 bindYClient = Integer.parseInt(p[3]);
                 bindZClient = Integer.parseInt(p[4]);
+                // 第 6 段 = 绑定类型（2026-09-12 1.4.1；旧 5 段格式 → 默认 0=普通容器）
+                bindTypeClient = p.length >= 6 ? Integer.parseInt(p[5]) : 0;
             } catch (NumberFormatException ignored) {
                 bindDimClient = null;
             }
@@ -251,6 +261,7 @@ public class ModKeyBindingEvents {
         allActiveLevelsCache.clear();
         lootVacuumBindClient = null;
         bindDimClient = null;
+        bindTypeClient = 0;
         auraTargetModes.clear();
         stickToolOnClient = true;   // 断开重置：默认开 + BIND
         stickToolModeClient = 0;

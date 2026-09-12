@@ -77,6 +77,10 @@ public class SkillTreeMod {
         });
         // Z-Link 模块登记（2026-09-09）：集中登记所有功能模块（调度器按条件驱动/冬眠）。
         // 【系统清单】每迁一个技能在此 +1 行；未登记 = 该技能仍走原事件（调度零影响）。
+        //   · 磁力光环 / 杀戮光环·伤害 / 治愈光环 / 汲灵之环 / 终极节点 tick 链 / 子枫的馈赠
+        //   · 机械共鸣·选区攻击 —— 已迁 ZoneAttackModule（2026-09-09）
+        //   · 时之环/晴空环（全局 gamerule 锁定）—— 已迁 GlobalRuleModule（2026-09-09）
+        //   · 机械共鸣·选区作业（分批跳 tick）—— 已迁 ZoneWorkModule（2026-09-12）
         //
         // ⚠️ 2026-09-10 修复（严重 bug）：注册动作提取为可重复执行的 Runnable，
         //    并在【服务器每次启动】时幂等重跑（registerAll 内部 putIfAbsent，重复安全）。
@@ -90,7 +94,9 @@ public class SkillTreeMod {
                 org.zifeng.skilltree.system.UltimateTickModule.INSTANCE,
                 org.zifeng.skilltree.system.GiftModule.INSTANCE,
                 org.zifeng.skilltree.system.ZoneAttackModule.INSTANCE,
-                org.zifeng.skilltree.system.GlobalRuleModule.INSTANCE);
+                org.zifeng.skilltree.system.GlobalRuleModule.INSTANCE,
+                // 机械共鸣·选区作业（分批跳 tick 处理）—— 2026-09-12 1.4.1 新增
+                org.zifeng.skilltree.system.ZoneWorkModule.INSTANCE);
         zlinkRegister.run(); // 首次登记（构造期）
         org.zifeng.skilltree.system.ZModules.setHealAction(zlinkRegister); // 注册表异常时的自愈动作
         // 双保险：服务器启动时再幂等登记一次（自愈任何意外清空）
@@ -102,11 +108,15 @@ public class SkillTreeMod {
         //    后 8 个模块全部冬眠（飞行不授予、馈赠不累计、磁铁不吸物…严重 bug）。
         //    现改为直接传 server（驱动源 = 全服在线玩家，与原版 tickChildren 同款）。
         MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.event.TickEvent.ServerTickEvent event) -> {
-            if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
-                net.minecraft.server.MinecraftServer server = event.getServer();
-                if (server != null) {
-                    org.zifeng.skilltree.system.ZModules.onServerTick(server);
-                }
+            if (event.phase == net.minecraftforge.event.TickEvent.Phase.START) {
+                // ⚠️ 记录 tick 起点：选区作业在 tick 末尾运行，用它算「本 tick 还剩多少时间」
+                //    （自适应预算，见 TickClock / Config.ZONE_MSP_LIMIT_MS）
+                org.zifeng.skilltree.system.TickClock.markTickStart();
+                return;
+            }
+            net.minecraft.server.MinecraftServer server = event.getServer();
+            if (server != null) {
+                org.zifeng.skilltree.system.ZModules.onServerTick(server);
             }
         });
         // Z-Link 玩家登出清理（2026-09-09）：广播模块清理该玩家临时状态（防跨服残留）
@@ -118,6 +128,7 @@ public class SkillTreeMod {
         // Z-Link 服务器停止清理（2026-09-09）：广播模块清理全局状态 + 清空注册表
         MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.event.server.ServerStoppedEvent event) -> {
             org.zifeng.skilltree.system.ZModules.onServerStop();
+            org.zifeng.skilltree.system.TickClock.reset(); // tick 时钟一并清空（防跨存档残留旧时间戳）
         });
 
         if (FMLLoader.getDist().isClient()) {

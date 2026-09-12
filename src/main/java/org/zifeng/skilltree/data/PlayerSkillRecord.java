@@ -49,6 +49,9 @@ public class PlayerSkillRecord {
     private int lootVacuumZ;
     private int lootVacuumFace = 0;
     private String lootVacuumName = ""; // 容器方块显示名（如“箱子”）
+    /** 绑定目标类型（2026-09-12 1.4.1）：0=普通物品容器 1=AE2 无线访问点（ME 网络）。
+     *  决定掉落物走 ItemHandler 还是走 AE 网络，也决定客户端绑定框配色。 */
+    private int lootVacuumType = 0;
 
     // ============ 木棍工具层（2026-09-08：占位卡，不参与技能点体系） ============
     /** 木棍工具总开关：true=木棍作为工具使用（占用左/右键手势）；false=还原原版木棍。
@@ -140,6 +143,36 @@ public class PlayerSkillRecord {
         return true;
     }
 
+    /** 查找包含该坐标的防护区（滚轮微调用）；找不到返回 null */
+    public OperZone findProtectZoneAt(String dim, int x, int y, int z) {
+        for (OperZone oz : protectZones) {
+            if (oz.dim().equals(dim)
+                    && x >= oz.minX() && x <= oz.maxX()
+                    && y >= oz.minY() && y <= oz.maxY()
+                    && z >= oz.minZ() && z <= oz.maxZ()) {
+                return oz;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 用新区替换旧的防护区（滚轮微调；2026-09-12）。
+     * <p>按值比较定位（OperZone 是 record，equals 为逐字段比较）。
+     * @return true = 找到并替换
+     */
+    public boolean replaceProtectZone(OperZone oldZone, OperZone newZone) {
+        if (oldZone == null || newZone == null) {
+            return false;
+        }
+        int i = protectZones.indexOf(oldZone);
+        if (i < 0) {
+            return false;
+        }
+        protectZones.set(i, newZone);
+        return true;
+    }
+
     /** 移除包含该坐标（任一角点/内部点）的防护区；返回是否移除 */
     public boolean removeProtectZoneAt(String dim, int x, int y, int z) {
         java.util.Iterator<OperZone> it = protectZones.iterator();
@@ -187,19 +220,30 @@ public class PlayerSkillRecord {
         return lootVacuumDim != null && !lootVacuumDim.isBlank();
     }
 
-    /** 绑定容器（维度字符串 + 坐标 + 朝向 + 容器显示名） */
+    /** 绑定容器（维度字符串 + 坐标 + 朝向 + 容器显示名；默认类型 = 普通物品容器） */
     public void setLootVacuumBind(String dim, int x, int y, int z, int face, String name) {
+        setLootVacuumBind(dim, x, y, z, face, name,
+                org.zifeng.skilltree.compat.Ae2StorageCompat.TYPE_CONTAINER);
+    }
+
+    /**
+     * 绑定目标（2026-09-12 1.4.1 新增类型参数）。
+     * @param type 0 = 普通物品容器（箱子/漏斗/模组容器）；1 = AE2 无线访问点（ME 网络）
+     */
+    public void setLootVacuumBind(String dim, int x, int y, int z, int face, String name, int type) {
         this.lootVacuumDim = dim;
         this.lootVacuumX = x;
         this.lootVacuumY = y;
         this.lootVacuumZ = z;
         this.lootVacuumFace = face;
         this.lootVacuumName = name != null ? name : "";
+        this.lootVacuumType = type;
     }
 
     /** 解除绑定 */
     public void clearLootVacuumBind() {
         this.lootVacuumDim = null;
+        this.lootVacuumType = 0;
     }
 
     public String getLootVacuumDim() {
@@ -225,6 +269,16 @@ public class PlayerSkillRecord {
     /** 容器显示名（如“箱子”） */
     public String getLootVacuumName() {
         return lootVacuumName;
+    }
+
+    /** 绑定目标类型（0=普通容器 1=AE 无线访问点；2026-09-12 1.4.1） */
+    public int getLootVacuumType() {
+        return lootVacuumType;
+    }
+
+    /** 绑定目标是否为 AE 网络（客户端渲染配色 / 提示文案分支用） */
+    public boolean isLootVacuumAe() {
+        return lootVacuumType == org.zifeng.skilltree.compat.Ae2StorageCompat.TYPE_AE;
     }
 
     public PlayerSkillRecord(UUID owner) {
@@ -673,6 +727,7 @@ public class PlayerSkillRecord {
             tag.putInt("LootVacuumZ", lootVacuumZ);
             tag.putInt("LootVacuumFace", lootVacuumFace);
             tag.putString("LootVacuumName", lootVacuumName);
+            tag.putInt("LootVacuumType", lootVacuumType);
         }
         return tag;
     }
@@ -757,6 +812,7 @@ public class PlayerSkillRecord {
             record.lootVacuumZ = tag.getInt("LootVacuumZ");
             record.lootVacuumFace = tag.getInt("LootVacuumFace");
             record.lootVacuumName = tag.contains("LootVacuumName", Tag.TAG_STRING) ? tag.getString("LootVacuumName") : "";
+            record.lootVacuumType = tag.contains("LootVacuumType", Tag.TAG_INT) ? tag.getInt("LootVacuumType") : 0;
         }
         // 木棍工具层（2026-09-08：旧存档无此字段 → 默认开 + BIND 模式）
         record.stickToolOn = !tag.contains("StickToolOn") || tag.getBoolean("StickToolOn");

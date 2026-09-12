@@ -28,12 +28,19 @@ public final class ZoneSelectionInputHandler {
     /** 成区冷却截止世界时刻（2026-09-09：原 tickCount 死亡重生归零 → 旧冷却永久拦截 = "木棍概率失效"根因；
      *  与磁铁选区同款 2 tick 防连点；改用 ClientSession 世界时钟根治） */
     private static long blockUntilGameTime = -1;
+    /**
+     * 大选区温馨提醒阀值（格数）：超过则在成区时提示"可能卡顿"，由玩家自行决定是否使用。
+     * <p>131072 ≈ 50³ / 13 万格（2026-09-12 用户指定）。
+     * <p>实际处理不会单帧卡死（ZoneSkillEvents 分 tick 处理），但总量大自然要等更久。
+     */
+    private static final long LARGE_ZONE_WARN_VOLUME = 131072L;
 
     /** 会话重置（ClientSession 在进服/死亡重生/换维度/出服时调用）：丢弃旧身体遗留的临时输入状态 */
     static void resetSession() {
         blockUntilGameTime = -1;
         lastProcessedTime = -1;
         ZoneExclusionClientState.setFirstCorner(null);
+        resetPendingScroll(); // 待发的滚轮调整一并丢弃（防残留到新会话）
     }
 
     /** 当前工具模式下对应的机械共鸣技能（模式 2-5；BIND/RANGE 返回 null） */
@@ -70,6 +77,8 @@ public final class ZoneSelectionInputHandler {
         if (mc.player == null || mc.level == null) {
             return;
         }
+        // 滚轮累积的调整量：每 tick 最多发一个包（不受下面 firstCorner 早退影响）
+        flushPendingScroll();
         if (ZoneExclusionClientState.getFirstCorner() == null) {
             return;
         }
@@ -146,6 +155,236 @@ public final class ZoneSelectionInputHandler {
         return true;
     }
 
+    // ============ 滚轮微调选区（2026-09-12 1.4.1）============
+
+    /** 滚轮微调步进（普通 / Shift 加速） */
+    private static final int SCROLL_STEP = 1;
+    private static final int SCROLL_STEP_SHIFT = 10;
+    /**
+     * 待发送的累积滚轮步进（带符号；0 = 无待发）。
+     * <p><b>为什么要累积：</b>原版 {@code MouseHandler.onScroll} 里
+     * {@code accumulatedScroll} 会把滚动量累加到整格才触发事件 → 快速滚动一 tick 内可产生
+     * <b>多个</b>事件。若每个事件都立即发包，服务端会连续回发整份技能数据（大包）；
+     * 若像旧版那样只处理第一个、后续直接 return，<b>那些事件就没被取消</b>
+     * → 穿透到 {@code Inventory.swapPaint} → <b>快捷栏被切换</b>（用户实测反馈：滚太快仍会切）。
+     * <p>现在：<b>每个事件都无条件取消</b>（不切快捷栏）+ 累积步进，
+     * 由 {@link #flushPendingScroll} 每 tick 最多发一个包（调整量不丢）。
+     */
+    private static int pendingScroll = 0;
+    /** 累积期间最后一次瞄准的区/面（多次滚动取最后一次；视线基本不会一 tick 内大幅变化） */
+    private static ScrollHit pendingScrollHit = null;
+    /**
+     * 累积对应的包 action（30-33，= 模式 + 30）。
+     * <p>⚠️ 必须在【滚动时】就固定：若在 flush 时再算 {@code actionOfMode()}，
+     * 玩家在这 1 tick 内切换了木棍模式 → 会拿新技能去改旧技能的选区（改错区）。
+     */
+    private static int pendingScrollAction = -1;
+
+    /**
+     * 滚轮微调选区（2026-09-12 1.4.1）：
+     * <b>对准已框选的区域 → 滚轮调整「正对玩家的那个面」</b>（近面）。
+     * <ul>
+     *   <li>上滚 = 该面朝【外】移动（区域变大）；下滚 = 向内缩；Shift 步进 10 格</li>
+     *   <li>目标 = 当前木棍模式对应技能的区（防护多块时取射线命中最近的一块）</li>
+     *   <li>未对准任何区时不拦截 → 保留原版快捷栏/旁观者滚轮</li>
+     *   <li>实际计算与合法性校验在服务端（客户端只陈述"调整哪个面、多少格"）</li>
+     * </ul>
+     * <p>⚠️ 平台差异：1.20.1 用 {@code getScrollDelta()}；1.21.1 拆成 X/Y 分量，取 {@code getScrollDeltaY()}。
+     */
+    @SubscribeEvent
+    public static void onScroll(InputEvent.MouseScrollingEvent event) {
+        if (!canHandle()) {
+            return;
+        }
+        double delta = event.getScrollDelta();
+        if (delta == 0.0D) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        ScrollHit hit = pickZoneForScroll(mc);
+        if (hit == null) {
+            return; // 没对准任何区：不拦截（保留原版行为）
+        }
+        // ⚠️ 关键：无条件取消（只要对准了区）。绝不能因为"同一 tick 已处理过"就跳过取消，
+        //    否则事件会穿透到 MouseHandler 末尾的 Inventory.swapPaint → 快捷栏乱切。
+        event.setCanceled(true);
+        int step = mc.player.isShiftKeyDown() ? SCROLL_STEP_SHIFT : SCROLL_STEP;
+        pendingScroll += (delta > 0 ? step : -step); // 正 = 该面向外扩
+        pendingScrollHit = hit;
+        pendingScrollAction = actionOfMode() + 30; // ⚠️ 滚动时固定 action（防 flush 时模式已切）
+    }
+
+    /** 每 tick 发包一次（累积步进）；由 {@link #onClientTick} 调用 */
+    private static void flushPendingScroll() {
+        if (pendingScroll == 0 || pendingScrollHit == null || pendingScrollAction < 0) {
+            return;
+        }
+        int steps = pendingScroll;
+        ScrollHit hit = pendingScrollHit;
+        int action = pendingScrollAction;
+        pendingScroll = 0;
+        pendingScrollHit = null;
+        pendingScrollAction = -1;
+        org.zifeng.skilltree.network.ModNetwork.sendToServer(
+                new org.zifeng.skilltree.network.ZoneC2SPacket(
+                        action, hit.zone().dim(),
+                        hit.anchor().getX(), hit.anchor().getY(), hit.anchor().getZ(),
+                        hit.face().ordinal(), steps, 0));
+    }
+
+    /** 会话重置时丢弃待发滚轮（避免残留到下一会话） */
+    private static void resetPendingScroll() {
+        pendingScroll = 0;
+        pendingScrollHit = null;
+        pendingScrollAction = -1;
+    }
+
+    /** 滚轮命中结果：区域 + 命中面 + 区内锚点（防护多块时服务端靠锤点定位） */
+    private record ScrollHit(OperZone zone, net.minecraft.core.Direction face, BlockPos anchor) {
+    }
+
+    /** 射线找当前模式下最近的区（返回区 + 正对玩家的近面） */
+    private static ScrollHit pickZoneForScroll(Minecraft mc) {
+        String skill = zoneSkillOfCurrentMode();
+        if (skill == null) {
+            return null;
+        }
+        String dim = mc.level.dimension().location().toString();
+        java.util.List<OperZone> zones = new java.util.ArrayList<>();
+        if (Skills.MACHINE_ZONE_PROTECT.equals(skill)) {
+            zones.addAll(ModKeyBindingEvents.getProtectZonesClient());
+        } else {
+            OperZone single = ModKeyBindingEvents.getOperZoneClient(skill);
+            if (single != null) {
+                zones.add(single);
+            }
+        }
+        if (zones.isEmpty()) {
+            return null;
+        }
+        net.minecraft.world.phys.Vec3 eye = mc.player.getEyePosition();
+        net.minecraft.world.phys.Vec3 end = eye.add(mc.player.getLookAngle().scale(200.0D));
+        ScrollHit best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (OperZone zone : zones) {
+            if (!zone.dim().equals(dim)) {
+                continue;
+            }
+            net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(
+                    zone.minX(), zone.minY(), zone.minZ(),
+                    zone.maxX() + 1, zone.maxY() + 1, zone.maxZ() + 1);
+            net.minecraft.core.Direction face = rayFace(box, eye, end);
+            if (face == null) {
+                continue;
+            }
+            double d = box.getCenter().distanceToSqr(eye);
+            if (d < bestDist) {
+                bestDist = d;
+                best = new ScrollHit(zone, face, BlockPos.containing(box.getCenter()));
+            }
+        }
+        return best;
+    }
+
+    /**
+     * 求射线与矩形盒相交时「正对射线起点」的面（近面）。
+     * <ul>
+     *   <li>起点在盒外 → 返回入射面（标准 slab 法；未命中返回 null）</li>
+     *   <li>起点在盒内 → 返回视线穿出的那个面（此时"近面"退化为视线一侧）</li>
+     * </ul>
+     * <p>⚠️ 不用 {@code AABB.clip(Iterable, Vec3, Vec3, BlockPos)}：源码里它会先把每个盒
+     * <b>平移指定偏移</b>（{@code aabb.move(pos)}，偏移不是盒位置而是位移量）→ 极易误用；
+     * 它也不处理起点在盒内（此时返回 null）。自写算法对两种情形都确定。
+     */
+    private static net.minecraft.core.Direction rayFace(net.minecraft.world.phys.AABB box,
+                                                        net.minecraft.world.phys.Vec3 from,
+                                                        net.minecraft.world.phys.Vec3 to) {
+        double dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+        boolean inside = from.x > box.minX && from.x < box.maxX
+                && from.y > box.minY && from.y < box.maxY
+                && from.z > box.minZ && from.z < box.maxZ;
+        if (inside) {
+            // 起点在盒内：取三轴出口中最近的那个面
+            double best = Double.MAX_VALUE;
+            net.minecraft.core.Direction face = null;
+            if (dx > 1.0E-7) {
+                best = (box.maxX - from.x) / dx;
+                face = net.minecraft.core.Direction.EAST;
+            } else if (dx < -1.0E-7) {
+                best = (box.minX - from.x) / dx;
+                face = net.minecraft.core.Direction.WEST;
+            }
+            if (dy > 1.0E-7) {
+                double t = (box.maxY - from.y) / dy;
+                if (t < best) {
+                    best = t;
+                    face = net.minecraft.core.Direction.UP;
+                }
+            } else if (dy < -1.0E-7) {
+                double t = (box.minY - from.y) / dy;
+                if (t < best) {
+                    best = t;
+                    face = net.minecraft.core.Direction.DOWN;
+                }
+            }
+            if (dz > 1.0E-7) {
+                double t = (box.maxZ - from.z) / dz;
+                if (t < best) {
+                    face = net.minecraft.core.Direction.SOUTH;
+                }
+            } else if (dz < -1.0E-7) {
+                double t = (box.minZ - from.z) / dz;
+                if (t < best) {
+                    face = net.minecraft.core.Direction.NORTH;
+                }
+            }
+            return face;
+        }
+        // 起点在盒外：标准 slab（tMin 所在轴 = 入射面）
+        double tMin = 0.0D, tMax = 1.0D;
+        net.minecraft.core.Direction face = null;
+        if (Math.abs(dx) < 1.0E-7) {
+            if (from.x < box.minX || from.x > box.maxX) {
+                return null;
+            }
+        } else {
+            double t1 = (box.minX - from.x) / dx, t2 = (box.maxX - from.x) / dx;
+            double tNear = Math.min(t1, t2), tFar = Math.max(t1, t2);
+            if (tNear > tMin) {
+                tMin = tNear;
+                face = dx > 0 ? net.minecraft.core.Direction.WEST : net.minecraft.core.Direction.EAST;
+            }
+            tMax = Math.min(tMax, tFar);
+        }
+        if (Math.abs(dy) < 1.0E-7) {
+            if (from.y < box.minY || from.y > box.maxY) {
+                return null;
+            }
+        } else {
+            double t1 = (box.minY - from.y) / dy, t2 = (box.maxY - from.y) / dy;
+            double tNear = Math.min(t1, t2), tFar = Math.max(t1, t2);
+            if (tNear > tMin) {
+                tMin = tNear;
+                face = dy > 0 ? net.minecraft.core.Direction.DOWN : net.minecraft.core.Direction.UP;
+            }
+            tMax = Math.min(tMax, tFar);
+        }
+        if (Math.abs(dz) < 1.0E-7) {
+            if (from.z < box.minZ || from.z > box.maxZ) {
+                return null;
+            }
+        } else {
+            double t1 = (box.minZ - from.z) / dz, t2 = (box.maxZ - from.z) / dz;
+            double tNear = Math.min(t1, t2), tFar = Math.max(t1, t2);
+            if (tNear > tMin) {
+                tMin = tNear;
+                face = dz > 0 ? net.minecraft.core.Direction.NORTH : net.minecraft.core.Direction.SOUTH;
+            }
+            tMax = Math.min(tMax, tFar);
+        }
+        return tMin > tMax ? null : face;
+    }
+
     private static void clickCorner(Minecraft mc) {
         clickCornerAt(mc, MagnetExclusionInputHandler.pickCorner());
     }
@@ -159,14 +398,21 @@ public final class ZoneSelectionInputHandler {
             mc.player.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 0.6F, 1.0F);
             return;
         }
-        // 本地校验单边 ≤64 格（超限保留第一角重选，提示同磁铁）
+        // 本地校验单边 ≤ OperZone.MAX_SIDE 格（超限保留第一角重选，提示同磁铁）
         int minX = Math.min(first.getX(), pos.getX()), maxX = Math.max(first.getX(), pos.getX());
         int minY = Math.min(first.getY(), pos.getY()), maxY = Math.max(first.getY(), pos.getY());
         int minZ = Math.min(first.getZ(), pos.getZ()), maxZ = Math.max(first.getZ(), pos.getZ());
-        if (maxX - minX > 64 || maxY - minY > 64 || maxZ - minZ > 64) {
+        if (maxX - minX > OperZone.MAX_SIDE || maxY - minY > OperZone.MAX_SIDE || maxZ - minZ > OperZone.MAX_SIDE) {
             mc.player.displayClientMessage(Component.translatable(
-                    "chat.zifeng_s_custom_skill_tree.zone_too_large"), true);
+                    "chat.zifeng_s_custom_skill_tree.zone_too_large", String.valueOf(OperZone.MAX_SIDE)), true);
             return;
+        }
+        // 大选区温馨提醒（2026-09-12）：格数超阀值→提示可能卡顿，由玩家自行决定是否使用
+        // （⚠️ 参数必须传 String/原语——传 Long 等对象会导致组件网络编码失败踢人）
+        long volume = (long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+        if (volume > LARGE_ZONE_WARN_VOLUME) {
+            mc.player.displayClientMessage(Component.translatable(
+                    "chat.zifeng_s_custom_skill_tree.zone_large_warn", String.valueOf(volume)), true);
         }
         ZoneExclusionClientState.setFirstCorner(null);
         blockUntilGameTime = ClientSession.now() + 2;
