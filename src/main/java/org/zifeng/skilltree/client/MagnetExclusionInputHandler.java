@@ -205,13 +205,16 @@ public final class MagnetExclusionInputHandler {
             MagnetExclusionClientState.setFirstCorner(pos);
             mc.player.playSound(net.minecraft.sounds.SoundEvents.NOTE_BLOCK_PLING.value(), 0.6F, 1.0F);
         } else {
-            // 本地校验：单边 ≤64 格、不与已有区重复（角点归一化后比对）
+            // 本地校验：单边 ≤ OperZone.MAX_SIDE 格、不与已有区重复（角点归一化后比对）
             int minX = Math.min(first.getX(), pos.getX()), maxX = Math.max(first.getX(), pos.getX());
             int minY = Math.min(first.getY(), pos.getY()), maxY = Math.max(first.getY(), pos.getY());
             int minZ = Math.min(first.getZ(), pos.getZ()), maxZ = Math.max(first.getZ(), pos.getZ());
-            if (maxX - minX > 64 || maxY - minY > 64 || maxZ - minZ > 64) {
+            if (maxX - minX > org.zifeng.skilltree.data.OperZone.MAX_SIDE
+                    || maxY - minY > org.zifeng.skilltree.data.OperZone.MAX_SIDE
+                    || maxZ - minZ > org.zifeng.skilltree.data.OperZone.MAX_SIDE) {
                 mc.player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
-                        "chat.zifeng_s_custom_skill_tree.magnet_exclusion_too_large"), true);
+                        "chat.zifeng_s_custom_skill_tree.magnet_exclusion_too_large",
+                        String.valueOf(org.zifeng.skilltree.data.OperZone.MAX_SIDE)), true);
                 return; // 保留第一角：用户重新点第二角
             }
             boolean dup = false;

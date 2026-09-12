@@ -76,6 +76,7 @@ public class SkillTreeMod {
         //   · 子枫的馈赠（时间/移动/飞行累计）—— 已迁 GiftModule（2026-09-09）
         //   · 机械共鸣·选区攻击 —— 已迁 ZoneAttackModule（2026-09-09）
         //   · 时之环/晴空环（全局 gamerule 锁定）—— 已迁 GlobalRuleModule（2026-09-09）
+        //   · 机械共鸣·选区作业（分批跳 tick）—— 已迁 ZoneWorkModule（2026-09-12）
         //
         // ⚠️ 2026-09-10 修复（严重 bug）：注册动作提取为可重复执行的 Runnable，
         //    并在【服务器每次启动】时幂等重跑（registerAll 内部 putIfAbsent，重复安全）。
@@ -89,7 +90,9 @@ public class SkillTreeMod {
                 org.zifeng.skilltree.system.UltimateTickModule.INSTANCE,
                 org.zifeng.skilltree.system.GiftModule.INSTANCE,
                 org.zifeng.skilltree.system.ZoneAttackModule.INSTANCE,
-                org.zifeng.skilltree.system.GlobalRuleModule.INSTANCE);
+                org.zifeng.skilltree.system.GlobalRuleModule.INSTANCE,
+                // 机械共鸣·选区作业（分批跳 tick 处理）—— 2026-09-12 1.4.1 新增
+                org.zifeng.skilltree.system.ZoneWorkModule.INSTANCE);
         zlinkRegister.run(); // 首次登记（构造期）
         org.zifeng.skilltree.system.ZModules.setHealAction(zlinkRegister); // 注册表异常时的自愈动作
         // 双保险：服务器启动时再幂等登记一次（自愈任何意外清空）
@@ -100,6 +103,10 @@ public class SkillTreeMod {
         //    取 ServerLevel.players() —— 那只返回【主世界】的玩家 → 玩家离开主世界（下界/末地/模组维度）
         //    后 8 个模块全部冬眠（飞行不授予、馈赠不累计、磁铁不吸物…严重 bug）。
         //    现改为直接传 server（驱动源 = 全服在线玩家，与原版 tickChildren 同款）。
+        // ⚠️ 记录 tick 起点（NeoForge 拆成 Pre/Post）：选区作业在 Post（tick 末尾）运行，
+        //    用 Pre 记录的时间算「本 tick 还剩多少时间」→ 自适应预算（TickClock / ZONE_MSP_LIMIT_MS）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Pre event) ->
+                org.zifeng.skilltree.system.TickClock.markTickStart());
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) -> {
             net.minecraft.server.MinecraftServer server = event.getServer();
             if (server != null) {
@@ -115,6 +122,7 @@ public class SkillTreeMod {
         // Z-Link 服务器停止清理（2026-09-09）：广播模块清理全局状态 + 清空注册表
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.server.ServerStoppedEvent event) -> {
             org.zifeng.skilltree.system.ZModules.onServerStop();
+            org.zifeng.skilltree.system.TickClock.reset(); // tick 时钟一并清空（防跨存档残留旧时间戳）
         });
 
         if (FMLLoader.getDist().isClient()) {

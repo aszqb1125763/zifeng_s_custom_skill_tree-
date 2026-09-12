@@ -74,14 +74,21 @@ public final class LootVacuumEvents {
         Level level = event.getLevel();
         BlockPos pos = event.getPos();
         Direction face = event.getFace();
+        // ⚠️ 2026-09-12（1.4.1）：先判 AE2 无线访问点，再判普通容器能力。
+        //    原因：无线访问点自身也暴露 1 格 IItemHandler（只收无线增压卡）——
+        //    若先判 ItemHandler，WAP 会被当成普通容器绑定成功，却永远塞不进物品。
+        boolean isAeNetwork = org.zifeng.skilltree.compat.Ae2StorageCompat.isWirelessAccessPoint(level, pos);
         // 目标方块必须提供物品容器能力（IItemHandler：原版箱子/漏斗/模组容器通用）
-        IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, face);
-        if (handler == null) {
+        IItemHandler handler = isAeNetwork ? null : level.getCapability(Capabilities.ItemHandler.BLOCK, pos, face);
+        if (handler == null && !isAeNetwork) {
             handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null); // 兜底：不区分朝向
         }
-        if (handler == null) {
-            return; // 不是容器
+        if (!isAeNetwork && handler == null) {
+            return; // 既不是 AE 无线访问点，也不是容器
         }
+        // 绑定类型：1=AE 网络 0=普通容器（决定插/取路径与客户端绑定框配色）
+        int bindType = isAeNetwork ? org.zifeng.skilltree.compat.Ae2StorageCompat.TYPE_AE
+                : org.zifeng.skilltree.compat.Ae2StorageCompat.TYPE_CONTAINER;
         // 绑定/解除：同一容器再绑一次 = 解除（参考 JustDireThings）
         String dim = level.dimension().location().toString();
         boolean same = record.hasLootVacuumBind()
@@ -89,24 +96,31 @@ public final class LootVacuumEvents {
                 && record.getLootVacuumX() == pos.getX()
                 && record.getLootVacuumY() == pos.getY()
                 && record.getLootVacuumZ() == pos.getZ();
+        // 目标显示名（AE 时即"无线访问点"；提前取，绑定与文案共用）
+        String targetName = getContainerName(level, pos);
         if (same) {
+            boolean wasAe = record.isLootVacuumAe(); // ⚠️ 必须在 clear 之前取——clear 会重置类型
             record.clearLootVacuumBind();
             markDirty(player);
             // ⚠️ 2026-09-08：解除后回发技能数据，客户端绑定框即时消失
             org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                     org.zifeng.skilltree.network.SkillTreeDataS2CPacket.from(record));
-            player.displayClientMessage(Component.translatable("chat.zifeng_s_custom_skill_tree.lootvac_unbind"), false);
+            player.displayClientMessage(Component.translatable(wasAe
+                    ? "chat.zifeng_s_custom_skill_tree.lootvac_unbind_ae"
+                    : "chat.zifeng_s_custom_skill_tree.lootvac_unbind"), false);
             level.playSound(null, player.blockPosition(), SoundEvents.ENDER_EYE_DEATH, SoundSource.PLAYERS, 1.0F, 1.0F);
             return;
         }
         record.setLootVacuumBind(dim, pos.getX(), pos.getY(), pos.getZ(),
-                face != null ? face.ordinal() : 0, getContainerName(level, pos));
+                face != null ? face.ordinal() : 0, targetName, bindType);
         markDirty(player);
         // ⚠️ 2026-09-08：绑定后回发技能数据，客户端绑定框即时切到新容器
         org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                 org.zifeng.skilltree.network.SkillTreeDataS2CPacket.from(record));
-        player.displayClientMessage(Component.translatable("chat.zifeng_s_custom_skill_tree.lootvac_bind",
-                getContainerName(level, pos), pos.getX(), pos.getY(), pos.getZ()), false);
+        player.displayClientMessage(Component.translatable(isAeNetwork
+                        ? "chat.zifeng_s_custom_skill_tree.lootvac_bind_ae"
+                        : "chat.zifeng_s_custom_skill_tree.lootvac_bind",
+                targetName, pos.getX(), pos.getY(), pos.getZ()), false);
         level.playSound(null, player.blockPosition(), SoundEvents.END_PORTAL_FRAME_FILL, SoundSource.PLAYERS, 1.0F, 1.0F);
     }
 
@@ -128,11 +142,17 @@ public final class LootVacuumEvents {
     }
 
     /**
-     * 统一插入入口（2026-09-09 重写）：纯容器 IO——取目标 ITEM_HANDLER capability 逐槽插入。
-     * 像 AE2 存储总线/管道一样带方向访问（face 优先，null 兜底）；只管"放"，怎么存由容器决定。
-     * ⚠️ 不再有任何 Sophisticated 反射特判。
+     * 统一插入入口（2026-09-09 重写；2026-09-12 1.4.1 加 AE 分支）：
+     * 目标若是 AE2 无线访问点 → 走 ME 网络；否则纯容器 IO（取目标 ITEM_HANDLER capability 逐槽插入）。
+     * 像 AE2 存储总线/管道一样带方向访问（face 优先，null 兜底）；只管"放"，怎么存由目标决定。
+     * <p>⚠️ AE 判定必须放在 ItemHandler 之前：无线访问点自身也带 1 格增压卡槽的 ItemHandler。
+     * <p>⚠️ 不再有任何 Sophisticated 反射特判。
      */
-    private static ItemStack insertStackInto(Level level, BlockPos pos, net.minecraft.core.Direction face, ItemStack stack) {
+    private static ItemStack insertStackInto(Level level, BlockPos pos, net.minecraft.core.Direction face,
+                                            ItemStack stack, net.minecraft.world.entity.player.Player player) {
+        if (org.zifeng.skilltree.compat.Ae2StorageCompat.isWirelessAccessPoint(level, pos)) {
+            return org.zifeng.skilltree.compat.Ae2StorageCompat.insert(level, pos, stack, player);
+        }
         IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, face);
         if (handler == null) {
             handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null); // 兜底不区分朝向
@@ -144,10 +164,11 @@ public final class LootVacuumEvents {
     }
 
     /** 用绑定时记录的方向插入（record.getLootVacuumFace()；无记录 face 时用 null） */
-    private static ItemStack insertIntoBoundTarget(Level level, BlockPos pos, int faceOrdinal, ItemStack stack) {
+    private static ItemStack insertIntoBoundTarget(Level level, BlockPos pos, int faceOrdinal, ItemStack stack,
+                                                   net.minecraft.world.entity.player.Player player) {
         net.minecraft.core.Direction face = faceOrdinal >= 0 && faceOrdinal < net.minecraft.core.Direction.values().length
                 ? net.minecraft.core.Direction.values()[faceOrdinal] : null;
-        return insertStackInto(level, pos, face, stack);
+        return insertStackInto(level, pos, face, stack, player);
     }
 
     // ============ 掉落传送：击杀/挖掘时把掉落物塞进绑定容器 ============
@@ -198,7 +219,7 @@ public final class LootVacuumEvents {
                 it.remove();
                 continue;
             }
-            ItemStack leftover = insertIntoBoundTarget(targetLevel, pos, record.getLootVacuumFace(), stack);
+            ItemStack leftover = insertIntoBoundTarget(targetLevel, pos, record.getLootVacuumFace(), stack, player);
             if (leftover.isEmpty()) {
                 it.remove(); // 全部塞进容器，不生成掉落实体
             } else {
@@ -262,7 +283,104 @@ public final class LootVacuumEvents {
             return stack;
         }
         targetLevel.getChunk(pos.getX() >> 4, pos.getZ() >> 4); // 跨维度确保 chunk 加载
-        return insertIntoBoundTarget(targetLevel, pos, record.getLootVacuumFace(), stack);
+        return insertIntoBoundTarget(targetLevel, pos, record.getLootVacuumFace(), stack, player);
+    }
+
+    /**
+     * 预先解析好的绑定插入目标（2026-09-12 1.4.1 性能优化）。
+     *
+     * <p><b>为什么需要它</b>：{@link #insertIntoBoundRaw} 每次调用都要做
+     * {@code ResourceLocation.parse(dim)}（字符串解析 + 分配）、{@code ResourceKey.create}（分配）、
+     * {@code server.getLevel()}（地图查找）、{@code getChunk()}、{@code getBlockEntity()} + capability 查询。
+     * 选区挖掘一次要插入【几十万】个掉落物 → 这些固定开销被重复几十万次，是选区作业的主要耗时来源之一。
+     * <p>本类把「目标解析」与「物品插入」拆开：解析<b>每 tick 只做一次</b>，之后批量插入只用已解析的引用。
+     */
+    public static final class BoundTarget {
+        public final ServerLevel level;
+        public final net.minecraft.core.BlockPos pos;
+        public final int faceOrdinal;
+        public final net.minecraft.world.entity.player.Player player;
+
+        BoundTarget(ServerLevel level, net.minecraft.core.BlockPos pos, int faceOrdinal,
+                    net.minecraft.world.entity.player.Player player) {
+            this.level = level;
+            this.pos = pos;
+            this.faceOrdinal = faceOrdinal;
+            this.player = player;
+        }
+    }
+
+    /**
+     * 解析该玩家绑定的插入目标；不可用返回 {@code null}（未绑定 / 维度未加载 / 服务器未就绪）。
+     * <p>调用方应缓存本结果并配合 {@link #insertIntoTarget} 复用，切勿逐物品调用。
+     */
+    public static BoundTarget resolveBoundTarget(ServerPlayer player, PlayerSkillRecord record) {
+        if (player == null || record == null || !record.hasLootVacuumBind()) {
+            return null;
+        }
+        ServerLevel serverLevel = player.serverLevel();
+        if (serverLevel == null) {
+            return null;
+        }
+        net.minecraft.server.MinecraftServer server = serverLevel.getServer();
+        if (server == null) {
+            return null;
+        }
+        ServerLevel targetLevel = server.getLevel(
+                ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
+                        net.minecraft.resources.ResourceLocation.parse(record.getLootVacuumDim())));
+        if (targetLevel == null) {
+            return null;
+        }
+        BlockPos pos = new BlockPos(record.getLootVacuumX(), record.getLootVacuumY(), record.getLootVacuumZ());
+        targetLevel.getChunk(pos.getX() >> 4, pos.getZ() >> 4); // 跨维度确保 chunk 加载
+        return new BoundTarget(targetLevel, pos, record.getLootVacuumFace(), player);
+    }
+
+    /** 用已解析的目标插入单个物品（返回未塞下的剩余，调用方按需丢弃）。 */
+    public static ItemStack insertIntoTarget(BoundTarget target, ItemStack stack) {
+        if (target == null || stack == null || stack.isEmpty()) {
+            return stack;
+        }
+        return insertIntoBoundTarget(target.level, target.pos, target.faceOrdinal, stack, target.player);
+    }
+
+    /**
+     * 批量插入（选区挖掘专用，2026-09-12 1.4.1）：先按「物品 + 标签完全相同」合并，再逐个插入。
+     *
+     * <p>选区挖掘每 tick 会产生上千个掉落物（石头/泥土…反复几样），逐个插入等于把
+     * {@code insertItem} 的逐槽扫描做上千次；合并后通常只剩个位数 stack → 插入次数降 2~3 个数量级。
+     * <p>⚠️ 只合并 {@code ItemStack.isSameItemSameComponents} 完全一致且不超单堆上限的堆——绝不改变物品语义。
+     * <p>⚠️ 未塞下的剩余<b>丢弃</b>（与选区挖掘既有行为一致：不生成掉落实体）。
+     */
+    public static void insertBatch(BoundTarget target, java.util.List<ItemStack> drops) {
+        if (target == null || drops == null || drops.isEmpty()) {
+            return;
+        }
+        java.util.Map<net.minecraft.world.item.Item, java.util.List<ItemStack>> byItem = new java.util.HashMap<>();
+        for (ItemStack s : drops) {
+            if (s == null || s.isEmpty()) {
+                continue;
+            }
+            java.util.List<ItemStack> bucket = byItem.computeIfAbsent(s.getItem(), k -> new java.util.ArrayList<>(2));
+            boolean merged = false;
+            for (ItemStack m : bucket) {
+                // ⚠️ 1.21.1 起 NBT 被「数据组件」取代 → 方法名是 isSameItemSameComponents（1.20.1 为 isSameItemSameTags）
+                if (ItemStack.isSameItemSameComponents(m, s) && m.getCount() + s.getCount() <= m.getMaxStackSize()) {
+                    m.grow(s.getCount());
+                    merged = true;
+                    break;
+                }
+            }
+            if (!merged) {
+                bucket.add(s);
+            }
+        }
+        for (java.util.List<ItemStack> bucket : byItem.values()) {
+            for (ItemStack s : bucket) {
+                insertIntoTarget(target, s); // leftover 丢弃（需求：多余掉落清除）
+            }
+        }
     }
 
     /**
@@ -288,6 +406,10 @@ public final class LootVacuumEvents {
             return ItemStack.EMPTY;
         }
         targetLevel.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
+        // ⚠️ 2026-09-12（1.4.1）：AE 网络取料（判定同样放在 ItemHandler 之前）
+        if (org.zifeng.skilltree.compat.Ae2StorageCompat.isWirelessAccessPoint(targetLevel, pos)) {
+            return org.zifeng.skilltree.compat.Ae2StorageCompat.extract(targetLevel, pos, match, count, player);
+        }
         IItemHandler handler = targetLevel.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
         if (handler == null) {
             return ItemStack.EMPTY;

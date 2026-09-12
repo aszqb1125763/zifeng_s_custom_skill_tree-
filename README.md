@@ -106,7 +106,7 @@ gradlew.bat build
 | 【EverlastingAbilities】 | 药水效果节流 + 有限时长刷新；能力等级变更钩子精确回收 | 常驻药水无限时长技能（1.3.6）——效果节流刷新思路、按等级变更精确回收思路（MIT 协议，独立实现） |
 | 【TinkersConstruct（匠魂）】 | Global Loot Modifier 方块掉落修改；自动熔炼配方缓存 | 1.20.1 方块掉落修改（1.3.6）——掉落物生成后、变实体前改列表；熔炉配方 Map 缓存（MIT 协议，独立实现） |
 | 【Passive Skill Tree（daripher）】 | 技能数据管理指令集（reset / points set / add） | 玩家技能数据管理指令（1.3.7）——命令语义灵感；基于本模组自有 PlayerSkillRecord 存档独立实现，扩展支持离线玩家（GPL-3.0，仅参考设计，未复制代码） |
-| 【Applied Energistics 2（应用能源2）】 | 频道模式切换 API（AEConfig.setChannelModel + Grid repath） | 无限回路（AE 无限频道）技能——调用 AE2 官方公开 API（与 /ae2 channelmode infinite 指令相同逻辑），反射软集成，未装 AE2 自动降级 |
+| 【Applied Energistics 2（应用能源2）】 | ① 频道模式切换 API（AEConfig.setChannelModel + Grid repath）② ME 网络存储接入（无线访问点的 Grid / 存储服务 / AEKey 互转 / 动作模式） | ① 无限回路（AE 无限频道）技能——调用 AE2 官方公开 API（与 /ae2 channelmode infinite 指令相同逻辑）② 容器绑定【支持 AE2 无线访问点】（1.4.1）——绑定后掉落物直传 ME 网络，与存储总线走同一条存取路径。两项均反射软集成，未装 AE2 自动隐藏/降级，零影响 |
 | 【Apotheosis（神化）】 | 词条装备来源标记 + 掉落复制防刷（FestiveAffix 标记尸体携带物只复制新掉落） | 装备掉落翻倍（1.3.8）——反射软读取神化 8.x 物品组件（AFFIXES + FROM_MOB/FROM_BOSS/FROM_CHEST）翻倍世界产出的词条装备；未装神化自动降级 |
 | 【EnderIO】 | 旅行手杖（Travel Staff）闪现传送处理（目标求解、teleportTo + resetPosition + fallDistance 归零、末影传送音效） | 闪现技能（1.3.8）——视线方向 + 薄墙穿墙逻辑独立实现（MIT 协议，未复制代码） |
 

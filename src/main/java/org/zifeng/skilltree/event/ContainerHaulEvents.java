@@ -123,8 +123,8 @@ public final class ContainerHaulEvents {
     }
 
     /**
-     * 遍历打开的菜单槽位：跳过玩家背包槽（container == player 背包），其余视为外部容器槽，
-     * 把物品逐格 insertIntoBoundRaw 塞进绑定容器。塞完的空槽 set 回空。
+     * 遍历打开的菜单槽位：跳过玩家背包槽（container == player 背包）与 AE2 设备槽位，
+     * 其余视为外部容器槽，把物品逐格 insertIntoBoundRaw 塞进绑定容器。塞完的空槽 set 回空。
      * ⚠️ 打开绑定容器本身时（自绑），物品会从源格搬到自己另一格/自身——总量不变，
      *    不会产生复制，可安全忽略。已绑定容器 = insertIntoBoundRaw 内部 null 兜底。
      */
@@ -143,6 +143,12 @@ public final class ContainerHaulEvents {
             if (slot.container == player.getInventory()) {
                 continue;
             }
+            // ⚠️ 2026-09-12（1.4.1）跳过 AE2 设备槽位：驱动器里的存储元件、设备上的升级卡、
+            //    接口/样板供应器的配置与样板——这些是「设备自身零件」，不是可搬运的容器内容。
+            //    否则打开 AE 驱动器 GUI 时，元件会被搬进绑定网络并清空源槽（元件直接消失）。
+            if (isAeDeviceSlot(slot)) {
+                continue;
+            }
             ItemStack stack = slot.getItem();
             if (stack == null || stack.isEmpty()) {
                 continue;
@@ -159,6 +165,34 @@ public final class ContainerHaulEvents {
         if (anyMoved) {
             // 槽位变化由玩家 containerMenu 每 tick broadcastChanges 自动同步给客户端，无需手动发包
             player.containerMenu.broadcastChanges();
+        }
+    }
+
+    /**
+     * 是否为 AE2 设备槽位（2026-09-12 1.4.1 新增）。
+     *
+     * <p><b>要解决的问题：</b>搬运术原本把菜单里除玩家背包外的所有槽位都当成"外部容器物品"，
+     * 于是打开 AE2 驱动器 GUI 时，槽里的**存储元件**被搬进绑定网络并 `slot.set(EMPTY)` 清空→
+     * 元件直接消失（空元件尤其明显：AE2 元件对已存类型会自动锁定，空元件不锁定所以会接受
+     * "元件"这个新类型而插入成功；有内容的元件因类型锁定而拒绝，反而侥幸没被搬走）。
+     *
+     * <p><b>判定依据（javap 实测 AE2 19.2.17 / 15.4.10）：</b>AE2 设备槽位全部继承
+     * {@code appeng.menu.slot.AppEngSlot}（`RestrictedInputSlot` / `FakeSlot` / `OutputSlot` /
+     * `CellPartitionSlot` 等），均位于 {@code appeng.menu.slot} 包下；
+     * 另部分槽（如 ME 终端的网络物品视图）用原版 {@code Slot} 但背后容器是 AE2 内部容器。
+     * 因此用<b>包名前缀</b>判定（纯反射、零依赖，且不会误伤其他模组的普通容器槽）。
+     */
+    private static boolean isAeDeviceSlot(Slot slot) {
+        try {
+            // ① 槽位类本身是 AE2 的（appeng.menu.slot.RestrictedInputSlot 等）
+            if (slot.getClass().getName().startsWith("appeng.")) {
+                return true;
+            }
+            // ② 槽位背后的容器是 AE2 内部容器（ME 终端网络物品视图槽用原版 Slot）
+            net.minecraft.world.Container c = slot.container;
+            return c != null && c.getClass().getName().startsWith("appeng.");
+        } catch (Throwable t) {
+            return false; // 判定失败时按普通槽处理（保守：不阻止搬运）
         }
     }
 

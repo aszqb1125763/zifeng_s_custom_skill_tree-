@@ -577,18 +577,37 @@ public class UltimateEvents {
 
     // ============ 凌空采掘（FLY_MINING，2026-08-27）：飞行中挖掘无视原版空中 5 倍惩罚 ============
     // 原版 Player.getDestroySpeed：!onGround() → 挖掘速度 /5。本事件在速度计算后触发，×5 恢复。
+    //
+    // ⚠️ 2026-09-12（1.4.1）修复：原实现只处理【服务端】（`instanceof ServerPlayer` 后直接 return），
+    //   而挖掘是【客户端预测 + 服务端校验】：客户端 `MultiPlayerGameMode` 用
+    //   `BlockState.getDestroyProgress → LocalPlayer.getDestroySpeed` 自行累计进度，
+    //   只有进度满 100% 才发包（客户端驱动节奏）；服务端 `ServerPlayerGameMode.destroyProgress` 另算一份。
+    //   实测确认 LocalPlayer **没有**覆写 getDigSpeed → 客户端同样会走到本事件，
+    //   但旧代码在客户端直接 return → **客户端仍按 /5 的慢速预测** → 体感"空中还是比地面慢"。
+    //   现改为【两端都处理】：服务端用权威存档判定，客户端用本地技能缓存（与 isEnchantSkillEnabled 同模式，
+    //   服务端不会执行该分支 → 专服不会加载客户端类）。
     @SubscribeEvent
     public static void onBreakSpeed(net.neoforged.neoforge.event.entity.player.PlayerEvent.BreakSpeed event) {
         Player player = event.getEntity();
-        if (!(player instanceof ServerPlayer sp)) {
-            return;
-        }
-        PlayerSkillRecord record = getRecord(sp);
-        if (record.getLearnedPoints(Skills.FLY_MINING) > 0 && record.isEnabled(Skills.FLY_MINING)
-                && !player.onGround()) {
+        if (!player.onGround() && isFlyMiningEnabled(player)) {
             // 恢复空中 /5 惩罚（水下/水外惩罚独立计算，不受影响）
             event.setNewSpeed(event.getOriginalSpeed() * 5.0F);
         }
+    }
+
+    /**
+     * 凌空采掘是否生效（多人安全 + 双端可用）。
+     * <p>服务端查真实记录（权威防作弊）；客户端用本地缓存（服务端 S2CPacket 校准）。
+     * <p>⚠️ 客户端分支必须放在 {@code instanceof ServerPlayer} 的 else 里 —— 专服不会执行该分支，
+     * 因此不会加载仅客户端存在的 {@code ModKeyBindingEvents}（避免 NoClassDefFoundError）。
+     */
+    private static boolean isFlyMiningEnabled(Player player) {
+        if (player instanceof ServerPlayer sp) {
+            PlayerSkillRecord record = getRecord(sp);
+            return record.getLearnedPoints(Skills.FLY_MINING) > 0 && record.isEnabled(Skills.FLY_MINING);
+        }
+        // 客户端：本地缓存（服务端校准；懒加载安全，服务端不执行此分支）
+        return org.zifeng.skilltree.client.ModKeyBindingEvents.isSkillEnabledClient(Skills.FLY_MINING);
     }
 
     // ============ 破暗之瞳（DARK_VISION，2026-08-27）：免疫黑暗效果（坚守者/古城） ============

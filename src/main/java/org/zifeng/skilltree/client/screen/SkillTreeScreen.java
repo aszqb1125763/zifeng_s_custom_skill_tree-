@@ -788,13 +788,17 @@ public class SkillTreeScreen extends Screen {
                 lines.add(new TooltipLine(line, 0xFFFF5555, 0.9F));
             }
         }
-        // 2.5 容器绑定技能（子枫挪移术/子枫的搬运术）：显示当前绑定容器（2026-08-24 需求；2026-09-07 扩展两技能共用绑定）
+        // 2.5 容器绑定技能（子枫挪移术/子枫的搬运术）：显示当前绑定目标（2026-08-24 需求；2026-09-07 扩展两技能共用绑定）
         if (Skills.isContainerBindSkill(skillId)) {
             String bind = org.zifeng.skilltree.client.ModKeyBindingEvents.getLootVacuumBindClient();
             if (bind == null) {
                 lines.add(new TooltipLine("§7" + t("tip_no_container"), 0xFF888888, 1.0F));
             } else {
-                lines.add(new TooltipLine(t("tip_container") + "：" + bind, 0xFF55FF55, 1.0F));
+                // ⚠️ 2026-09-12（1.4.1）：绑定的是 AE2 无线访问点时用紫色 + [AE] 前缀，与普通容器的悬色一眼区分
+                boolean aeBind = org.zifeng.skilltree.client.ModKeyBindingEvents.getBindTypeClient()
+                        == org.zifeng.skilltree.compat.Ae2StorageCompat.TYPE_AE;
+                lines.add(new TooltipLine(t("tip_container") + "：" + (aeBind ? "[AE] " : "") + bind,
+                        aeBind ? 0xFFAA55FF : 0xFF55FF55, 1.0F));
             }
         }
 

@@ -537,10 +537,26 @@ public class Config {
         AMP_JUMP_PER_POINT = builder.comment("Amp Jump: +X jump multiplier per point (default 0.1 = +10%)\n蹦跳真解每点").defineInRange("ampJumpPerPoint", 0.1, 0.0, 10.0);
         AMP_FLY_PER_POINT = builder.comment("Amp Fly: +X fly speed multiplier per point (default 0.1 = +10%)\n御空真解每点").defineInRange("ampFlyPerPoint", 0.1, 0.0, 10.0);
         AMP_SWIM_PER_POINT = builder.comment("Amp Swim: +X swim multiplier per point (default 0.1 = +10%)\n游鱼真解每点").defineInRange("ampSwimPerPoint", 0.1, 0.0, 10.0);
+        ZONE_MSP_LIMIT_MS = builder.comment("Zone job: target max total tick time in ms (default 45; higher = faster large zones but higher MSPT. 50ms is the hard limit - beyond it TPS drops)\n选区作业：每 tick 总耗时上限（毫秒，默认 45；调大=大选区更快但 MSPT 更高；50ms 是硬上限，超过会掉 TPS）")
+                .defineInRange("zoneMspLimitMs", 45, 10, 48);
         builder.pop();
 
         SPEC = builder.build();
     }
+
+    /**
+     * 选区作业允许的【每 tick 总耗时上限】（毫秒，默认 45）。
+     * <p>选区放置/挖掘采用「分批跨 tick 处理」以免单帧卡死（选区上限 256³），本项决定目标 MSPT：
+     * 模块在 tick 末尾运行，会把「本 tick 已耗时」自动扣除，只用剩余时间推进作业
+     * → 空闲服能跑得快、**忙碌服自动少跑甚至不跑（不会雪上加霜）**。
+     * <p><b>调大 = 大选区完成更快，但 tick 停顿更久。</b>
+     * <p>⚠️ <b>50ms 是硬上限</b>：Minecraft 服务器 tick 预算 = 50ms，超过就掉 TPS（日志出现
+     * "Can't keep up"）。故本项上限设为 48，默认 <b>45</b>（留 5ms 余量给基础开销波动）。
+     * <p>实测参考（1.20.1 整合包 / 256³ 满选区）：默认 45ms 下平均 MSPT 仅 7.4ms、TPS 保持满 20。
+     * <p>⚠️ 2026-09-12（1.4.1）：初版固定 5ms（太慢）→ 可配置 25ms（不感知负载）
+     * → 自适应天花板（本方案）。用户实测"延迟完全不高"后由 30 提到 45。
+     */
+    public static final ModConfigSpec.IntValue ZONE_MSP_LIMIT_MS;
 
     /**
      * Called on config reload/load: re-applies all attribute modifiers to online players

@@ -78,17 +78,22 @@ public class ModCommands {
     private static int modifyBlacklist(CommandContext<CommandSourceStack> ctx, boolean add) throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         ResourceLocation id = ResourceLocationArgument.getId(ctx, "id");
+        // ⚠️ 2026-09-12（1.4.1）修复：传给 Component.translatable 的占位符参数必须是
+        //    String/原语或 Component——传 ResourceLocation 会导致【网络包编码失败】
+        //    （EncoderException: This value needs to be parsed as component ...）
+        //    → 客户端断线（单人也会"被踢"）。必须显式 toString()。
+        String idStr = id.toString();
         Item item = resolveItem(id);
         if (item == null || item == Items.AIR) {
-            ctx.getSource().sendFailure(Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_not_found", id));
+            ctx.getSource().sendFailure(Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_not_found", idStr));
             return 0;
         }
         PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
         PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
         if (record.addAutoSmeltBlacklist(item)) {
-            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_added", id), false);
+            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_added", idStr), false);
         } else {
-            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_exists", id), false);
+            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_exists", idStr), false);
         }
         data.setDirty();
         return 1;
@@ -98,17 +103,18 @@ public class ModCommands {
     private static int removeBlacklist(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         ResourceLocation id = ResourceLocationArgument.getId(ctx, "id");
+        String idStr = id.toString(); // ⚠️ 同上：Component 占位符不能传 ResourceLocation
         Item item = resolveItem(id);
         if (item == null || item == Items.AIR) {
-            ctx.getSource().sendFailure(Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_not_found", id));
+            ctx.getSource().sendFailure(Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_not_found", idStr));
             return 0;
         }
         PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
         PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
         if (record.removeAutoSmeltBlacklist(item)) {
-            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_removed", id), false);
+            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_removed", idStr), false);
         } else {
-            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_not_in", id), false);
+            ctx.getSource().sendSuccess(() -> Component.translatable("chat.zifeng_s_custom_skill_tree.hmd_not_in", idStr), false);
         }
         data.setDirty();
         return 1;
