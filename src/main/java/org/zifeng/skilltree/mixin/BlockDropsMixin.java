@@ -58,6 +58,13 @@ public abstract class BlockDropsMixin {
     private static void zifeng$fillUnbreakableDrops(BlockState state, ServerLevel level, BlockPos pos,
                                                     BlockEntity blockEntity, Entity entity, ItemStack stack,
                                                     CallbackInfoReturnable<List<ItemStack>> cir) {
+        // ★ 2026-09-15：选区挖掘的「掉落模拟」阶段 → 不补掉落。
+        //    原因①（用户要求）：区块拆解能破基岩，但基岩【不给物品】—— 不补掉落 → 模板为空 → 不产出。
+        //    原因②（坑）：本 Mixin 在 Block.getDrops 内部执行，模拟期间塞容器会造成
+        //    「模拟那一次插入 + 模板被清空」的重复/丢失（与 GLM 同一类挂载点问题）。
+        if (org.zifeng.skilltree.event.ZoneSkillEvents.isSimulatingDrops()) {
+            return;
+        }
         List<ItemStack> original = cir.getReturnValue();
         if (original != null && !original.isEmpty()) {
             return; // 原版有掉落（普通方块）：不干预

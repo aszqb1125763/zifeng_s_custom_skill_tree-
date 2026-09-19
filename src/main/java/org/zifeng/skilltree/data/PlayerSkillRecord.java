@@ -729,6 +729,8 @@ public class PlayerSkillRecord {
             tag.putString("LootVacuumName", lootVacuumName);
             tag.putInt("LootVacuumType", lootVacuumType);
         }
+        // 等级压缩迁移标记（2026-09-14）：写入后旧存档不再重复 ÷10
+        tag.putBoolean("LvCompressed", true);
         return tag;
     }
 
@@ -845,6 +847,26 @@ public class PlayerSkillRecord {
                 record.protectZones.add(new OperZone(dim,
                         zt.getInt("AX"), zt.getInt("AY"), zt.getInt("AZ"),
                         zt.getInt("BX"), zt.getInt("BY"), zt.getInt("BZ")));
+            }
+        }
+        // ══════════ 等级压缩迁移（2026-09-14）══════════
+        // 原 1000 级 / 500 级上限的技能被压缩 10 倍，每级效果相应 ×10（见 SkillEffects.effLevel），
+        // **总效果不变**。旧存档的已学等级必须同步 ÷10，否则会出现"效果凭空 ×10"或"等级超过新上限"。
+        // 用标记位保证只迁移一次（save() 写入 LvCompressed=true）。
+        if (!tag.getBoolean("LvCompressed")) {
+            for (String id : new java.util.ArrayList<>(record.learnedSkills.keySet())) {
+                final int old = record.learnedSkills.getOrDefault(id, 0);
+                if (old > 0 && Skills.isLevelCompressed(id)) {
+                    record.learnedSkills.put(id,
+                            Math.max(1, (int) Math.round(old / (double) Skills.LEVEL_COMPRESSION)));
+                }
+            }
+            for (String id : new java.util.ArrayList<>(record.activeLevels.keySet())) {
+                final int old = record.activeLevels.getOrDefault(id, 0);
+                if (old > 0 && Skills.isLevelCompressed(id)) {
+                    record.activeLevels.put(id,
+                            Math.max(1, (int) Math.round(old / (double) Skills.LEVEL_COMPRESSION)));
+                }
             }
         }
         return record;

@@ -21,16 +21,15 @@ public final class Ae2Compat {
     private static boolean ae2Loaded = false;
     private static boolean ae2Checked = false;
 
-    /** 当前开启「无限回路」技能的玩家（服务端）：玩家 UUID → 等级（1=X2 2=X3 3=X4 4=INFINITE） */
-    private static final java.util.Map<UUID, Integer> ACTIVE_PLAYERS = new java.util.HashMap<>();
-
-    /** 应用频道模式前的原模式（首次应用时记录；全部关闭时恢复） */
-    private static volatile Object previousMode = null;
+    /**
+     * 当前开启「无限回路」技能的玩家（服务端）：玩家 UUID → 等级（1=X2 2=X3 3=X4 4=INFINITE）。
+     * <p>⚠️ <b>用 LinkedHashMap 保序（2026-09-14）</b>："谁最后激活谁生效"——末尾 entry = 最后激活者，
+     * 取他的等级作为生效等级（不再是所有玩家中的最高等级）。
+     */
+    private static final java.util.Map<UUID, Integer> ACTIVE_PLAYERS = new java.util.LinkedHashMap<>();
 
     /** 当前生效频道模式码（0=默认 1=X2 2=X3 3=X4 4=无限；-1=未应用）——供服务器全局状态提示同步 */
     private static volatile int currentModeCode = -1;
-    /** 已恢复默认标记（2026-08-27 性能：集合空且已恢复后，disable 每 tick 调用直接幂等返回，不重复 repath/推送） */
-    private static boolean restoredDefault = false;
 
     /** 当前生效频道模式码（供 GlobalStateS2CPacket 同步给客户端显示） */
     public static int getCurrentModeCode() {
@@ -97,11 +96,16 @@ public final class Ae2Compat {
         };
     }
 
-    private static Object getDefaultMode() {
-        if (DEFAULT_MODE == null) {
-            try { getAeConfigInstance(); } catch (Throwable ignored) { }
+    /**
+     * 当前生效等级 = <b>最后激活者</b>的等级（2026-09-14「谁最后激活谁生效」）。
+     * <p>LinkedHashMap 保序，末尾 entry 即最后激活者；集合为空时返回 4 兜底（调用方均已判空）。
+     */
+    private static int lastActivatorLevel() {
+        Integer last = null;
+        for (Integer v : ACTIVE_PLAYERS.values()) {
+            last = v;
         }
-        return DEFAULT_MODE;
+        return last != null ? last : 4;
     }
 
     /** 遍历所有 Grid 强制 repath（参考 AE2 ChannelModeCommand.setChannelMode；复用缓存反射成员） */
@@ -137,7 +141,7 @@ public final class Ae2Compat {
     }
 
     /**
-     * 玩家开启技能时调用：注册玩家（记录等级）并应用所有开启玩家中的最高频道等级。
+     * 玩家开启技能时调用：注册玩家（记录等级）并应用<b>最后激活者</b>的频道等级。
      * <p>性能（2026-08-27 v3）：①已注册玩家且等级未变直接返回（避免每 tick 反射）②反射成员首次解析后静态缓存。
      *
      * @param level 频道等级（1=X2 2=X3 3=X4 4=INFINITE）
@@ -149,25 +153,23 @@ public final class Ae2Compat {
             if (prev != null && prev == level) {
                 return true; // 已注册且等级未变（每 tick 调用，幂等快速返回，零反射）
             }
+            // 2026-09-14「谁最后激活谁生效」：重新激活要移到末尾（LinkedHashMap 对已存在 key 的 put 不改顺序）
+            if (prev != null) {
+                ACTIVE_PLAYERS.remove(playerId);
+            }
             ACTIVE_PLAYERS.put(playerId, Math.max(1, Math.min(4, level)));
-            restoredDefault = false; // 有新开启者 → 取消已恢复标记
         }
         if (!isAe2Loaded()) {
             return false;
         }
         try {
-            // 取所有开启玩家中的最高等级
-            int maxLevel = ACTIVE_PLAYERS.values().stream().mapToInt(Integer::intValue).max().orElse(4);
-            Object target = modeForLevel(maxLevel);
+            // 取最后激活者的等级（不再取最高）
+            Object target = modeForLevel(lastActivatorLevel());
             Object instance = getAeConfigInstance();
             Object current = GET_CHANNEL_MODE.invoke(instance);
             if (current == target) {
                 currentModeCode = codeOf(target); // 已是目标模式：确保模式码已同步
                 return true; // 已是目标模式：无需重复设置
-            }
-            // 首次应用：记录原模式（仅记录一次，避免循环覆盖）
-            if (previousMode == null) {
-                previousMode = current;
             }
             // 设置模式 + 保存配置
             SET_CHANNEL_MODEL.invoke(instance, target);
@@ -184,8 +186,16 @@ public final class Ae2Compat {
     }
 
     /**
-     * 玩家关闭技能/登出时调用：移除玩家；重新应用剩余玩家的最高等级；
-     * 全部关闭后恢复原频道模式。
+     * 玩家关闭技能/登出时调用：仅解除登记，<b>不修改任何频道模式</b>。
+     *
+     * <p><b>2026-09-14 用户要求</b>：「关闭时什么状态就什么样，不用再去管玩家自己手动用指令调整的频道数量」——
+     * 因此取消了原先的 {@code previousMode} 恢复机制：
+     * <ul>
+     *   <li>不再恢复"技能生效前的原模式"（那会覆盖玩家在技能生效期间手动用 /ae2 命令改的值）</li>
+     *   <li>不再主动 repath / 写配置</li>
+     *   <li>只做一件事：只读同步当前真实模式码（供属性面板显示，不修改）</li>
+     * </ul>
+     * <p>注意：只要还有玩家开启技能，{@link #enable} 仍会把模式设为其指定等级（技能需要生效）。
      */
     public static synchronized void disable(UUID playerId) {
         if (playerId != null) {
@@ -195,54 +205,20 @@ public final class Ae2Compat {
             return;
         }
         try {
-            Object instance = getAeConfigInstance();
-            if (!ACTIVE_PLAYERS.isEmpty()) {
-                // 还有玩家开着 → 应用剩余玩家的最高等级
-                restoredDefault = false;
-                int maxLevel = ACTIVE_PLAYERS.values().stream().mapToInt(Integer::intValue).max().orElse(4);
-                Object target = modeForLevel(maxLevel);
-                Object current = GET_CHANNEL_MODE.invoke(instance);
-                if (current != target) {
-                    SET_CHANNEL_MODEL.invoke(instance, target);
-                    SAVE.invoke(instance);
-                    repathAllGrids();
-                }
-                currentModeCode = codeOf(target);
-                org.zifeng.skilltree.GlobalStateSync.markDirty();
-                return;
-            }
-            // ⚠️ 幂等（2026-08-27 性能）：集合空且已恢复过 → 每 tick 调用直接返回，不重复恢复/repath/推送
-            if (restoredDefault) {
-                return;
-            }
-            // 全部关闭：恢复原模式（无记录 → DEFAULT）
-            Object target = previousMode != null ? previousMode : getDefaultMode();
-            Object current = GET_CHANNEL_MODE.invoke(instance);
-            if (current != target) {
-                SET_CHANNEL_MODEL.invoke(instance, target);
-                SAVE.invoke(instance);
-            }
-            // 无条件 repath：即使模式未变也强制网络重算（确保频道数生效）
-            repathAllGrids();
-            currentModeCode = codeOf(target);
-            restoredDefault = true; // 标记已恢复默认
-            previousMode = null;    // ⚠️ 2026-08-28 修复：只有全部关闭并恢复后才清空，防止多人轮流开关时丢失初始模式
-            // 事件驱动：状态实际变化 → 标记全局状态变化（tick 末合并推送，2026-08-28）
-            org.zifeng.skilltree.GlobalStateSync.markDirty();
+            // 只读：把实际当前模式同步给 UI（不写入、不 repath）
+            currentModeCode = codeOf(GET_CHANNEL_MODE.invoke(getAeConfigInstance()));
         } catch (Throwable ignored) {
-            // 恢复失败静默跳过（AE 保持当前模式）
+            // 读取失败安全降级
         }
     }
 
     /**
-     * 服务器停止/重启时清理（2026-08-27 v3）：清空玩家集合 + 重置 previousMode，
-     * 防止异常退出/崩溃后跨世界残留导致 AE 频道模式永久锁定 INFINITE。
-     * 正常停止时玩家已逐个登出（集合已空），此方法只处理异常残留。
+     * 服务器停止/重启时清理（2026-08-27 v3）：清空玩家集合 + 重置模式码，
+     * 防止异常退出/崩溃后跨世界残留。
+     * <p>2026-09-14：不再有 {@code previousMode}（已取消恢复机制）。
      */
     public static synchronized void onServerStopped() {
         ACTIVE_PLAYERS.clear();
-        previousMode = null;
         currentModeCode = -1;
-        restoredDefault = false;
     }
 }

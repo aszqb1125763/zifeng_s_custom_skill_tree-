@@ -3,7 +3,7 @@ package org.zifeng.skilltree.data;
 /**
  * 木棍工具·操作区（2026-09-08，单人生效，存玩家 PlayerSkillRecord）：
  * 机械共鸣区块技能（放置/挖掘/攻击/防护）各自框选的一块区域。
- * 维度 + AABB 两角（a/b 不要求顺序，读取用 min/max 归一化）；单边 ≤ {@link #MAX_SIDE} 格。
+ * 维度 + AABB 两角（a/b 不要求顺序，读取用 min/max 归一化）；单边 ≤ {@link #MAX_SIDE_ZONE} 格。
  */
 public record OperZone(String dim, int ax, int ay, int az, int bx, int by, int bz) {
     /**
@@ -13,8 +13,30 @@ public record OperZone(String dim, int ax, int ay, int az, int bx, int by, int b
      * <p>⚠️ 2026-09-12（1.4.1）由 <b>64 提升到 256</b>（用户需求）。
      * 注意：大选区由 {@code ZoneSkillEvents} 分 tick 处理（不再单帧卡死），
      * 远超阈值时客户端会提示可能卡顿（见 {@code ZoneSelectionInputHandler}）。
+     * <p>⚠️ 2026-09-19：本常量现已<b>只用于磁铁屏蔽区</b>；选区技能改用
+     * {@link #MAX_SIDE_ZONE}（512）——参见下方注释。
      */
     public static final int MAX_SIDE = 256;
+
+    /**
+     * <b>选区技能</b>单边最大跨度（2026-09-19 新增，与磁铁屏蔽区分离）。
+     *
+     * <p><b>为何要拆开</b>：本 record 同时承载【磁铁屏蔽区】与【选区技能】两种用途，
+     * 而它们对“多大算合理”的诉求完全不同：
+     * <ul>
+     *   <li>磁铁屏蔽区：排除区，开得越大磁铁失效范围越大 → 不适宜放大（保持 256）</li>
+     *   <li>选区技能：玩家主动开挖，越大越好 → 提升到 512（用户需求）</li>
+     * </ul>
+     * 两者共用同一个常量时，提高上限会连带放开磁铁（非预期）。
+     *
+     * <p><b>512 为什么能跑得住</b>：{@code ZoneSkillEvents} 把选区按 X-Z 平面切成
+     * 批次边长 {@code zoneBatchSide}（默认 256）的块逐批处理（批内仍是「整柱自上而下」），
+     * 因此单批规模与原来的 256³ 同量级，内存与单 tick 负载不随总选区面积增长。
+     *
+     * <p>⚠️ 引用本常量的地方（客户端本地校验 / 服务端权威校验 / 调整尺寸）必须同步，
+     * 否则会出现「客户端能框、服务端拒绝」。
+     */
+    public static final int MAX_SIDE_ZONE = 512;
 
     public int minX() {
         return Math.min(ax, bx);
@@ -71,7 +93,7 @@ public record OperZone(String dim, int ax, int ay, int az, int bx, int by, int b
      *
      * @param face  要调整的面（由射线命中判定；传 null 返回 null）
      * @param delta 带符号步进格数：正 = 向外扩，负 = 向内缩（0 也返回 null）
-     * @return 调整后的新区（已归一化）；<b>null = 非法</b>：会翻转（min>max）或单边超 {@link #MAX_SIDE}
+     * @return 调整后的新区（已归一化）；<b>null = 非法</b>：会翻转（min>max）或单边超 {@link #MAX_SIDE_ZONE}
      */
     public OperZone adjust(net.minecraft.core.Direction face, int delta) {
         if (face == null || delta == 0) {
@@ -93,8 +115,8 @@ public record OperZone(String dim, int ax, int ay, int az, int bx, int by, int b
         if (nMinX > nMaxX || nMinY > nMaxY || nMinZ > nMaxZ) {
             return null; // 会翻转 → 至少保留 1 格
         }
-        if (nMaxX - nMinX > MAX_SIDE || nMaxY - nMinY > MAX_SIDE || nMaxZ - nMinZ > MAX_SIDE) {
-            return null; // 超单边上限
+        if (nMaxX - nMinX > MAX_SIDE_ZONE || nMaxY - nMinY > MAX_SIDE_ZONE || nMaxZ - nMinZ > MAX_SIDE_ZONE) {
+            return null; // 超单边上限（选区专用常量：adjust 仅被选区调整调用）
         }
         return new OperZone(dim, nMinX, nMinY, nMinZ, nMaxX, nMaxY, nMaxZ);
     }

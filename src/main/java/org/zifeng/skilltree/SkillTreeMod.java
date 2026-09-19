@@ -62,6 +62,8 @@ public class SkillTreeMod {
         // GAME 总线手动注册（避免 @EventBusSubscriber 双重注册）
         MinecraftForge.EVENT_BUS.register(SkillEvents.class);
         MinecraftForge.EVENT_BUS.register(UltimateEvents.class);
+        // 奥术防护（2026-09-14）：魔法减伤/反射/虹吸/破法之刃/净化领域
+        MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.event.ArcaneEvents.class);
         // ⚠️ 2026-09-09 Z-Link 迁移后 AuraEvents/ZoneSkillEvents 已无 @SubscribeEvent 方法 → 不再 register
         //    （逻辑已由 ZModules 模块接管；NeoForge 1.21.1 注册空类会直接崩，Forge 宽松但也应移除）
         MinecraftForge.EVENT_BUS.register(MagnetEvents.class);

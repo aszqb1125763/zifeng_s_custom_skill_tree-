@@ -32,33 +32,136 @@ import java.util.Map;
  * </ul>
  */
 public class SkillTreeScreen extends Screen {
-    /** 本地化快捷取翻译（客户端 GUI 用）：ui.zifeng_s_custom_skill_tree.<key> */
+    /**
+     * 本地化快捷取翻译（客户端 GUI 用）：ui.zifeng_s_custom_skill_tree.&lt;key&gt;
+     *
+     * <p>⚠️ 2026-09-19 性能优化（用户：「显示不要实时渲染，按原版按钮那样做」）：
+     * 原实现每次调用都 {@code Component.translatable(...)} 新建对象 + 走语言表 getString()。
+     * 列表界面每帧要取上百次（类别行 10 次 + 行内固定文案 × 可见行数），纯 GC/查找开销。
+     * 现在改为静态缓存——语言只会在资源重载时变，切换语言后界面会重建（{@link #init} 清缓存）。
+     */
     private static String t(String key) {
-        return Component.translatable("ui.zifeng_s_custom_skill_tree." + key).getString();
+        String cached = LANG_CACHE.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        String value = Component.translatable("ui.zifeng_s_custom_skill_tree." + key).getString();
+        LANG_CACHE.put(key, value);
+        return value;
     }
+
+    /** 语言字符串缓存（key → 已翻译文本）；资源重载/重新打开界面时清空 */
+    private static final Map<String, String> LANG_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** 字体（供子界面访问，Screen.font 是 protected） */
     net.minecraft.client.gui.Font font() {
         return this.font;
     }
 
-    private static final int BUTTON_WIDTH = 150;
-    private static final int BUTTON_HEIGHT = 46;
-    private static final int VERTICAL_SPACING = 2;
-    /** 按键框宽度（2026-08-13 内联按键框：位于技能按钮右侧，显示/设置该技能开关快捷键） */
-    private static final int KEY_BOX_WIDTH = 44;
-    /** 第二列按键框宽度（2026-08-13：等级/目标循环快捷键，位于第一框右侧） */
-    private static final int KEY2_BOX_WIDTH = 44;
-    /** 第三列按键框宽度（2026-09-07：功能触发键——主动技在场景内按一下触发一次，如搬运术手动搬运） */
-    private static final int KEY3_BOX_WIDTH = 44;
-    /** 按键框与按钮间隙 */
-    private static final int KEY_BOX_GAP = 3;
-    private static final int HORIZONTAL_SPACING = 30;
-    private static final int BORDER_THICKNESS = 4;
+    // ============ 布局常量（2026-09-19 L4 分区重构） ============
+    // ★ 结构（参考原版快捷键界面 + miui 的 ZListRow「一行一贴片」）：
+    //     ┌──── 分区框1：标题行（技能点）──────────────────┐
+    //     └──────────────────────────────────────────────┘
+    //     ┌──── 分区框2：类别行（居中）───────────────────┐
+    //     └──────────────────────────────────────────────┘
+    //     ┌──── 分区框3：技能行列表 ─────────────────────┐
+    //     │ 〔一整张贴片 = 技能内容区 │ Q │ E │ R 〕      │  ← 整行一个底色/一个外框，内部竖线分格
+    //     └──────────────────────────────────────────────┘
+    //   ★ 宽度自适应：贴片宽度随窗口拉伸 → 进度条吃弹性空间，Q/E/R 贴在行右端。
+
+    /** 技能行高（紧凑列表行；★ 固定不随窗口变化 —— 与原版列表一致） */
+    private static final int BUTTON_HEIGHT = 28;
+    /** 行间距（贴片之间的缝；圆角贴片需要呼吸空间，Miuix 列表行间距 2） */
+    private static final int VERTICAL_SPACING = 3;
+
+    // ---- 行内布局 ----
+    /** 图标（16×16，垂直居中） */
+    private static final int R_ICON_X = 3;
+    /** 名称区（固定宽） */
+    private static final int R_NAME_X = 22;
+    private static final int R_NAME_W = 118;
+    /** 下一级消耗区（固定宽） */
+    private static final int R_COST_X = 144;
+    private static final int R_COST_W = 56;
+    /** 等级进度条：★ 弹性区（左边界固定，宽度 = 内容区宽 - 左边界 - 等级区） */
+    private static final int R_BAR_X = 204;
+    private static final int R_BAR_MIN_W = 40;
+    private static final int R_BAR_H = 4;
+    /** 等级文字（右对齐：99/100；贴内容区右端） */
+    private static final int R_LV_W = 52;
+    /** 进度条与等级文字之间的间距 */
+    private static final int R_LV_GAP = 6;
+    /** 内容区最小宽（窗口太小时到此为止，不再压缩） */
+    private static final int CONTENT_MIN_W = 204 + R_BAR_MIN_W + R_LV_GAP + R_LV_W + 4;
+
+    /** 按键格宽度（贴片内部分格，三格等宽） */
+    private static final int KEY_BOX_WIDTH = 24;
+    private static final int KEY2_BOX_WIDTH = 24;
+    private static final int KEY3_BOX_WIDTH = 24;
+
+    // ---- 分区框（三个独立框，参考原版界面边框）----
+    /** 分区框距窗口边缘 */
+    private static final int FRAME_MARGIN = 8;
+    /** 分区框线宽 */
+    private static final int FRAME_LINE = 1;
+    /** 分区框之间的竖直间隙 */
+    private static final int FRAME_GAP = 2;
+    /** 分区框内元素距框线的左右内边距 */
+    private static final int FRAME_PAD_X = 4;
+    /** 大贴片 → 子贴片的内缩（形成嵌套观感） */
+    private static final int SUB_INSET = 5;
+
+    // ---- 嵌套贴片（2026-09-19：底层大贴片 → 三个子贴片 → 技能贴片）----
+    //   层级：页面底（L5）→ 大贴片 → 子贴片 → 技能贴片（每行一张）
+    //   风格沿用 Miuix 的做法：靠「色阶 + 描边」分层，不靠投影。
+    /** 大贴片圆角 */
+    private static final int R_BIG = 12;
+    /** 子贴片圆角（比大贴片小一档，形成内嵌观感） */
+    private static final int R_SUB = 8;
+    /** 技能贴片圆角 */
+    private static final int R_ROW = 6;
+    /** 大贴片底色 */
+    private static final int C_BIG_BG = 0xFFF4F5F8;
+    /** 大贴片描边 */
+    private static final int C_BIG_EDGE = 0xFFB9BDC8;
+    /** 子贴片底色 */
+    private static final int C_SUB_BG = 0xFFE8EAF0;
+    /** 子贴片描边 */
+    private static final int C_SUB_EDGE = 0xFFC9CCD5;
+    /** 技能贴片内部格线（淡） */
+    private static final int C_CELL_LINE = 0x40FFFFFF;
+    /** 进度条轨道（半透明白 —— Miuix sliderBackground 的做法） */
+    private static final int C_BAR_TRACK = 0x59FFFFFF;
+    /** 进度条生效刻度 */
+    private static final int C_BAR_TICK = 0xFFFFDD44;
+    /** 进度条高（缩放后） */
+    private static final int R_BAR_H2 = 6;
+
     /** 属性面板宽度（2026-08-29：150→200，英文 label/数值更长，防重叠） */
     private static final int PANEL_WIDTH = 200;
-    private static final double MIN_SCALE = 0.25; // 2026-08-25：八列总宽 1960，0.25 缩放下全可见
-    private static final double MAX_SCALE = 2.5;
+
+    // ---- 分类按钮行（第一行：10 个类别）----
+    /** 分类按钮高 */
+    private static final int CAT_BTN_H = 18;
+    /** 分类按钮左右内边距 */
+    private static final int CAT_BTN_PAD = 8;
+    /** 分类按钮间距 */
+    private static final int CAT_BTN_GAP = 3;
+
+    /** 行区域顶部距分类行的间距 */
+    private static final int LIST_TOP_GAP = 6;
+    /** 右侧滚动条宽 */
+    private static final int SCROLLBAR_W = 6;
+    /** 滚动条距右边框的间距 */
+    private static final int SCROLLBAR_MARGIN = 3;
+    /** 贴片距分区框内顶的内边距（2026-09-19） */
+    private static final int ROW_PAD_TOP = 3;
+    /**
+     * 贴片宽度上限（2026-09-19）。
+     * <p>窗口拉很宽时不让贴片一路铺到屏幕右端 —— 否则等级进度条被拉成上千像素的长条，反而看不清。
+     * 原版列表（快捷键界面等）同样有宽度上限。
+     */
+    private static final int ROW_MAX_W = 560;
 
     private double skillPoints;
     private final Map<String, Integer> learnedSkills = new HashMap<>();
@@ -69,14 +172,13 @@ public class SkillTreeScreen extends Screen {
     private final Map<String, Integer> auraTargetModes = new HashMap<>();
     private final List<SkillButton> buttons = new ArrayList<>();
 
-    private double scale = 1.0;
-    private double panX = 0;
-    private double panY = 0;
     private int lastMouseX;
     private int lastMouseY;
     private int panelScroll = 0; // 属性面板滚动偏移（0 = 顶部）
     /** 当前悬停按钮的 tooltip 边界 [x, y, w, h]（屏幕坐标，预计算供图标跳过判定） */
     private int[] activeTooltipBounds = null;
+    /** 当前悬停按钮的 tooltip 行列表（2026-09-15：与 activeTooltipBounds 同帧构建，绘制时直接复用） */
+    private java.util.List<TooltipLine> activeTooltipLines = null;
     /** 按键设置窗口：当前正在设置按键的技能（null = 窗口关闭）；窗口与技能界面同一图层 */
     private String keyBindSkillId = null;
     /** 按键设置窗口：是否正在监听按键输入（点击"设置"后为 true） */
@@ -90,6 +192,172 @@ public class SkillTreeScreen extends Screen {
 
     /** 当前打开的子界面（null = 无；2026-09-01 子界面系统） */
     private SkillSubScreen activeSubScreen = null;
+
+    // ============ 列表式布局状态（2026-09-19） ============
+    /** 当前选中的技能类别索引（0~9，对应 10 列；默认 0） */
+    private int selectedCategory = 0;
+    /** 技能列表竖向滚动偏移（像素） */
+    private int scrollY = 0;
+    /** 滚动上限（= max(0, 内容高 - 视口高)），重建时重算 */
+    private int scrollMax = 0;
+    /** 正在拖动生效等级滑块的技能；拖动时等级文字、填充和服务端状态同步更新。 */
+    private String draggingLevelSkillId = null;
+    /** 分类按钮行横向滚动偏移（像素；按钮太多时可滚） */
+    private int catScrollX = 0;
+    /** 分类按钮行内容总宽（重建时重算） */
+    private int catContentW = 0;
+    /** 分类按钮行的按钮左边界（与 {@link #catContentW} 配合做横向滚动，屏幕坐标） */
+    private final int[] catButtonX = new int[10];
+    /** 分类按钮行的按钮宽度（各按钮宽度不同，随文字长短） */
+    private final int[] catButtonW = new int[10];
+    /** 分类按钮标题文本（重建时解析一次并缓存，避免每帧 10 次语言查询；2026-09-19 性能优化） */
+    private final String[] catTitles = new String[10];
+
+    /**
+     * 字体行高（安全取）。
+     * <p>⚠️ 2026-09-19 崩溃修复：`Screen.font` 要到 {@link #init()} 才被赋值，
+     * 而 {@link #rebuildButtons()} 在<b>构造函数</b>里就会被调（updateData）——
+     * 此时直接读 {@code font.lineHeight} 会 NPE（直接进游戏一点开界面就崩）。
+     * 字体未就绪时回退到原版默认行高 9，init() 后会用真实值重建。
+     */
+    private int lineHeight() {
+        return font != null ? font.lineHeight : 9;
+    }
+
+    // ========================================================================
+    // 几何（2026-09-19 贴片嵌套）：大贴片 → 三个子贴片 → 技能贴片 —— 全部从窗口尺寸推导
+    // ========================================================================
+
+    // ---- 底层大贴片（最下面那一张，居窗口内边距）----
+    private int bigLeft() {
+        return FRAME_MARGIN;
+    }
+
+    private int bigRight() {
+        return width - FRAME_MARGIN;
+    }
+
+    private int bigTop() {
+        return FRAME_MARGIN;
+    }
+
+    private int bigBottom() {
+        return height - FRAME_MARGIN;
+    }
+
+    // ---- 子贴片（大贴片向内缩 SUB_INSET，三个等宽）----
+    private int frameLeft() {
+        return bigLeft() + SUB_INSET;
+    }
+
+    private int frameRight() {
+        return bigRight() - SUB_INSET;
+    }
+
+    /** 分区框内宽（框线内侧到内侧） */
+    private int frameInnerW() {
+        return Math.max(0, frameRight() - frameLeft() - FRAME_LINE * 2);
+    }
+
+    // ---- 子贴片 1：标题行（技能点）----
+    private int titleFrameTop() {
+        return bigTop() + SUB_INSET;
+    }
+
+    private int titleFrameH() {
+        return HEADER_PAD * 2 + lineHeight();
+    }
+
+    private int titleFrameBottom() {
+        return titleFrameTop() + titleFrameH();
+    }
+
+    // ---- 分区框 2：类别行 ----
+    private int catFrameTop() {
+        return titleFrameBottom() + FRAME_GAP;
+    }
+
+    private int catFrameH() {
+        return CAT_BTN_H + LIST_TOP_GAP * 2;
+    }
+
+    private int catFrameBottom() {
+        return catFrameTop() + catFrameH();
+    }
+
+    // ---- 分区框 3：技能行列表 ----
+    private int listFrameTop() {
+        return catFrameBottom() + FRAME_GAP;
+    }
+
+    /** 技能行子贴片底部（留出右下角两个功能按钮的高度） */
+    private int listFrameBottom() {
+        return bigBottom() - SUB_INSET - BOTTOM_BTN_H - BOTTOM_BTN_MARGIN - 4;
+    }
+
+    private int listFrameH() {
+        return Math.max(0, listFrameBottom() - listFrameTop());
+    }
+
+    // ---- 行（贴片）----
+
+    /** 贴片左边界（屏幕坐标）：分区框内 + 内边距 */
+    private int rowLeft() {
+        return frameLeft() + FRAME_LINE + FRAME_PAD_X;
+    }
+
+    /** 贴片右边界（屏幕坐标）：分区框内 - 内边距 - 让出竖向滚动条 */
+    private int rowRight() {
+        return frameRight() - FRAME_LINE - FRAME_PAD_X - SCROLLBAR_W - SCROLLBAR_MARGIN;
+    }
+
+    /**
+     * 贴片总宽（= 内容区 + Q + E + R 三格，整行一张贴片；左对齐，宽度横向上限 {@link #ROW_MAX_W}）。
+     *
+     * <p>★ 为什么要设上限：窗口拉得很宽时，如果贴片一路铺到屏幕右端，
+     * 中间的等级进度条会被拉成一千多像素的长条 —— 反而<b>更看不清</b>。
+     * 原版列表（如快捷键界面）同样给列表宽度设了上限，不会铺满整屏。
+     * <p>超过上限的部分留白，贴片仍然靠左（用户要求技能行左对齐）。
+     */
+    int rowW() {
+        return Math.min(ROW_MAX_W, Math.max(0, rowRight() - rowLeft()));
+    }
+
+    /** 贴片内「技能内容区」宽（= 贴片总宽 - 三格宽）—— 进度条的弹性空间来源 */
+    int contentW() {
+        int w = rowW() - (KEY_BOX_WIDTH + KEY2_BOX_WIDTH + KEY3_BOX_WIDTH);
+        return Math.max(CONTENT_MIN_W, w);
+    }
+
+    /** 等级进度条宽度（弹性） */
+    private int barW() {
+        return Math.max(R_BAR_MIN_W, contentW() - R_BAR_X - R_LV_GAP - R_LV_W);
+    }
+
+    /** 等级文字左边界（内容区右端左移 R_LV_W） */
+    private int lvX() {
+        return contentW() - R_LV_W;
+    }
+
+    /** 内容区右边界 */
+    private int contentRight() {
+        return contentW();
+    }
+
+    /** 行区域上边界（屏幕坐标） */
+    private int listTop() {
+        return listFrameTop() + FRAME_LINE + ROW_PAD_TOP;
+    }
+
+    /** 列表视区高度（屏幕坐标） */
+    private int listViewH() {
+        return Math.max(0, listBottom() - listTop());
+    }
+
+    /** 列表视区底部（分区框内底） */
+    private int listBottom() {
+        return listFrameBottom() - FRAME_LINE;
+    }
 
     /** 打开子界面（同类型已打开则关闭切换） */
     void openSubScreen(SkillSubScreen sub) {
@@ -168,11 +436,11 @@ public class SkillTreeScreen extends Screen {
     public SkillTreeScreen(int skillPoints, Map<String, Integer> learnedSkills, Map<String, Boolean> toggles,
                            Map<String, Integer> activeLevels, boolean auraEnabled, Map<String, Integer> auraTargetModes) {
         super(Component.translatable("ui.zifeng_s_custom_skill_tree.title"));
-        // 恢复上次退出时的位置/缩放（2026-08-13 需求：上次什么位置退出下次就什么位置）
+        // 2026-09-19 列表式改版：不再有平移/缩放，故不再恢复上次视图状态（只需恢复按键绑定）
         org.zifeng.skilltree.client.SkillKeyBinds.load();
-        this.panX = org.zifeng.skilltree.client.SkillKeyBinds.getLastPanX();
-        this.panY = org.zifeng.skilltree.client.SkillKeyBinds.getLastPanY();
-        this.scale = org.zifeng.skilltree.client.SkillKeyBinds.getLastScale();
+        // 每次开界面重建一次本地化缓存（语言可能中途切换过；建完就整局复用）
+        LANG_CACHE.clear();
+        KEY_NAME_CACHE.clear();
         updateData(skillPoints, learnedSkills, toggles, activeLevels, auraEnabled, auraTargetModes);
     }
 
@@ -190,6 +458,7 @@ public class SkillTreeScreen extends Screen {
         if (auraTargetModes != null) {
             this.auraTargetModes.putAll(auraTargetModes);
         }
+        textVersion++; // 2026-09-15 性能优化：数据变化 → 按钮文本缓存全部失效重建
         rebuildButtons();
     }
 
@@ -206,42 +475,339 @@ public class SkillTreeScreen extends Screen {
 
     private int tickCounter = 0;
 
-    /** 八纵列布局：八列顶部对齐（上方对齐），魔法增幅列在最左，子枫的馈赠列在最右。
-     * ⚠️ 2026-08-25 间距统一 280：每列实际占宽 244（按钮150+开关框44+等级框44+间隙），
-     *    280 > 244 保证列与列完全不重叠（原 240 会贴住/重叠）。 */
-    private void rebuildButtons() {
-        buttons.clear();
-        // 10 列中心 x：间距统一 300（2026-09-08 新增第10列木棍工具）
-        int[] colCenters = {-1350, -1050, -750, -450, -150, 150, 450, 750, 1050, 1350};
-        placeColumn(Skills.MAGIC_SKILLS, colCenters[0]);
-        placeColumn(Skills.BASE_SKILLS, colCenters[1]);
-        placeColumn(Skills.AMPLIFY_SKILLS, colCenters[2]);
-        placeColumn(Skills.ULTIMATE_SKILLS, colCenters[3]);
-        placeColumn(Skills.SPECIAL_SKILLS, colCenters[4]);
-        placeColumn(Skills.AURA_SKILLS, colCenters[5]);
-        placeColumn(Skills.GLOBAL_SKILLS, colCenters[6]);
-        placeColumn(Skills.MACHINE_SKILLS, colCenters[7]);
-        placeColumn(Skills.GIFT_SKILLS, colCenters[8]);
-        placeColumn(Skills.TOOL_SKILLS, colCenters[9]); // 木棍工具占位（2026-09-08）
+    // ========================================================================
+    // 2026-09-15 界面性能优化：帧内共享缓存 + 按钮文本缓存 + 视口剔除
+    //   掉帧根因（按开销排序）：
+    //     ① headerBounds() 被每个按钮的 isIconUnderUI() 重复调用（≈120 次/帧）
+    //        → 每帧上千次语言查询 + 数百次字体测量
+    //     ② 按钮三行文本的「逐字符裁剪」while 循环是 O(n²)（3 处 × 120 按钮）
+    //     ③ 按钮三行文本每帧重建（≈10 次语言查询 ×120 按钮 → 纯 GC 压力）
+    //     ④ 屏幕外的整套按钮（背景/边框/图标/文字/按键框）照常绘制
+    //   原则：只缓存「输入不变就不会变」的东西，显示结果与优化前逐像素一致。
+    // ========================================================================
+
+    /** 帧序号（render 开头 +1；帧内只算一次的缓存据此判断失效） */
+    private int frameStamp = 0;
+    /** 顶部信息区缓存帧号（-1 = 未构建） */
+    private int headerCacheFrame = -1;
+    /**
+     * 顶部信息区文本（2026-09-19 起：<b>只有技能点一行</b>）。
+     * <p>原四行（标题/光环状态/快捷键提示/未绑定警告）已按用户要求删除——
+     * 它们占掉顶部大片空间且信息密度低（多为常驻不变的说明文字）。
+     */
+    private String cachedHeaderText = "";
+    private int cachedHeaderMaxWidth = 0;
+    private int[] cachedHeaderBounds = null;
+
+    /** 顶部技能点行：距边框内侧的内边距（2026-09-19） */
+    private static final int HEADER_PAD = 6;
+    /** 按钮文本缓存版本号：技能数据变化时 +1（updateData） */
+    private int textVersion = 0;
+    /** 按钮三行文本缓存（技能ID → 文本） */
+    // 2026-09-19：已由 rowVisualCache 统一接管（文本也属于「行静态视觉」），此处不再单独缓存
+
+    // ========================================================================
+    // 2026-09-19 列表式改版【性能优化】——用户反馈：「相关显示不要实时渲染，太卡、太掉帧，按原版按钮那样做」
+    //
+    //   旧实现（改版后）：renderSkillButton 每帧、对每一可见行重算：
+    //     颜色分组 switch / Skills.getType / canLearn（内部走 getPrerequisites + missingModName + 代价阶梯）
+    //     prereqMetFor（遍历前置表）/ 进度条除算 / Skills.getMaxPoints / Skills.getIcon + new ItemStack
+    //     nextCostDisplay（String.format + 字体测宽）/ 3 个按键槽的 getDisplayName().getString()
+    //   → 这些东西【只跟技能数据有关，跟鼠标无关】，却被算了 60 次/秒 × 可见行数，纯属浪费。
+    //
+    //   现在：把它们整佰算成一条 {@link RowVisual} 缓存（「数据变才重算」），
+    //   每帧渲染只剩：5 次 fill（行底/边框）+ 3 次 drawString + 1 次图标 blit + 3 个按键槽，
+    //   与「原版按钮」的开销同一量级（原版按钮就只是 fill + drawString，不重算逻辑）。
+    // ========================================================================
+
+    /** 技能行静态视觉缓存（技能ID → 行视觉）；数据变（rebuildButtons）时失效，或指纹对不上时重建 */
+    private final Map<String, RowVisual> rowVisualCache = new HashMap<>();
+
+    /**
+     * 按键显示名缓存（InputConstants.Key → 显示文本）。
+     * <p>原实现每帧对每行的 3 个槽位都调 {@code getDisplayName().getString()}（走语言表 + 新建 Component）——
+     * 可见 20 行就是 60 次/帧。按键显示名是静态文本，缓存后只剩查表。
+     */
+    private static final Map<com.mojang.blaze3d.platform.InputConstants.Key, String> KEY_NAME_CACHE = new HashMap<>();
+
+    /** 取按键显示名（带缓存） */
+    private static String keyName(com.mojang.blaze3d.platform.InputConstants.Key key) {
+        if (key == null) {
+            return null;
+        }
+        String cached = KEY_NAME_CACHE.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        String name = key.getDisplayName().getString();
+        KEY_NAME_CACHE.put(key, name);
+        return name;
     }
 
-    /** 五列统一顶部 y（上方对齐）：按钮区上方留空间给列标题（加大后标题占 30px 高） */
-    private static final int COLUMN_TOP = -170;
+    /** 行视觉指纹：这些输入不变 → 行视觉不会变（不需要重建） */
+    private static int rowFingerprint(int version, int points, int activeLevel, boolean enabled, int toolMode, int pointsX10) {
+        int h = version;
+        h = h * 31 + points;
+        h = h * 31 + activeLevel;
+        h = h * 31 + (enabled ? 1 : 0);
+        h = h * 31 + toolMode;
+        h = h * 31 + pointsX10;
+        return h;
+    }
+    /** 技能树可视区域（面板局部坐标，含余量）——屏幕外按钮整块跳过渲染 */
+    private double viewLeft;
+    private double viewTop;
+    private double viewRight;
+    private double viewBottom;
 
-    /** 列标题顶部 y（标题背景上沿，比按钮顶部高 40px，间距充足） */
-    private static final int COLUMN_TITLE_TOP = -206;
+    /**
+     * 按钮三行文本（名称 / 等级 / 消耗）——纯计算结果，仅由 {@link #buildRowVisual} 调用。
+     */
+    private record ButtonTexts(String name, String effect, String cost) {
+    }
 
-    /** 单列从上往下摆放（顶部对齐，列高不再影响起始位置） */
-    private void placeColumn(List<String> skills, int centerX) {
-        int y = COLUMN_TOP;
-        for (String skill : skills) {
-            buttons.add(new SkillButton(skill, centerX - BUTTON_WIDTH / 2, y));
+    /**
+     * 技能行「静态视觉」缓存条目（2026-09-19 性能优化）。
+     *
+     * <p>只装「跟技能数据有关、跟鼠标无关」的东西：类型/开关/已学/可学/前置、行底色与描边的常态值与悬停值、
+     * 三处文字颜色、进度条几何（填充宽/刻度位置/颜色）、两个槽位的可用性、图标（ItemStack 已缓存）。
+     * <p>渲染时只需根据 {@code hovered} 二选一取底色/描边，其余直接画 —— 不再每帧跑判定逻辑。
+     */
+    private record RowVisual(int fp, Skills.SkillType type, boolean isTool, boolean enabled, boolean learned,
+                             int bg, int bgHover, int border, int borderHover,
+                             int nameColor, int costColor, int lvColor,
+                             float barFillR, float barTickR, int barColor,
+                             boolean slot2Usable, boolean slot3Usable,
+                             net.minecraft.world.item.ItemStack iconStack,
+                             net.minecraft.resources.ResourceLocation iconTex,
+                             String name, int nameW, String effect, int effectW, String costText,
+                             String attrText, int attrW) {
+    }
+
+    /** 颜色向白色混合（lighten）；t=0 原色，t=1 纯白 */
+    private static int lighten(int color, float t) {
+        int a = color >>> 24;
+        int r = (color >> 16) & 0xFF;
+        int g = (color >> 8) & 0xFF;
+        int b = color & 0xFF;
+        r = Math.min(255, (int) (r + (255 - r) * t));
+        g = Math.min(255, (int) (g + (255 - g) * t));
+        b = Math.min(255, (int) (b + (255 - b) * t));
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    /** 颜色向黑色混合（darken）；t=0 原色，t=1 纯黑（保留原 alpha） */
+    private static int darken(int color, float t) {
+        int a = color >>> 24;
+        int r = (color >> 16) & 0xFF;
+        int g = (color >> 8) & 0xFF;
+        int b = color & 0xFF;
+        r = (int) (r * (1 - t));
+        g = (int) (g * (1 - t));
+        b = (int) (b * (1 - t));
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    /** 帧开始：推进帧序号（帧内缓存据此判断是否需要重新计算） */
+    private void beginFrame() {
+        frameStamp++;
+    }
+
+    /**
+     * 重建顶部信息区缓存（2026-09-19 起：<b>只剩【技能点】一行</b>）。
+     *
+     * <p>⚠️ 2026-09-19 策划更改（用户）：删除原先的 4 行内容——
+     * 「子枫的百宝箱」（标题）/ 光环开关状态 / 目标模式 / 快捷键提示行 / 未绑定警告行，
+     * <b>只保留技能点数量</b>，且<b>固定靠左上角</b>（不随列表滚动）。
+     * 原 4 行占掉顶部大片空间、信息密度低，是本次要砍掉的「臃肿」部分。
+     *
+     * <p>性能：每帧最多调用一次（frameStamp 判定），且语言查询从 5 次降为 1 次。
+     */
+    private void refreshHeaderCache() {
+        if (headerCacheFrame == frameStamp) {
+            return;
+        }
+        headerCacheFrame = frameStamp;
+        cachedHeaderText = t("status_skill_point") + String.format("%.1f", Math.max(0, skillPoints));
+        cachedHeaderMaxWidth = font.width(cachedHeaderText);
+        // ★ 2026-09-19：标题行现在是「分区框 1」内的一行普通文字（去掉原先那圈独立圆角小框）
+        int x = frameLeft() + FRAME_LINE + FRAME_PAD_X + 2;
+        int y = titleFrameTop() + FRAME_LINE + (titleFrameH() - FRAME_LINE * 2 - font.lineHeight) / 2;
+        cachedHeaderBounds = new int[]{x - 2, titleFrameTop() + 1, x + cachedHeaderMaxWidth + 2, titleFrameBottom() - 1};
+    }
+
+    /** 计算技能树可视区域（面板局部坐标，留 8px 余量）——用于剔除屏幕外的技能行。
+     *  <p>2026-09-19：原点 = 贴片左上角（固定），无缩放；竖向叠加滚动偏移。
+     *  竖向同时被【技能行分区框】限制 —— 滚出框的行不绘制。 */
+    private void updateViewport() {
+        double ox = rowLeft();
+        double oy = listTop() - scrollY;
+        viewLeft = (0 - ox) - 8;
+        viewTop = scrollY - 8;
+        viewRight = (width - ox) + 8;
+        viewBottom = scrollY + listViewH() + 8;
+    }
+
+    /** 贴片是否与可视区域相交；不相交 → 整块跳过（绘制结果与原本被裁掉一致） */
+    private boolean isButtonVisible(SkillButton button) {
+        int right = button.x() + rowW();
+        return button.x() <= viewRight && right >= viewLeft
+                && button.y() <= viewBottom && button.y() + BUTTON_HEIGHT >= viewTop;
+    }
+
+    /**
+     * 按像素宽度裁剪文本（超出部分截掉）。
+     * ⚠️ 原实现是「逐字符 + 每次重新测宽」的 while 循环 → O(n²)（每帧 3 处 × 120 按钮，
+     *    最坏上万次字形查询）；这里改为二分查找 O(n log n)，结果完全相同（最长可容纳前缀）。
+     */
+    private String clipToWidth(String text, int maxWidth) {
+        if (text == null || text.isEmpty() || font.width(text) <= maxWidth) {
+            return text;
+        }
+        int lo = 0;
+        int hi = text.length();
+        while (lo < hi) {
+            int mid = (lo + hi + 1) >>> 1;
+            if (font.width(text.substring(0, mid)) <= maxWidth) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        return text.substring(0, lo);
+    }
+
+    /**
+     * 十个技能类别（2026-09-19 列表式改版）。
+     *
+     * <p>改版前是「10 列并排铺开约 2700px，必须缩放/拖动才能看全、且列高极不均衡（最长的特殊被动 24 项
+     * vs 最短的寰宇法则 3 项）」；现在是「顶部类别按钮行 + 单列技能列表」——
+     * 天然有阅读顺序、无需缩放拖动，一屏能完整看完一个类别。
+     *
+     * <p>顺序 = 原列顺序（0 魔法 / 1 基础 / 2 增幅 / 3 终极 / 4 被动 / 5 光环 / 6 寰宇 / 7 机械 / 8 馈赠 / 9 工具）。
+     */
+    private static final String[] CATEGORY_TITLE_KEYS = {"col_magic", "col_base", "col_amplify", "col_ultimate",
+            "col_special", "col_aura", "col_global", "col_machine", "col_gift", "col_tool"};
+    /** 十个类别的强调色（沿用改版前各列标题配色，保持视觉延续） */
+    private static final int[] CATEGORY_COLORS = {0xFF55FFAA, 0xFF87CEEB, 0xFFFFAA55, 0xFFFF5555, 0xFFD7A55A,
+            0xFFAA55FF, 0xFF66CCFF, 0xFFD7D7D7, 0xFFE0B6C8, 0xFFC8A87C};
+    /** 类别总数 */
+    private static final int CATEGORY_COUNT = 10;
+
+    /** 取第 i 个类别的技能列表 */
+    private static List<String> categorySkills(int i) {
+        return switch (i) {
+            case 0 -> Skills.MAGIC_SKILLS;
+            case 1 -> Skills.BASE_SKILLS;
+            case 2 -> Skills.AMPLIFY_SKILLS;
+            case 3 -> Skills.ULTIMATE_SKILLS;
+            case 4 -> Skills.SPECIAL_SKILLS;
+            case 5 -> Skills.AURA_SKILLS;
+            case 6 -> Skills.GLOBAL_SKILLS;
+            case 7 -> Skills.MACHINE_SKILLS;
+            case 8 -> Skills.GIFT_SKILLS;
+            default -> Skills.TOOL_SKILLS;
+        };
+    }
+
+    /**
+     * 重建技能行 —— <b>只建当前选中类别</b>，单列纵向排列。
+     *
+     * <p>⚠️ 行坐标在「面板局部坐标系」（与 {@link #toPanelX}/{@link #toPanelY} 同一坐标系，
+     * 原点 = 列表左上角），因此按钮 x 恒为 0、y 逐行递增 —— 所有命中判定代码无需改动。
+     */
+    private void rebuildButtons() {
+        buttons.clear();
+        // 数据变了 → 行视觉缓存全部失效（含技能点变化引起的可学/颜色变化）
+        rowVisualCache.clear();
+        int y = 0;
+        for (String skill : categorySkills(selectedCategory)) {
+            buttons.add(new SkillButton(skill, 0, y));
             y += BUTTON_HEIGHT + VERTICAL_SPACING;
         }
+        // 内容总高 → 滚动上限（视口高随窗口尺寸变化，故在此重算）
+        int contentH = buttons.isEmpty() ? 0 : y - VERTICAL_SPACING;
+        scrollMax = Math.max(0, contentH - listViewH());
+        if (scrollY > scrollMax) {
+            scrollY = scrollMax;
+        }
+        rebuildCategoryRow();
+    }
+
+    /**
+     * 类别按钮行的可用宽度 = 界面内宽（左边框到右边框之间）。
+     * <p>2026-09-19：键位小标题已按用户要求去掉，类别行独占一条横带，可以铺满整宽。
+     */
+    private int catViewW() {
+        return Math.max(0, width - FRAME_MARGIN * 2 - FRAME_LINE * 2);
+    }
+
+    /**
+     * 重建类别按钮行的几何（屏幕坐标）。
+     *
+     * <p>★ 2026-09-19 用户要求：类别行<b>水平居中</b>——整组按钮在界面内宽里居中；
+     * 如果宽到放不下（中英文差异 + 小窗口），才退化为「从左边框起、可横向滚动」。
+     * <p>按钮宽度随文案长短自适应。
+     */
+    private void rebuildCategoryRow() {
+        if (font == null) {
+            return; // 字体未就绪（构造函数阶段）→ 等 init() 后再测宽
+        }
+        int total = 0;
+        for (int i = 0; i < CATEGORY_COUNT; i++) {
+            String title = catTitles[i] != null ? catTitles[i]
+                    : Component.translatable("ui.zifeng_s_custom_skill_tree." + CATEGORY_TITLE_KEYS[i]).getString();
+            catTitles[i] = title; // 缓存（只在此处解析，每帧不再查语言表）
+            catButtonW[i] = font.width(title) + CAT_BTN_PAD * 2;
+            total += catButtonW[i] + CAT_BTN_GAP;
+        }
+        catContentW = Math.max(0, total - CAT_BTN_GAP);
+        int availW = catViewW();
+        int baseX;
+        if (catContentW <= availW) {
+            catScrollX = 0; // 放得下 → 不滚动，整组居中
+            baseX = frameLeft() + FRAME_LINE + (availW - catContentW) / 2;
+        } else {
+            catScrollX = Math.max(0, Math.min(catScrollX, catContentW - availW));
+            baseX = frameLeft() + FRAME_LINE - catScrollX;
+        }
+        int x = baseX;
+        for (int i = 0; i < CATEGORY_COUNT; i++) {
+            catButtonX[i] = x;
+            x += catButtonW[i] + CAT_BTN_GAP;
+        }
+    }
+
+    /**
+     * 屏幕初始化：字体/尺寸此时才就绪。
+     * <p>⚠️ 2026-09-19：行高、列表视区、类别按钮宽度都依赖字体，所以在构造函数里算不准——
+     * 这里用真实字体重算一遍（顺带清语言/按键名缓存，防中途切语言）。
+     */
+    @Override
+    protected void init() {
+        super.init();
+        LANG_CACHE.clear();
+        KEY_NAME_CACHE.clear();
+        java.util.Arrays.fill(catTitles, null);
+        rebuildButtons();
+    }
+
+    /**
+     * 窗口尺寸变化（★ 用户要求「随窗口大小改变 UI 大小」——宽度自适应）。
+     *
+     * <p>分区框位置、贴片宽度、滚动上限、类别按钮横向居中位置全都由 width/height 推导，
+     * 所以 resize 时必须重算一遍，否则拉完窗口后「画出来的」和「算出来的」会不一致。
+     */
+    @Override
+    public void resize(net.minecraft.client.Minecraft minecraft, int width, int height) {
+        super.resize(minecraft, width, height);
+        rebuildButtons();
     }
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        beginFrame();      // 2026-09-15：帧序号 +1（帧内缓存失效判断）
+        updateViewport();  // 2026-09-15：可视区域（屏幕外按钮/列标题整块跳过）
         renderBackground(guiGraphics);
         this.lastMouseX = mouseX;
         this.lastMouseY = mouseY;
@@ -262,11 +828,9 @@ public class SkillTreeScreen extends Screen {
         renderLayer3Tooltips(guiGraphics, mouseX, mouseY);
         guiGraphics.flush();
 
-        // 第二图层：边框（淡蓝色四边框，在第一图层之下、悬浮显示之上）
-        renderLayer2Border(guiGraphics);
-        guiGraphics.flush();
+        // 第二图层：2026-09-19 起贴片（大贴片+子贴片）改在 L4 开头统一绘制，此处不再画框线
 
-        // 第一图层（最顶）：顶部标题区 + 属性面板 + 开关面板 + 面板开关按钮
+        // 第一图层（最顶）：右下角功能按钮等顶部 UI
         renderLayer1HeaderAndPanels(guiGraphics);
         guiGraphics.flush();
 
@@ -289,162 +853,136 @@ public class SkillTreeScreen extends Screen {
     }
 
     /**
-     * 第二图层：边框（淡蓝色四边框）。
-     * 在第一图层之下、第三图层（悬浮显示）之上 → 盖住悬浮提示边缘、被 UI 面板盖住。
+     * 嵌套贴片：<b>底层大贴片 + 三个子贴片</b>（2026-09-19 用户给出的结构）。
+     *
+     * <pre>
+     *   底层大贴片（整块 UI）
+     *     ├─ 子-标题贴片（技能点）
+     *     ├─ 子-类别贴片（类别按钮）
+     *     └─ 子-技能贴片（每行一张，另见 renderSkillButton）
+     * </pre>
+     *
+     * <p>分层手法沿用 Miuix 的 {@code ZSurface}：靠「色阶 + 1px 描边」体现层级，不用投影。
+     * <p>⚠️ 直接在 L4 开头画（而不是原来的「第二图层画分隔线」）——
+     * 这样 tooltip（L3）能干净地浮在贴片之上，不会被框线切边。
      */
-    private void renderLayer2Border(GuiGraphics guiGraphics) {
-        int border = Config.SKILL_TREE_BORDER_COLOR.get();
-        net.minecraft.client.renderer.RenderType overlay = net.minecraft.client.renderer.RenderType.guiOverlay();
-        guiGraphics.fill(overlay, 0, 0, width, BORDER_THICKNESS, border);
-        guiGraphics.fill(overlay, 0, height - BORDER_THICKNESS, width, height, border);
-        guiGraphics.fill(overlay, 0, BORDER_THICKNESS, BORDER_THICKNESS, height - BORDER_THICKNESS, border);
-        guiGraphics.fill(overlay, width - BORDER_THICKNESS, BORDER_THICKNESS, width, height - BORDER_THICKNESS, border);
+    private void renderPatches(GuiGraphics guiGraphics) {
+        // ① 底层大贴片
+        fillRound(guiGraphics, bigLeft(), bigTop(), bigRight(), bigBottom(), R_BIG, C_BIG_BG);
+        // ② 三个子贴片
+        subPatch(guiGraphics, titleFrameTop(), titleFrameH());
+        subPatch(guiGraphics, catFrameTop(), catFrameH());
+        subPatch(guiGraphics, listFrameTop(), listFrameH());
+    }
+
+    /** 一张子贴片：圆角底 + 1px 圆角描边（外圈色块 + 内缩一像素的底色） */
+    private void subPatch(GuiGraphics guiGraphics, int top, int h) {
+        if (h <= 0) {
+            return;
+        }
+        final int l = frameLeft();
+        final int r = frameRight();
+        final int b = top + h;
+        fillRound(guiGraphics, l, top, r, b, R_SUB, C_SUB_EDGE);
+        fillRound(guiGraphics, l + FRAME_LINE, top + FRAME_LINE, r - FRAME_LINE, b - FRAME_LINE,
+                Math.max(0, R_SUB - FRAME_LINE), C_SUB_BG);
     }
 
     /**
-     * 第四图层：技能树本体（列标题 + 技能按钮）。
-     * 属于技能树本体的所有内容（按钮、图标、文字、列标题）都画在这一层。
+     * 第四图层：技能树本体（2026-09-19 L4 分区重构）。
+     *
+     * <p>★ 用户明确要求：<b>标题行、类别行、技能行这三行都属于 L4 区域</b>，
+     * 整个「技能 UI 界面」的版式参考原版快捷键界面 —— 宽度自适应、行高与字号固定。
+     *
+     * <p>三个分区框的框线画在第二图层（{@link #renderLayer2Border}），
+     * 这里负责框内的三块内容：①技能点标题行（左对齐）②类别行（水平居中）③技能行列表（左对齐）。
      */
     private void renderLayer4SkillTree(GuiGraphics guiGraphics) {
-        // 技能面板（屏幕中心偏左）
+        // ---------- ① 嵌套贴片底/描边（大贴片 + 三个子贴片，先铺底）----------
+        renderPatches(guiGraphics);
+
+        // ---------- ② 标题行：技能点（左对齐，固定不滚动）----------
+        renderHeaderInfo(guiGraphics);
+
+        // ---------- ③ 类别行（水平居中，固定不滚动）----------
+        renderCategoryRow(guiGraphics);
+
+        // ---------- ③ 技能行列表（左对齐；★ 用剪裁框限制在技能行分区框内）----------
+        guiGraphics.enableScissor(frameLeft() + FRAME_LINE, listTop(),
+                frameRight() - FRAME_LINE, listBottom());
         guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(width / 2.0 - 60 + panX, height / 2.0 + 10 + panY, 0);
-        guiGraphics.pose().scale((float) scale, (float) scale, 1.0F);
-
-        // 列标题（大字号 + 类型色边框背景，跟随各列顶部；与按钮区保持间距）
-        // 2026-09-08：间距 300，10 列（新增最右木棍工具列）
-        int[] colCenters = {-1350, -1050, -750, -450, -150, 150, 450, 750, 1050, 1350};
-        renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_magic").getString(), colCenters[0], 0xFF55FFAA);
-        renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_base").getString(), colCenters[1], 0xFF87CEEB);
-        renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_amplify").getString(), colCenters[2], 0xFFFFAA55);
-        renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_ultimate").getString(), colCenters[3], 0xFFFF5555);
-        renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_special").getString(), colCenters[4], 0xFFD7A55A);
-        renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_aura").getString(), colCenters[5], 0xFFAA55FF);
-        renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_global").getString(), colCenters[6], 0xFF66CCFF); // 2026-08-27 新增：全局更改类
-        renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_machine").getString(), colCenters[7], 0xFFD7D7D7);
-        renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_gift").getString(), colCenters[8], 0xFFE0B6C8);
-        renderColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.col_tool").getString(), colCenters[9], 0xFFC8A87C); // 木棍工具列（2026-09-08）
-
-        // 按键框列标题（2026-08-13 需求：按键框上方加标题，标明各列用途；2026-09-07 加第三列"触发"）
-        // 第一框（开关）：按钮右缘 + 3；第二框（等级/目标/模式）：再右移 44+3；第三框（功能触发）：再右移 44+3
-        // 位置：按钮区顶部上方 24px（列标题下方），小字号 ×0.9
-        for (int i = 0; i < colCenters.length; i++) {
-            int btnRight = colCenters[i] + BUTTON_WIDTH / 2;
-            int k1x = btnRight + KEY_BOX_GAP;
-            int k2x = btnRight + KEY_BOX_GAP + KEY_BOX_WIDTH + KEY_BOX_GAP;
-            int k3x = k2x + KEY2_BOX_WIDTH + KEY_BOX_GAP;
-            int titleY = COLUMN_TOP - 24;
-            renderKeyColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.key_toggle_col").getString(), k1x, titleY, 0xFFFFD700, KEY_BOX_WIDTH);
-            // 该列是否有可绑定第二键的技能（光环 或 可调等级技能）
-            boolean hasLevelBindable = columnHasLevelBindable(i);
-            if (hasLevelBindable) {
-                // 列索引：0魔法 1基础 2增幅 3终极 4被动 5光环 6寰宇 7机械 8馈赠 9工具（2026-09-08 十列）
-                boolean auraCol = (i == 5);    // 光环列 → 目标/模式循环
-                boolean globalCol = (i == 6);  // 寰宇列 → 天气/等级循环
-                boolean toolCol = (i == 9);    // 工具列 → BIND/RANGE 模式循环
-                String secondTitle;
-                if (toolCol) {
-                    secondTitle = Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode_col").getString();
-                } else {
-                    secondTitle = auraCol ? Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode_col").getString() : (globalCol ? Component.translatable("ui.zifeng_s_custom_skill_tree.key_weather_col").getString() : Component.translatable("ui.zifeng_s_custom_skill_tree.key_level_col").getString());
-                }
-                renderKeyColumnTitle(guiGraphics, secondTitle, k2x, titleY,
-                        toolCol ? 0xFFC8A87C : (auraCol ? 0xFFBB77FF : (globalCol ? 0xFF66CCFF : 0xFF87CEEB)), KEY2_BOX_WIDTH);
-            }
-            // 第三列标题：该列含可绑功能触发键的技能才显示（触发键=场景内主动技，绿色系区分）
-            if (columnHasTriggerBindable(i)) {
-                renderKeyColumnTitle(guiGraphics, Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger_col").getString(), k3x, titleY, 0xFF66EE66, KEY3_BOX_WIDTH);
-            }
-        }
-
+        guiGraphics.pose().translate(rowLeft(), listTop() - scrollY, 0);
         for (SkillButton button : buttons) {
+            if (!isButtonVisible(button)) {
+                continue; // 视口剔除：屏幕外的行整块跳过（贴片/图标/文字/格）
+            }
             renderSkillButton(guiGraphics, button);
         }
         guiGraphics.pose().popPose();
-    }
+        guiGraphics.disableScissor();
 
-    /** 该列是否含可绑定第二键的技能（光环 或 上限>1 的可调等级技能；工具列含模式键） */
-    private boolean columnHasLevelBindable(int colIndex) {
-        List<String> col = switch (colIndex) {
-            case 0 -> Skills.MAGIC_SKILLS;
-            case 1 -> Skills.BASE_SKILLS;
-            case 2 -> Skills.AMPLIFY_SKILLS;
-            case 3 -> Skills.ULTIMATE_SKILLS;
-            case 4 -> Skills.SPECIAL_SKILLS;
-            case 5 -> Skills.AURA_SKILLS;
-            case 6 -> Skills.GLOBAL_SKILLS;
-            case 7 -> Skills.MACHINE_SKILLS;
-            case 8 -> Skills.GIFT_SKILLS;
-            default -> Skills.TOOL_SKILLS; // 工具列（2026-09-08）
-        };
-        for (String skillId : col) {
-            if (isLevelBindable(skillId)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** 该列是否含可绑「功能触发键」的技能（2026-09-07 第三类快捷键） */
-    private boolean columnHasTriggerBindable(int colIndex) {
-        List<String> col = switch (colIndex) {
-            case 0 -> Skills.MAGIC_SKILLS;
-            case 1 -> Skills.BASE_SKILLS;
-            case 2 -> Skills.AMPLIFY_SKILLS;
-            case 3 -> Skills.ULTIMATE_SKILLS;
-            case 4 -> Skills.SPECIAL_SKILLS;
-            case 5 -> Skills.AURA_SKILLS;
-            case 6 -> Skills.GLOBAL_SKILLS;
-            case 7 -> Skills.MACHINE_SKILLS;
-            case 8 -> Skills.GIFT_SKILLS;
-            default -> Skills.TOOL_SKILLS; // 工具列（2026-09-08）
-        };
-        for (String skillId : col) {
-            if (Skills.isTriggerBindable(skillId)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** 按键框列小标题（×0.9 字号 + 深色底 + 类型色文字，宽与按键框一致） */
-    private void renderKeyColumnTitle(GuiGraphics guiGraphics, String title, int x, int top, int color, int width) {
-        int h = 14;
-        var gui = net.minecraft.client.renderer.RenderType.gui();
-        fillRoundedRect(guiGraphics, x - 1, top - 1, x + width + 1, top + h + 1, 4, color, gui);
-        fillRoundedRect(guiGraphics, x, top, x + width, top + h, 4, 0xCC101018, gui);
-        float s = 0.9f;
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(x + width / 2.0f, top + h / 2.0f - font.lineHeight * s / 2.0f, 0);
-        guiGraphics.pose().scale(s, s, 1);
-        guiGraphics.drawCenteredString(font, title, 0, 0, color);
-        guiGraphics.pose().popPose();
+        // ---------- ④ 右侧滚动条（固定，屏幕坐标）----------
+        renderListScrollbar(guiGraphics);
     }
 
     /**
-     * 列标题：大字号（×1.6）+ 深色圆角背景 + 类型色边框，与按钮区间距 36px。
-     * 背景矩形：宽 140（与按钮同宽），高 30；文字放大居中。
+     * 类别按钮行（分区框 2 内：十个类别）。
+     *
+     * <p>★ 用户要求：这一行<b>水平居中</b>（整组按钮在分区框内居中）。
+     * 样式沿用本界面既有的按钮风格：深蓝底 + 淡蓝边框 + 选中高亮。
+     * <p>选中态 = 类别强调色边框 + 提亮底色 + 白色文字。
      */
-    private void renderColumnTitle(GuiGraphics guiGraphics, String title, int centerX, int color) {
-        int left = centerX - 70;
-        int top = COLUMN_TITLE_TOP;
-        int right = centerX + 70;
-        int bottom = top + 30;
-        // 类型色边框（外扩 1px）+ 深色背景（圆角 8）
-        // ⚠️ 必须用普通 GUI 渲染（RenderType.gui，与按钮同层、带深度测试）——
-        //    不能用 guiOverlay（无深度测试+最后批次），否则列标题叠加到最上层、盖住所有 UI
-        var gui = net.minecraft.client.renderer.RenderType.gui();
-        fillRoundedRect(guiGraphics, left - 1, top - 1, right + 1, bottom + 1, 8, color, gui);
-        fillRoundedRect(guiGraphics, left, top, right, bottom, 8, 0xCC101018, gui);
-        // 大字号文字（1.6×，居中）
-        float s = 1.6f;
-        float tx = centerX;
-        float ty = top + (bottom - top) / 2.0f - font.lineHeight * s / 2.0f;
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(tx, ty, 0);
-        guiGraphics.pose().scale(s, s, 1);
-        guiGraphics.drawCenteredString(font, title, 0, 0, color);
-        guiGraphics.pose().popPose();
+    private void renderCategoryRow(GuiGraphics guiGraphics) {
+        int y = catFrameTop() + FRAME_LINE + LIST_TOP_GAP;
+        // ⚠️ 2026-09-19 性能优化：文本在建行时缓存 + 统一用默认的 gui 批次 fill —— 与「原版按钮」同一套做法。
+        for (int i = 0; i < CATEGORY_COUNT; i++) {
+            int x = catButtonX[i];
+            int w = catButtonW[i];
+            if (x + w < frameLeft() || x > frameRight()) {
+                continue; // 横向滚动到框外的跳过
+            }
+            boolean selected = (i == selectedCategory);
+            boolean hovered = lastMouseX >= x && lastMouseX <= x + w
+                    && lastMouseY >= y && lastMouseY <= y + CAT_BTN_H;
+            // ★ 2026-09-19：类别按钮改成【浅色圆角胶囊】（子贴片现在是浅色了，深色块会显重）
+            int accent = CATEGORY_COLORS[i];
+            int bg = selected ? darken(accent, 0.5f) : (hovered ? 0xFFFFFFFF : 0xFFF6F6FA);
+            int border = selected ? accent : (hovered ? accent : ((accent & 0x00FFFFFF) | 0x70000000));
+            fillRound(guiGraphics, x, y, x + w, y + CAT_BTN_H, CAT_BTN_H / 2, bg);
+            strokeRound(guiGraphics, x, y, x + w, y + CAT_BTN_H, CAT_BTN_H / 2, border);
+            String title = catTitles[i] != null ? catTitles[i] : "";
+            int color = selected ? 0xFFFFFFFF : (hovered ? 0xFF2A2A34 : 0xFF4A4A56);
+            guiGraphics.drawCenteredString(font, title, x + w / 2, y + (CAT_BTN_H - font.lineHeight) / 2, color);
+        }
+        // 类别行横向滚动条（2px，仅放不下时出现；与右侧竖向滚动条同色，便于发现可左右滚）
+        int catScrollMax = Math.max(0, catContentW - catViewW());
+        if (catScrollMax > 0) {
+            int viewW = catViewW();
+            int trackX = frameLeft() + FRAME_LINE;
+            int trackY = y + CAT_BTN_H;
+            guiGraphics.fill(trackX, trackY, trackX + viewW, trackY + 2, 0x55000000);
+            int thumbW = Math.max(12, (int) ((long) viewW * viewW / Math.max(1, viewW + catScrollMax)));
+            int thumbX = trackX + (int) ((long) (viewW - thumbW) * catScrollX / Math.max(1, catScrollMax));
+            guiGraphics.fill(thumbX, trackY, thumbX + thumbW, trackY + 2, 0xFF87CEEB);
+        }
+    }
+
+    /**
+     * 右侧竖向滚动条（技能行分区框内右端）。
+     * <p>滑块高度按「视口高 / 内容高」比例；无可滚动内容时不绘制。
+     * <p>2026-09-19：去掉 guiOverlay，用默认批次 fill（与列表同层，减少渲染类型切换）。
+     */
+    private void renderListScrollbar(GuiGraphics guiGraphics) {
+        if (scrollMax <= 0) {
+            return;
+        }
+        int x = rowRight() + SCROLLBAR_MARGIN;
+        int top = listTop();
+        int viewH = listViewH();
+        int barH = Math.max(16, (int) ((long) viewH * viewH / Math.max(1, viewH + scrollMax)));
+        int barY = top + (int) ((long) (viewH - barH) * scrollY / Math.max(1, scrollMax));
+        guiGraphics.fill(x, top, x + SCROLLBAR_W, top + viewH, 0x55000000);
+        guiGraphics.fill(x, barY, x + SCROLLBAR_W, barY + barH, 0xFF87CEEB);
     }
 
     /**
@@ -459,14 +997,21 @@ public class SkillTreeScreen extends Screen {
         // 按键框悬停提示（2026-08-13 修复）：必须在无变换的 L3 层用屏幕坐标绘制，
         // 否则 renderTooltip 在 L4 技能树变换内坐标错乱（提示偏离鼠标）
         for (SkillButton button : buttons) {
+            if (!isButtonVisible(button)) {
+                continue; // 视口剔除（2026-09-15）
+            }
             boolean togglable = Skills.isTogglable(button.skillId());
-            int kx = togglable ? button.x() + BUTTON_WIDTH + KEY_BOX_GAP
-                    : button.x() + BUTTON_WIDTH + KEY_BOX_GAP;
+            // 2026-09-19：贴片内四段几何（内容区 │ Q │ E │ R，与 renderSkillButton / mouseClicked 完全一致）
+            final int cw = contentW();
+            int kx = button.x() + cw;
+            int k2x = kx + KEY_BOX_WIDTH;
+            int k3x = k2x + KEY2_BOX_WIDTH;
             int ky = button.y();
             double lx = toPanelX(mouseX);
             double ly = toPanelY(mouseY);
+            boolean onRowY = ly >= ky && ly <= ky + BUTTON_HEIGHT;
             // 第一框悬停提示（仅可开关技能；显示开关状态 + 清空快捷键说明）
-            if (togglable && lx >= kx && lx <= kx + KEY_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
+            if (togglable && onRowY && lx >= kx && lx <= kx + KEY_BOX_WIDTH) {
                 boolean enabled = toggles.getOrDefault(button.skillId(), Boolean.TRUE);
                 var bound = org.zifeng.skilltree.client.SkillKeyBinds.getKey(button.skillId());
                 String boundText = bound != null ? t("tip_bound") + ": " + bound.getDisplayName().getString() : t("tip_unbound");
@@ -481,8 +1026,7 @@ public class SkillTreeScreen extends Screen {
             }
             // 第二列按键框悬停提示（2026-08-13：每个技能独立描述 + 清空快捷键说明）
             if (isLevelBindable(button.skillId())) {
-                int k2x = kx + KEY_BOX_WIDTH + KEY_BOX_GAP;
-                if (lx >= k2x && lx <= k2x + KEY2_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
+                if (onRowY && lx >= k2x && lx <= k2x + KEY2_BOX_WIDTH) {
                     String skillId = button.skillId();
                     var bound = org.zifeng.skilltree.client.SkillKeyBinds.getLevelKey(skillId);
                     String boundText = bound != null ? t("tip_bound") + ": " + bound.getDisplayName().getString() : t("tip_unbound");
@@ -544,10 +1088,7 @@ public class SkillTreeScreen extends Screen {
             }
             // 第三列按键框悬停提示（2026-09-07：功能触发键——主动技场景内按一下触发一次）
             if (Skills.isTriggerBindable(button.skillId())) {
-                int k3x = (isLevelBindable(button.skillId())
-                        ? kx + KEY_BOX_WIDTH + KEY_BOX_GAP + KEY2_BOX_WIDTH + KEY_BOX_GAP
-                        : kx + KEY_BOX_WIDTH + KEY_BOX_GAP);
-                if (lx >= k3x && lx <= k3x + KEY3_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
+                if (onRowY && lx >= k3x && lx <= k3x + KEY3_BOX_WIDTH) {
                     String skillId = button.skillId();
                     var trig = org.zifeng.skilltree.client.SkillKeyBinds.getTriggerKey(skillId);
                     String trigText = trig != null ? t("tip_bound") + ": " + trig.getDisplayName().getString() : t("tip_unbound");
@@ -581,7 +1122,10 @@ public class SkillTreeScreen extends Screen {
             }
         }
         for (SkillButton button : buttons) {
-            if (button.isHovered(mouseX, mouseY, this)) {
+            if (!isButtonVisible(button)) {
+                continue; // 视口剔除（2026-09-15）
+            }
+            if (overNameArea(mouseX, mouseY, button)) {
                 renderSkillTooltip(guiGraphics, button, mouseX, mouseY);
                 break;
             }
@@ -589,12 +1133,12 @@ public class SkillTreeScreen extends Screen {
     }
 
     /**
-     * 第一图层（最顶）：顶部标题区。
-     * 全部用 guiOverlay 渲染（无深度测试、最后提交）→ 永远覆盖第二/第三图层。
-     * 属性面板已改为子界面（2026-09-01）；右下角功能按钮统一在 render 末尾最上层绘制。
+     * 第一图层（最顶）。
+     * <p>2026-09-19：技能点标题行已并入 L4（用户明确「标题行/类别行/技能行同属 L4」），
+     * 本层不再重复绘制（否则会叠两层）。
      */
     private void renderLayer1HeaderAndPanels(GuiGraphics guiGraphics) {
-        renderHeaderInfo(guiGraphics);
+        // 目前无内容：右下角功能按钮在 render() 末尾单独绘制
     }
 
     // ============ 右下角功能按钮（2026-09-01 统一风格：HUD调整 左、属性面板 右，平行并排，固定文字） ============
@@ -646,43 +1190,21 @@ public class SkillTreeScreen extends Screen {
     }
 
 
-    /** 顶部信息区（第一图层最顶）：技能树标题 + 技能点/状态行 + 快捷键提示行 + 未绑定快捷键警告 */
+    /**
+     * 标题行（分区框 1 内）：只剩【技能点】一行，★ <b>左对齐</b>，固定不滚动。
+     *
+     * <p>⚠️ 2026-09-19 L4 分区重构：<b>去掉了原先那个独立的圆角小框</b>——
+     * 用户要求标题行、类别行、技能行同属 L4 区域，由三个分区框统一框起来，
+     * 标题行只是框内的一行普通文字（不再自带边框/底色）。
+     *
+     * <p>已删除（用户要求）：标题「子枫的百宝箱」、光环开关状态、目标模式、快捷键提示行、未绑定警告行。
+     */
     private void renderHeaderInfo(GuiGraphics guiGraphics) {
-        // 字体缩小 0.2（×0.8），行间隔 15 像素，首行离上边框 10 像素
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(width / 2.0, 10.0, 0);
-        guiGraphics.pose().scale(0.8f, 0.8f, 1.0f);
-        String title = Component.translatable("ui.zifeng_s_custom_skill_tree.title").getString();
-        // 顶部状态行：显示伤害光环的目标模式（各光环独立后以伤害光环为代表）
-        String modeText = modeTextOf(Skills.AURA_DAMAGE);
-        // 第一行：状态信息（黄字，简短）
-        String statusLine = t("status_skill_point") + String.format("%.1f", Math.max(0, skillPoints))
-                + "   ·   " + t("status_aura") + ":" + (auraEnabled ? t("status_on") : t("status_off"))
-                + "   ·   " + t("status_target") + ":" + modeText;
-        // 第二行：快捷键提示（灰字，紧凑排列，不再一行塞满）
-        String hintLine = t("hint_controls");
-        // 光环快捷键未绑定提示（默认空键，引导玩家自行设置）
-        boolean showWarn = org.zifeng.skilltree.client.ModKeyBindingEvents.hasUnboundAuraKeys();
-        String warnLine = showWarn ? t("warn_aura_key") : null;
-        // 以文字包围盒为中心外扩 10px 的圆角背景 + 边框（不超出文字范围）
-        int maxWidth = Math.max(font.width(title), Math.max(font.width(statusLine), font.width(hintLine)));
-        if (warnLine != null) {
-            maxWidth = Math.max(maxWidth, font.width(warnLine));
-        }
-        int bgLeft = -maxWidth / 2 - 10;
-        int bgRight = maxWidth / 2 + 10;
-        int bgTop = -10;
-        int bgBottom = (warnLine != null ? 45 : 30) + 10;
-        // 边框（外扩 1px）+ 背景（圆角半径 10）
-        fillRoundedRect(guiGraphics, bgLeft - 1, bgTop - 1, bgRight + 1, bgBottom + 1, 10, 0xFF87CEEB);
-        fillRoundedRect(guiGraphics, bgLeft, bgTop, bgRight, bgBottom, 10, 0xCC000000);
-        guiGraphics.drawCenteredString(font, title, 0, 0, 0xFFFFFFFF);
-        guiGraphics.drawCenteredString(font, statusLine, 0, 15, 0xFFFFD700);
-        guiGraphics.drawCenteredString(font, hintLine, 0, 30, 0xFFAAAAAA);
-        if (warnLine != null) {
-            guiGraphics.drawCenteredString(font, warnLine, 0, 45, 0xFFFF5555);
-        }
-        guiGraphics.pose().popPose();
+        refreshHeaderCache();
+        int[] b = cachedHeaderBounds;
+        int textY = titleFrameTop() + FRAME_LINE
+                + (titleFrameH() - FRAME_LINE * 2 - font.lineHeight) / 2;
+        guiGraphics.drawString(font, cachedHeaderText, b[0], textY, 0xFF55FF55);
     }
 
     /** 悬停提示行（文本 + 颜色 + 字号倍率） */
@@ -790,6 +1312,13 @@ public class SkillTreeScreen extends Screen {
                 lines.add(new TooltipLine(line, 0xFFFF5555, 0.9F));
             }
         }
+        // 2.45 选区挖掘：红字警示——会一并清除基岩与流体（2026-09-15 用户需求）
+        //  基岩走「直接清除」分支（同流体），无掉落；提醒玩家避免误删重大建筑基座
+        if (Skills.MACHINE_ZONE_EXCAVATE.equals(skillId)) {
+            for (String line : t("warn_zone_excavate").split("\\n")) {
+                lines.add(new TooltipLine(line, 0xFFFF5555, 0.9F));
+            }
+        }
         // 2.5 容器绑定技能（子枫挪移术/子枫的搬运术）：显示当前绑定目标（2026-08-24 需求；2026-09-07 扩展两技能共用绑定）
         if (Skills.isContainerBindSkill(skillId)) {
             String bind = org.zifeng.skilltree.client.ModKeyBindingEvents.getLootVacuumBindClient();
@@ -836,21 +1365,9 @@ public class SkillTreeScreen extends Screen {
             }
         }
 
-        // 3. 消耗信息（金色，小一号）：满级隐藏消耗；未满级统一显示下一级真实消耗（按当前等级）
-        int maxPoints = Skills.getMaxPoints(skillId);
-        String costText;
-        if (points >= maxPoints) {
-            costText = "[" + t("btn_maxed") + " " + points + "/" + maxPoints + " " + t("unit_lv") + "]";
-        } else if (Skills.isGiftSkill(skillId)
-                && (Skills.GIFT_TIME_BAPTISM.equals(skillId) || Skills.GIFT_TIME_STORM.equals(skillId)
-                || Skills.GIFT_TIME_FLOOD.equals(skillId))) {
-            // 子枫的馈赠·时间系列：按游戏时长激活，不消耗技能点
-            costText = "[" + t("tip_time_active") + "]";
-        } else {
-            costText = "[" + t("tip_next_cost") + " " + fmtCost(recordNextCost(skillId)) + " " + t("btn_pt") + "]";
-        }
-        lines.add(new TooltipLine(" ", 0xFF000000, 0.6F));
-        lines.add(new TooltipLine(costText, 0xFFFFD700, 0.9F));
+        // 3. 消耗信息：2026-09-19 策划更改（用户）——「悬停说明不用包含技能树等级和技能点消耗相关的内容」
+        //    所以这里不再拼接「[已满级 X/Y 级]」「[下次消耗 X 点]」。
+        //    消耗已由行内的「+50」列与进度条承担，不需要在悬停说明里重复。
 
         // 2.6 子枫的馈赠：显示激活条件（2026-08-25）
         if (Skills.isGiftSkill(skillId)) {
@@ -860,9 +1377,12 @@ public class SkillTreeScreen extends Screen {
                 lines.add(new TooltipLine(t("tip_require_time") + (need / 72000) + " " + t("unit_hour"), 0xFFAAFF55, 0.9F));
             } else if (Skills.isGiftDistanceBaptism(skillId)) {
                 String unit = Skills.GIFT_MINE_BAPTISM.equals(skillId) ? t("unit_blocks") : t("unit_meter");
-                lines.add(new TooltipLine(t("tip_req") + " " + Skills.getGiftDistanceRequirement(skillId, 1) + unit + " / 1", 0xFFAAFF55, 0.9F));
-                lines.add(new TooltipLine("   " + t("tip_next_req") + " " + Skills.getGiftDistanceRequirement(skillId, 2) + unit + " → "
-                        + Skills.getGiftDistanceRequirement(skillId, 3) + unit, 0xFF88AA88, 0.9F));
+                // 2026-09-14：改为「当前等级需求 + 下一级需求」，不再写死 2/3 级（洗礼已扩到 9 级）
+                int curLv = Math.max(1, Math.min(Skills.getGiftMaxPoints(skillId), points));
+                lines.add(new TooltipLine(t("tip_req") + " " + Skills.getGiftDistanceRequirement(skillId, curLv) + unit + " / 1", 0xFFAAFF55, 0.9F));
+                if (curLv < Skills.getGiftMaxPoints(skillId)) {
+                    lines.add(new TooltipLine("   " + t("tip_next_req") + " " + Skills.getGiftDistanceRequirement(skillId, curLv + 1) + unit, 0xFF88AA88, 0.9F));
+                }
             }
         }
 
@@ -893,36 +1413,28 @@ public class SkillTreeScreen extends Screen {
         return lines;
     }
 
-    /** 绘制技能悬停提示 */
+    /** 绘制技能悬停提示（2026-09-15：复用 updateActiveTooltipBounds 已构建的行列表，避免每帧重复构建） */
     private void renderSkillTooltip(GuiGraphics guiGraphics, SkillButton button, int mouseX, int mouseY) {
-        renderTooltipLines(guiGraphics, buildTooltipLines(button), mouseX, mouseY);
+        renderTooltipLines(guiGraphics, activeTooltipLines != null ? activeTooltipLines : buildTooltipLines(button), mouseX, mouseY);
     }
 
-    /** 底部状态行：已学 / 可学 / 不可学原因 */
+    /**
+     * 底部状态行：只保留<b>操作提示</b>。
+     * <p>⚠️ 2026-09-19 策划更改（用户）：悬停说明不含「技能树等级」与「技能点消耗」相关内容，
+     * 故原「已学 X/Y 级 ·」前缀与「点数不足（需 X 点）」整句已移除。
+     */
     private String buildStatusText(String skillId, Skills.SkillType type, int points, boolean enabled) {
         if (points > 0) {
-            String toggle = enabled ? t("status_on") : t("status_off");
-            return t("status_learned") + points + "/" + Skills.getMaxPoints(skillId) + " " + t("unit_lv") + " · " + toggle
-                    + " · " + t("status_rbtn_toggle") + " · " + t("status_scroll");
-        }
-        if (missingModName(skillId) != null) {
-            return t("status_no_mod");
+            return t("status_rbtn_toggle") + " · " + t("status_scroll");
         }
         if (Skills.isGiftSkill(skillId)) {
-            // 时间系列：游戏时长门槛；洗礼/增幅：技能点消耗
+            // 时间系列：游戏时长门槛（不是技能点消耗）；洗礼/增幅 → 单纯操作提示
             if (Skills.GIFT_TIME_BAPTISM.equals(skillId) || Skills.GIFT_TIME_STORM.equals(skillId) || Skills.GIFT_TIME_FLOOD.equals(skillId)) {
                 long need = Skills.getGiftRequirementTicks(skillId);
                 return t("status_need_time") + (need / 72000) + " " + t("unit_hour") + "（" + t("status_lbtn_activate") + "）";
             }
-            return t("status_lbtn_learn") + " · " + t("status_rbtn_toggle");
         }
-        if (skillPoints < nextCostLocal(skillId) - 1e-9) {
-            return t("status_no_point") + fmtCost(nextCostLocal(skillId)) + " " + t("btn_pt") + "）";
-        }
-        if (!canLearn(skillId)) {
-            return t("status_prereq");
-        }
-        return t("status_lbtn_x10");
+        return t("status_lbtn_learn") + " · " + t("status_rbtn_toggle");
     }
 
     /**
@@ -940,18 +1452,19 @@ public class SkillTreeScreen extends Screen {
         }
         int x = mouseX + 12;
         int y = mouseY - 12;
-        // 屏幕边界钳制（留出边框宽度，避免被边框图层盖住）
-        if (x + maxWidth + padX * 2 > width - BORDER_THICKNESS) {
+        // 屏幕边界钳制（留出分区框边距，避免被框线盖住）
+        int m = FRAME_MARGIN + 2;
+        if (x + maxWidth + padX * 2 > width - m) {
             x = mouseX - maxWidth - padX * 2 - 4;
         }
-        if (x < BORDER_THICKNESS + 2) {
-            x = BORDER_THICKNESS + 2;
+        if (x < m) {
+            x = m;
         }
-        if (y + totalHeight + padY * 2 > height - BORDER_THICKNESS) {
+        if (y + totalHeight + padY * 2 > height - m) {
             y = height - totalHeight - padY * 2 - 2;
         }
-        if (y < BORDER_THICKNESS + 2) {
-            y = BORDER_THICKNESS + 2;
+        if (y < m) {
+            y = m;
         }
         return new int[]{x, y, maxWidth, totalHeight};
     }
@@ -1021,17 +1534,36 @@ public class SkillTreeScreen extends Screen {
     private static final float ICON_OVERLAP_SKIP_RATIO = 0.15f;
 
     /**
+     * 鼠标是否在某一行的【名称区】上。
+     * <p>⚠️ 2026-09-19 用户要求：技能悬停说明<b>只在鼠标位于技能名称上时</b>弹出（不再整行都弹），
+     * 这样鼠标在进度条/消耗/按键框上时不会弹出大块提示挡住界面。
+     */
+    private boolean overNameArea(double mouseX, double mouseY, SkillButton button) {
+        double lx = toPanelX(mouseX);
+        double ly = toPanelY(mouseY);
+        return lx >= button.x() + R_NAME_X && lx <= button.x() + R_NAME_X + R_NAME_W
+                && ly >= button.y() && ly <= button.y() + BUTTON_HEIGHT;
+    }
+
+    /**
      * 预计算当前悬停按钮的 tooltip 边界 [x, y, w, h]（屏幕坐标，含钳制）。
      * 在第四图层渲染前调用，供图标跳过判定：被 tooltip 覆盖的图标不渲染（tooltip 背景半透明，否则图标会透出混合）。
      */
     private void updateActiveTooltipBounds(int mouseX, int mouseY) {
         activeTooltipBounds = null;
+        // 2026-09-15 性能优化：tooltip 行列表在此构建后缓存，renderSkillTooltip 直接复用
+        //（原先每帧构建两次：一次算边界、一次绘制 → 200 行方法跑两遍）
+        activeTooltipLines = null;
         if (isOverUI(mouseX, mouseY)) {
             return;
         }
         for (SkillButton button : buttons) {
-            if (button.isHovered(mouseX, mouseY, this)) {
-                activeTooltipBounds = computeTooltipLayout(buildTooltipLines(button), mouseX, mouseY);
+            if (!isButtonVisible(button)) {
+                continue; // 视口剔除（2026-09-15）
+            }
+            if (overNameArea(mouseX, mouseY, button)) {
+                activeTooltipLines = buildTooltipLines(button);
+                activeTooltipBounds = computeTooltipLayout(activeTooltipLines, mouseX, mouseY);
                 return;
             }
         }
@@ -1045,13 +1577,13 @@ public class SkillTreeScreen extends Screen {
      *   - 只按面积比例判定：边缘轻微重叠（<15%）仍渲染图标，不会"碰一点就消失"；大部分被遮才跳过，杜绝透出混合。
      */
     private boolean isIconUnderUI(SkillButton button) {
-        float ox = (float) (width / 2.0 - 60 + panX);
-        float oy = (float) (height / 2.0 + 10 + panY);
-        // 图标屏幕 AABB（图标 16×16，起点 x+3,y+3）
-        float ix1 = ox + (button.x() + 3) * (float) scale;
-        float iy1 = oy + (button.y() + 3) * (float) scale;
-        float ix2 = ox + (button.x() + 19) * (float) scale;
-        float iy2 = oy + (button.y() + 19) * (float) scale;
+        float ox = (float) rowLeft();
+        float oy = (float) (listTop() - scrollY);
+        // 图标局部 AABB（图标 16×16，起点 x+3,y+4）
+        float ix1 = ox + button.x() + R_ICON_X;
+        float iy1 = oy + button.y() + (BUTTON_HEIGHT - 16) / 2f;
+        float ix2 = ix1 + 16;
+        float iy2 = iy1 + 16;
         // 1. 当前打开的子界面（不透明面板覆盖 → 被覆盖图标必须跳过）
         if (activeSubScreen != null && activeSubScreen.isMouseOver(ix1, iy1)) {
             return true;
@@ -1090,62 +1622,87 @@ public class SkillTreeScreen extends Screen {
     }
 
     private void renderSkillButton(GuiGraphics guiGraphics, SkillButton button) {
-        boolean hovered = button.isHovered(lastMouseX, lastMouseY, this);
-        boolean isTool = Skills.isStickTool(button.skillId()); // 木棍工具占位（不算技能）
-        Skills.SkillType type = Skills.getType(button.skillId());
-        boolean canLearn = canLearn(button.skillId());
-        boolean learned = isTool ? true : learnedSkills.getOrDefault(button.skillId(), 0) > 0;
+        final String skillId = button.skillId();
+        final int points = learnedSkills.getOrDefault(skillId, 0);
+        final boolean isTool = Skills.isStickTool(skillId); // 木棍工具占位（不算技能）
         // 工具卡状态 = 工具层总开关（服务端校准缓存）；其余技能 = toggles
-        boolean enabled = isTool ? org.zifeng.skilltree.client.ModKeyBindingEvents.isStickToolOnClient()
-                : toggles.getOrDefault(button.skillId(), Boolean.TRUE);
+        final boolean enabled = isTool ? org.zifeng.skilltree.client.ModKeyBindingEvents.isStickToolOnClient()
+                : toggles.getOrDefault(skillId, Boolean.TRUE);
+        // 木棍工具：当前模式（BIND 绑定 ↔ RANGE 范围）颜色区分
+        final int toolMode = isTool ? org.zifeng.skilltree.client.ModKeyBindingEvents.getStickToolModeClient() : 0;
+        final int activeLevel = activeLevels.getOrDefault(skillId, points);
 
-        int bg = switch (type) {
-            case MAGIC -> hovered ? 0xFF2A8A6A : 0xFF1E6E4E;
-            case BASE -> hovered ? 0xFF3A5A8A : 0xFF24476E;
-            case AMPLIFY -> hovered ? 0xFF8A5A2A : 0xFF6E4424;
-            case ULTIMATE -> hovered ? 0xFF8A2A3A : 0xFF6E242E;
-            case SPECIAL -> hovered ? 0xFF7A5A2A : 0xFF5A4020; // 特殊被动：棕铜（被动/掉落主题）
-            case AURA -> hovered ? 0xFF5A3A8A : 0xFF3E2470;
-            case GLOBAL -> hovered ? 0xFF2A6A8A : 0xFF1E4E6E; // 寰宇法则：深天蓝（世界/全局主题）
-            case MACHINE -> hovered ? 0xFF6A6A6A : 0xFF4A4A4A; // 机械共鸣：铁灰（机械主题）
-            case GIFT -> hovered ? 0xFFD3A8B8 : 0xFFB08A98; // 子枫的馈赠：柔和藕粉系
-        };
-        // 木棍工具：木褐色系（2026-09-08）
-        if (isTool) {
-            bg = hovered ? 0xFF8A6A3E : 0xFF5E4430;
+        // ---------- 静态视觉：查缓存（数据不变就只查表，不再重算）----------
+        final int fp = rowFingerprint(textVersion, points, activeLevel, enabled, toolMode, (int) (skillPoints * 10));
+        RowVisual v = rowVisualCache.get(skillId);
+        if (v == null || v.fp() != fp) {
+            v = buildRowVisual(skillId, fp, points, activeLevel, enabled, toolMode, isTool);
+            rowVisualCache.put(skillId, v);
         }
-        int borderColor;
-        if (!enabled) {
-            borderColor = 0xFF444444; // 禁用：暗灰无金色描边
-        } else if (learned) {
-            borderColor = hovered ? 0xFFFFFF55 : 0xFFFFD700; // 有点数：金色描边（悬停提亮）
-        } else if (hovered) {
-            borderColor = 0xFF87CEEB;
-        } else {
-            borderColor = 0xFF3A3A6E; // 未学：暗蓝
-        }
+        // ---------- 整行 = 一张【圆角技能贴片】（内容区 │ Q │ E │ R）----------
+        //   用户要求：① Q/E/R 不要独立的，和技能为一张大贴片；
+        //            ② 不同类别颜色/边框不一样；③ 直角要改圆角。
+        final int x0 = button.x();
+        final int y0 = button.y();
+        final int h = BUTTON_HEIGHT;
+        final int cw = contentW();
+        final int total = cw + KEY_BOX_WIDTH + KEY2_BOX_WIDTH + KEY3_BOX_WIDTH;
+        final double mx = toPanelX(lastMouseX);
+        final double my = toPanelY(lastMouseY);
+        final boolean onRow = my >= y0 && my <= y0 + h;
+        final boolean hovered = onRow && mx >= x0 && mx <= x0 + total;
 
-        guiGraphics.fill(button.x(), button.y(), button.x() + BUTTON_WIDTH, button.y() + BUTTON_HEIGHT, bg);
-        guiGraphics.fill(button.x(), button.y(), button.x() + BUTTON_WIDTH, button.y() + 1, borderColor);
-        guiGraphics.fill(button.x(), button.y() + BUTTON_HEIGHT - 1, button.x() + BUTTON_WIDTH, button.y() + BUTTON_HEIGHT, borderColor);
-        guiGraphics.fill(button.x(), button.y(), button.x() + 1, button.y() + BUTTON_HEIGHT, borderColor);
-        guiGraphics.fill(button.x() + BUTTON_WIDTH - 1, button.y(), button.x() + BUTTON_WIDTH, button.y() + BUTTON_HEIGHT, borderColor);
+        final int bg = hovered ? v.bgHover() : v.bg();
+        final int borderColor = hovered ? v.borderHover() : v.border();
+
+        // ① 整张贴片底色（圆角；四段共用一个底）
+        fillRound(guiGraphics, x0, y0, x0 + total, y0 + h, R_ROW, bg);
+        // 极淡顶部高光让贴片有层次，但保持像素 UI 的清晰边缘。
+        guiGraphics.fill(x0 + R_ROW, y0 + 1, x0 + total - R_ROW, y0 + 2, 0x22FFFFFF);
+
+        // ② 左侧类别色条（3px，顶部/底部跟着圆角内缩）—— 横向扫一眼就能分出类别
+        final int accent = categoryAccent();
+        final int stripeColor = v.enabled() ? (v.learned() ? accent : (accent & 0x00FFFFFF) | 0x77000000)
+                : 0xFF7A7A7A;
+        fillRound(guiGraphics, x0 + 1, y0 + 1, x0 + 4, y0 + h - 1, 2, stripeColor);
+
+        // ③ 三个按键格（贴片【内部】的格，各自画一层底色，不画独立外框）
+        final int qx = x0 + cw;
+        final int ex = qx + KEY_BOX_WIDTH;
+        final int rx = ex + KEY2_BOX_WIDTH;
+        renderKeyCell(guiGraphics, skillId, qx, y0, KEY_BOX_WIDTH, h, onRow && mx >= qx && mx < ex,
+                true, 1, keyBindSkillId, keyBindListening, org.zifeng.skilltree.client.SkillKeyBinds.getKey(skillId));
+        renderKeyCell(guiGraphics, skillId, ex, y0, KEY2_BOX_WIDTH, h, onRow && mx >= ex && mx < rx,
+                v.slot2Usable(), 2, levelKeyBindSkillId, levelKeyBindListening, org.zifeng.skilltree.client.SkillKeyBinds.getLevelKey(skillId));
+        renderKeyCell(guiGraphics, skillId, rx, y0, KEY3_BOX_WIDTH, h, onRow && mx >= rx && mx < x0 + total,
+                v.slot3Usable(), 3, triggerKeyBindSkillId, triggerKeyBindListening, org.zifeng.skilltree.client.SkillKeyBinds.getTriggerKey(skillId));
+
+        // ④ 内部分格竖线（内容区│Q│E│R）—— ★ 改淡：Miuix 的分割线是「几乎看不见」的量级，
+        //    太粗会把一张贴片切成三个小按钮
+        guiGraphics.fill(qx, y0 + 3, qx + 1, y0 + h - 3, C_CELL_LINE);
+        guiGraphics.fill(ex, y0 + 3, ex + 1, y0 + h - 3, C_CELL_LINE);
+        guiGraphics.fill(rx, y0 + 3, rx + 1, y0 + h - 3, C_CELL_LINE);
+
+        // ⑤ 整张贴片的圆角外边框（1px；用类别色，把四段包成一个整体）
+        strokeRound(guiGraphics, x0, y0, x0 + total, y0 + h, R_ROW, borderColor);
 
         // 图标是否会被第一图层 UI 或当前 tooltip 覆盖（面积比例 ≥ 阈值）→ 跳过 renderItem（半透明背景透出会混合）
         boolean iconOverlapped = isIconUnderUI(button);
-        // 技能图标（左侧 16×16；有自定义贴图用 blit 画贴图，否则用原版物品图标；跟随技能树整体缩放）
+        // 技能图标（行左侧 16×16，垂直居中；有自定义贴图用 blit，否则用原版物品图标）
+        int iconX = x0 + R_ICON_X;
+        int iconY = y0 + (h - 16) / 2;
         if (!iconOverlapped) {
-            var customTex = Skills.getIconTexture(button.skillId());
-            if (customTex != null) {
+            if (v.iconTex() != null) {
                 // 自定义贴图（16x16 PNG，直接按资源路径 blit）
-                guiGraphics.blit(customTex, button.x() + 3, button.y() + 3, 0, 0, 16, 16, 16, 16);
+                guiGraphics.blit(v.iconTex(), iconX, iconY, 0, 0, 16, 16, 16, 16);
             } else {
-                guiGraphics.renderItem(new net.minecraft.world.item.ItemStack(Skills.getIcon(button.skillId())), button.x() + 3, button.y() + 3);
+                // ⚠️ ItemStack 已在 buildRowVisual 里建好并缓存 —— 原实现每帧对每行 new 一个（纯 GC 压力）
+                guiGraphics.renderItem(v.iconStack(), iconX, iconY);
             }
             // 机械共鸣：图标外圈【钢灰机械边框】+ 右下角【螺丝角标】（与原技能区分，机械主题辨识度高）
-            // 图标绘制区域 = (x+3, y+3) ~ (x+19, y+19)，边框包在四周 1px
-            if (type == Skills.SkillType.MACHINE) {
-                int ix = button.x() + 2, iy = button.y() + 2, iw = 18, ih = 18;
+            // 图标绘制区域 = iconX..iconX+16 × iconY..iconY+16，边框包在四周 1px
+            if (v.type() == Skills.SkillType.MACHINE) {
+                int ix = iconX - 1, iy = iconY - 1, iw = 18, ih = 18;
                 int steel = enabled ? 0xFF9AA4AE : 0xFF5A5A5A; // 开启=钢灰亮边，关闭=暗灰
                 guiGraphics.fill(ix, iy, ix + iw, iy + 1, steel);
                 guiGraphics.fill(ix, iy + ih - 1, ix + iw, iy + ih, steel);
@@ -1157,16 +1714,15 @@ public class SkillTreeScreen extends Screen {
                 guiGraphics.fill(ix, iy + ih - 2, ix + 2, iy + ih, 0xFFD0D5DA);
                 guiGraphics.fill(ix + iw - 2, iy + ih - 2, ix + iw, iy + ih, 0xFFD0D5DA);
                 // 右下角螺丝角标（4×4：钢灰螺丝头 + 十字高光）
-                int sx = button.x() + 15, sy = button.y() + 15;
+                int sx = iconX + 13, sy = iconY + 13;
                 guiGraphics.fill(sx, sy, sx + 4, sy + 4, 0xFF7A848E);   // 螺丝头
                 guiGraphics.fill(sx + 1, sy + 1, sx + 3, sy + 3, 0xFFAEB6BE); // 内圈
                 guiGraphics.fill(sx + 1, sy + 1, sx + 2, sy + 2, 0xFFF0F3F5); // 高光十字
                 guiGraphics.fill(sx + 2, sy + 2, sx + 3, sy + 3, 0xFFF0F3F5);
             }
             // 虚空系技能（虚空之矛/虚空之躯）：图标外圈金色边框（伤害吸收金边主题）
-            // 图标绘制区域 = (x+3, y+3) ~ (x+19, y+19)，金边包在图标四周 1px
-            if (Skills.AURA_VOID.equals(button.skillId()) || Skills.ULT_VOID_BODY.equals(button.skillId())) {
-                int ix = button.x() + 2, iy = button.y() + 2, iw = 18, ih = 18; // 图标外扩 1px 边界
+            if (Skills.AURA_VOID.equals(skillId) || Skills.ULT_VOID_BODY.equals(skillId)) {
+                int ix = iconX - 1, iy = iconY - 1, iw = 18, ih = 18; // 图标外扩 1px 边界
                 int gold = enabled ? 0xFFFFD700 : 0xFFB8860B; // 开启=亮金，关闭=暗金
                 guiGraphics.fill(ix, iy, ix + iw, iy + 1, gold);
                 guiGraphics.fill(ix, iy + ih - 1, ix + iw, iy + ih, gold);
@@ -1179,255 +1735,386 @@ public class SkillTreeScreen extends Screen {
                 guiGraphics.fill(ix + iw - 2, iy + ih - 2, ix + iw, iy + ih, 0xFFFFFFAA);
             }
         }
-        // 图标左移提示：名称从图标右侧开始（x+22）
-        // 名称 + 开关标记（2026-08-29：长英文名裁剪，防止超出按钮框；保留「⛔」前缀）
-        String name = (enabled ? "" : "⛔ ") + Skills.getDisplayNameComponent(button.skillId()).getString();
-        while (!name.isEmpty() && font.width(name) > BUTTON_WIDTH - 24) {
-            name = name.substring(0, name.length() - 1);
-        }
-        guiGraphics.drawString(font, name, button.x() + 22, button.y() + 3, enabled ? 0xFFFFFFFF : 0xFF888888);
-        // 数据
-        int points = learnedSkills.getOrDefault(button.skillId(), 0);
-        double nextCost = recordNextCost(button.skillId());
-        // 木棍工具：当前模式（BIND 绑定 ↔ RANGE 范围）颜色区分
-        int toolMode = org.zifeng.skilltree.client.ModKeyBindingEvents.getStickToolModeClient();
 
-        // 第2行：等级/上限显示（工具卡 = 当前模式名；其余技能统一等级）
-        String effectText = isTool
+        // ---- 文字统一垂直居中 ----
+        final int textY = y0 + (h - font.lineHeight) / 2;
+
+        // ---- ① 名称（图标右侧）----
+        guiGraphics.drawString(font, v.name(), x0 + R_NAME_X, textY, v.nameColor());
+
+        // ---- ①b 属性加成（★ 2026-09-19 用户要求：名称后面显示「单技能增加属性」，把原来浪费的空位用起来）----
+        if (v.attrW() > 0) {
+            guiGraphics.drawString(font, v.attrText(), x0 + R_NAME_X + v.nameW() + 5, textY,
+                    lighten(categoryAccent(), 0.5f));
+        }
+
+        // ---- ② 下一级消耗（行内已显示，故 tooltip 不再重复）----
+        guiGraphics.drawString(font, v.costText(), x0 + R_COST_X, textY, v.costColor());
+
+        // ---- ③ 等级进度条（★ 胶囊 + 类别色；宽度弹性随窗口变化；鼠标悬停其上才响应滚轮调级）----
+        renderLevelBar(guiGraphics, x0 + R_BAR_X, y0 + (h - R_BAR_H2) / 2, barW(), v);
+
+        // ---- ④ 等级文字（右对齐到内容区右端）----
+        guiGraphics.drawString(font, v.effect(),
+                x0 + lvX() + R_LV_W - v.effectW(), textY, v.lvColor());
+
+        // 禁用（开关关闭）时给图标加半透明暗色遮罩
+        if (!enabled) {
+            guiGraphics.fill(iconX, iconY, iconX + 16, iconY + 16, 0x88000000);
+        }
+    }
+
+    /**
+     * 构建一行的「静态视觉」（2026-09-19 性能优化）。
+     *
+     * <p>只在数据变化（{@code rebuildButtons} 清缓存后）或行指纹变化（开关/等级/工具模式/技能点变化）时调用，
+     * 不在每帧调用。
+     */
+    private RowVisual buildRowVisual(String skillId, int fp, int points, int activeLevel,
+                                     boolean enabled, int toolMode, boolean isTool) {
+        Skills.SkillType type = Skills.getType(skillId);
+        boolean learned = isTool || points > 0;
+        boolean canLearn = canLearn(skillId);
+        // ★ 2026-09-19 前置未满足 → 整行变灰（用户要求：一眼看出哪些能点）
+        boolean prereqMet = prereqMetFor(skillId);
+
+        int bg;
+        int bgHover;
+        switch (type) {
+            case MAGIC -> { bg = 0xFF183D35; bgHover = 0xFF215247; }
+            case BASE -> { bg = 0xFF203A55; bgHover = 0xFF2B4B6D; }
+            case AMPLIFY -> { bg = 0xFF503A27; bgHover = 0xFF674A30; }
+            case ULTIMATE -> { bg = 0xFF512B34; bgHover = 0xFF693641; }
+            case SPECIAL -> { bg = 0xFF4C3B27; bgHover = 0xFF625035; }
+            case AURA -> { bg = 0xFF392D59; bgHover = 0xFF4A3A70; }
+            case GLOBAL -> { bg = 0xFF203F52; bgHover = 0xFF2B526A; }
+            case MACHINE -> { bg = 0xFF3E4248; bgHover = 0xFF515760; }
+            default -> { bg = 0xFF624955; bgHover = 0xFF795966; }
+        }
+        if (isTool) { // 木棍工具：木褐色系（2026-09-08）
+            bg = 0xFF5E4430;
+            bgHover = 0xFF8A6A3E;
+        }
+        // 边框：★ 2026-09-19 用户要求「边框也要有不一样」→ 改用【类别色】；
+        //   已学 = 满不透明；未学 = 半透明（一眼看出学没学）；悬停 = 提亮。
+        final int accent = categoryAccent();
+        int border;
+        int borderHover;
+        if (!enabled) {
+            border = 0xFF8A8A8A;
+            borderHover = 0xFF8A8A8A;
+        } else if (learned) {
+            border = (accent & 0x00FFFFFF) | 0xB0000000;
+            borderHover = lighten(accent, 0.45f);
+        } else {
+            border = (accent & 0x00FFFFFF) | 0x66000000;
+            borderHover = accent;
+        }
+
+        // 文字颜色
+        //   已学 = 白（贴片描边/左侧色条已经表达了「学没学」，文字不再重复变灰）
+        //   未学 = 略暗；前置未满足 / 禁用 = 更暗
+        int nameColor = (!enabled || !prereqMet) ? 0xFF9A9A9A : (points > 0 ? 0xFFFFFFFF : 0xFFD8D8E8);
+        int costColor = !prereqMet ? 0xFF7A7A7A : (canLearn ? 0xFFFFAA55 : 0xFFAAAAAA);
+        int lvColor = !prereqMet ? 0xFF7A7A7A
+                : (isTool ? org.zifeng.skilltree.client.StickToolModes.colorOfMode(toolMode) : 0xFF55FF55);
+
+        // 等级进度条几何（★ 存比例而非像素 —— 条宽随窗口变化，渲染时再乘实际宽）：
+        //   barFillR = 已学占比(0~1)，barTickR = 生效等级占比(<0 表示不画刻度)
+        int max = Skills.getMaxPoints(skillId);
+        float barFillR = -1f;
+        float barTickR = -1f;
+        int barColor = 0xFF55AAFF;
+        if (max > 0 && points > 0) {
+            barFillR = Math.min(1f, (float) points / max);
+            barColor = !enabled ? 0xFF8A8A8A : (prereqMet ? categoryAccent() : 0xFF9A9A9A);
+            // 始终显示生效等级手柄；满生效时停在已学填充末端，拖动反馈也不会突然消失。
+            barTickR = Math.min(1f, (float) activeLevel / max);
+        }
+
+        // 图标：自定义贴图优先；否则缓存 ItemStack（原实现每帧 new 一个）
+        var iconTex = Skills.getIconTexture(skillId);
+        net.minecraft.world.item.ItemStack iconStack = iconTex == null
+                ? new net.minecraft.world.item.ItemStack(Skills.getIcon(skillId)) : null;
+
+        // 三行文本（沿用原有构建逻辑，这里只是改成「只在需要时构建」）
+        double nextCost = recordNextCost(skillId);
+        // ★ 属性加成文本（用户要求：名称与消耗之间显示「单技能增加属性」）
+        String attrText = skillAttrText(skillId, points);
+        if (!attrText.isEmpty()) {
+            // 名称区就那么大，属性文本超长先裁掉（防止压到右侧消耗列）
+            attrText = clipToWidth(attrText, R_NAME_W - 34);
+        }
+        int attrW = attrText.isEmpty() ? 0 : font.width(attrText);
+        // 名称让位给属性文本（名称区宽 - 属性宽 - 间距）
+        int nameMaxW = Math.max(24, R_NAME_W - (attrW > 0 ? attrW + 6 : 2));
+        ButtonTexts texts = buildButtonTexts(skillId, type, isTool, enabled, toolMode, points, activeLevel, nextCost, nameMaxW);
+        String costText = nextCostDisplay(skillId, points, nextCost);
+
+        return new RowVisual(fp, type, isTool, enabled, learned, bg, bgHover, border, borderHover,
+                nameColor, costColor, lvColor, barFillR, barTickR, barColor,
+                isLevelBindable(skillId), Skills.isTriggerBindable(skillId), iconStack, iconTex,
+                texts.name(), font.width(texts.name()), texts.effect(), font.width(texts.effect()), costText,
+                attrText, attrW);
+    }
+
+    /**
+     * 绘制整张贴片【内部】的一个按键格（2026-09-19 L4 分区重构）。
+     *
+     * <p>★ 用户要求：Q/E/R <b>不是独立的方框</b>，「要和单个大的技能为一个大的贴片」——
+     * 所以本方法<b>不画自己的外边框</b>（外框由整张贴片统一画），
+     * 只画格子底色 + 悬停/监听高亮 + 键名文字；分格竖线由 {@link #renderSkillButton} 统一画。
+     *
+     * <p>配色：格底用半透明叠加（不做成实心块，避免把整张贴片切成三个「小按钮」的观感）；
+     * 按键已绑定时给一层淡金底，监听中给亮橙底。
+     *
+     * @param hovered 该格是否被鼠标悬停（由调用方统一算，避免重复坐标变换）
+     * @param usable  该技能在此格是否有功能；<b>false = 空格</b>（只留底、无文字）
+     * @param slot    1=开关(金) / 2=模式·等级(蓝) / 3=触发(绿)
+     */
+    private void renderKeyCell(GuiGraphics guiGraphics, String skillId, int x, int y, int w, int h,
+                               boolean hovered, boolean usable, int slot, String bindSkillId,
+                               boolean bindListening, com.mojang.blaze3d.platform.InputConstants.Key key) {
+        boolean listening = usable && skillId.equals(bindSkillId) && bindListening;
+        // 格底：半透明叠加（默认极淡，悬停/绑定/监听逐级加亮）
+        int bg;
+        if (listening) {
+            bg = 0x99B06A00;
+        } else if (hovered && usable) {
+            bg = switch (slot) {
+                case 1 -> 0x55FFD700;
+                case 2 -> 0x5588BBFF;
+                default -> 0x5566EE66;
+            };
+        } else if (key != null) {
+            bg = 0x44FFD700; // 已绑定：淡金
+        } else {
+            bg = 0x22000000; // 未绑定空格：极淡
+        }
+        // 从 x+1/y+1 起画，避开外框与分格竖线
+        guiGraphics.fill(x + 1, y + 1, x + w - 1, y + h - 1, bg);
+
+        // 空格：不画任何文字（用户要求没有功能就不显示）
+        if (!usable) {
+            return;
+        }
+        String text;
+        int color;
+        // 按键显示名走缓存（原实现每帧每槽位都 getDisplayName().getString()）
+        String boundName = keyName(key);
+        if (listening) {
+            text = "> " + (boundName != null ? boundName : "?") + " <";
+            color = 0xFFFFFF55;
+        } else if (boundName != null) {
+            text = boundName;
+            color = 0xFFFFFFFF;
+        } else {
+            text = t("tip_unbound");
+            color = 0xFF888888;
+        }
+        text = clipToWidth(text, w - 4);
+        guiGraphics.drawCenteredString(font, text, x + w / 2, y + (h - font.lineHeight) / 2, color);
+    }
+
+    /**
+     * 构建按钮三行文本（名称 / 等级 / 消耗）——纯计算、无绘制。
+     *
+     * <p>⚠️ 2026-09-19 性能优化：本方法现在<b>只由 {@link #buildRowVisual} 调用</b>——
+     * 即「数据变了才算一次」，不再每帧对每行调用。
+     * （原先每帧重建：约 10 次语言查询 + 3 次 O(n²) 逐字符裁剪 × 可见行数 → 纯 GC 压力。）
+     */
+    private ButtonTexts buildButtonTexts(String skillId, Skills.SkillType type, boolean isTool, boolean enabled,
+                                         int toolMode, int points, int activeLevel, double nextCost, int nameMaxW) {
+        // 名称（列表行：按名称区宽裁剪；禁用时加「⊘」前缀）
+        String name = clipToWidth((enabled ? "" : "⊘ ") + Skills.getDisplayNameComponent(skillId).getString(), nameMaxW);
+        // 等级文字（列表行：如 "99/100"；工具卡 = 当前模式名）
+        String effectText = clipToWidth(isTool
                 ? t(org.zifeng.skilltree.client.StickToolModes.modeLang(toolMode))
-                : points + t("unit_lv") + "/" + Skills.getMaxPoints(button.skillId());
-        while (!effectText.isEmpty() && font.width(effectText) > BUTTON_WIDTH - 30) {
-            effectText = effectText.substring(0, effectText.length() - 1);
-        }
-        guiGraphics.drawString(font, effectText, button.x() + 22, button.y() + 17,
-                isTool ? org.zifeng.skilltree.client.StickToolModes.colorOfMode(toolMode) : 0xFF55FF55);
-
+                : (isLevelBindable(skillId) && points > 0
+                    ? activeLevel + "/" + points
+                    : points + "/" + Skills.getMaxPoints(skillId)), R_LV_W);
         // 第3行：消耗总数量（工具卡 = 当前模式模块说明；其余按类别）
         String costText;
         if (isTool) {
             costText = t(org.zifeng.skilltree.client.StickToolModes.lineLang(toolMode));
         } else if (type == Skills.SkillType.AURA) {
-            if (Skills.AURA_MAGNET.equals(button.skillId())) {
+            if (Skills.AURA_MAGNET.equals(skillId)) {
                 costText = points > 0 ? t("btn_unlocked") : t("btn_need") + (long) (double) org.zifeng.skilltree.Config.MAGNET_COST.get() + t("btn_pt");
-            } else if (Skills.AURA_LOCK.equals(button.skillId())) {
+            } else if (Skills.AURA_LOCK.equals(skillId)) {
                 costText = points > 0 ? t("btn_unlocked") : t("btn_need") + (long) (double) org.zifeng.skilltree.Config.LOCK_COST.get() + t("btn_pt");
             } else {
                 long total = 0;
                 for (int i = 0; i < points; i++) {
-                    total += Skills.getAuraCost(button.skillId(), i);
+                    total += Skills.getAuraCost(skillId, i);
                 }
                 // 有等级的光环（伤害/速度/治愈）：显示生效:X/Y（与基础技能一致，滚轮可调）
-                if (Skills.getAuraMaxPoints(button.skillId()) > 1) {
-                    int active = activeLevels.getOrDefault(button.skillId(), points);
-                    costText = t("btn_active") + ":" + active + "/" + points + " " + t("btn_next") + ":" + (long) nextCost + t("btn_pt");
+                if (Skills.getAuraMaxPoints(skillId) > 1) {
+                    costText = t("btn_active") + ":" + activeLevel + "/" + points + " " + t("btn_next") + ":" + (long) nextCost + t("btn_pt");
                 } else {
                     costText = t("btn_spent") + total + t("btn_pt") + " " + t("btn_next") + ":" + (long) nextCost + t("btn_pt");
                 }
             }
         } else if (type == Skills.SkillType.GLOBAL) {
             // 寰宇法则：时之环/晴空环单级；无限回路 4 级（生效:X/Y + 下一级）
-            if (Skills.getGlobalMaxPoints(button.skillId()) > 1) {
-                int active = activeLevels.getOrDefault(button.skillId(), points);
+            if (Skills.getGlobalMaxPoints(skillId) > 1) {
                 costText = points > 0
-                        ? t("btn_active") + ":" + active + "/" + points + " " + t("btn_next") + ":" + fmtCost(Skills.getGlobalCost(button.skillId(), points)) + t("btn_pt")
-                        : t("btn_need") + fmtCost(Skills.getGlobalCost(button.skillId(), 0)) + t("btn_pt");
+                        ? t("btn_active") + ":" + activeLevel + "/" + points + " " + t("btn_next") + ":" + fmtCost(Skills.getGlobalCost(skillId, points)) + t("btn_pt")
+                        : t("btn_need") + fmtCost(Skills.getGlobalCost(skillId, 0)) + t("btn_pt");
             } else {
-                costText = points > 0 ? t("btn_unlocked") : t("btn_need") + fmtCost(Skills.getGlobalCost(button.skillId(), 0)) + t("btn_pt");
+                costText = points > 0 ? t("btn_unlocked") : t("btn_need") + fmtCost(Skills.getGlobalCost(skillId, 0)) + t("btn_pt");
             }
         } else if (type == Skills.SkillType.BASE || type == Skills.SkillType.AMPLIFY || type == Skills.SkillType.MAGIC) {
             // 生效等级（滚轮可调，实时显示）+ 下一级真实消耗（线性增长：基础 +1/级、增幅/魔法 +2/级）
-            int active = activeLevels.getOrDefault(button.skillId(), points);
             double unitCost = switch (type) {
                 case BASE -> Skills.getBaseCostAtLevel(points);
                 case AMPLIFY -> Skills.getAmplifyCostAtLevel(points);
-                case MAGIC -> Skills.getMagicCostAtLevel(button.skillId(), points);
+                case MAGIC -> Skills.getMagicCostAtLevel(skillId, points);
                 default -> 0;
             };
-            costText = t("btn_active") + ":" + active + "/" + points + " " + t("btn_next") + ":" + fmtCost(unitCost) + t("btn_pt");
+            costText = t("btn_active") + ":" + activeLevel + "/" + points + " " + t("btn_next") + ":" + fmtCost(unitCost) + t("btn_pt");
         } else if (type == Skills.SkillType.ULTIMATE || type == Skills.SkillType.SPECIAL) {
             // 终极节点：单次解锁消耗（浴血/金身/涅槃=500，死神=1000，全能精通=5000，宇宙的青睐=1000，夜视/饱食=100）
             // 多级终极（节点类）：村庄英雄10点/级、接触距离1点/级、发光1点，显示已耗+下一级
             // ⚠️ SPECIAL（特殊被动）：同终极成本体系（从终极列拆出）
-            if (Skills.ULT_FAVOR.equals(button.skillId())) {
+            if (Skills.ULT_FAVOR.equals(skillId)) {
                 costText = points > 0 ? t("btn_unlocked") : t("btn_need") + Skills.ultFavorCost() + t("btn_pt");
-            } else if (Skills.NIGHT_VISION.equals(button.skillId()) || Skills.SATURATION.equals(button.skillId())) {
+            } else if (Skills.NIGHT_VISION.equals(skillId) || Skills.SATURATION.equals(skillId)) {
                 costText = points > 0 ? t("btn_unlocked") : t("btn_need") + Skills.minorUltCost() + t("btn_pt");
-            } else if (Skills.getUltimateMaxPoints(button.skillId()) > 1) {
+            } else if (Skills.getUltimateMaxPoints(skillId) > 1) {
                 // 多级终极（节点类，阶梯递增消耗，可滚轮调生效等级）：生效:X/Y + 下一级（与基础技能一致）
-                double unitCost = Skills.getUltimateLevelCost(button.skillId(), points);
-                int active = activeLevels.getOrDefault(button.skillId(), points);
+                double unitCost = Skills.getUltimateLevelCost(skillId, points);
                 costText = points > 0
-                        ? t("btn_active") + ":" + active + "/" + points + " " + t("btn_next") + ":" + fmtCost(unitCost) + t("btn_pt")
+                        ? t("btn_active") + ":" + activeLevel + "/" + points + " " + t("btn_next") + ":" + fmtCost(unitCost) + t("btn_pt")
                         : t("btn_need") + fmtCost(unitCost) + t("btn_pt");
             } else {
-                costText = points > 0 ? t("btn_unlocked") : t("btn_need") + Skills.ultimateCost(button.skillId()) + t("btn_pt");
+                costText = points > 0 ? t("btn_unlocked") : t("btn_need") + Skills.ultimateCost(skillId) + t("btn_pt");
             }
         } else if (type == Skills.SkillType.MACHINE) {
             // 机械共鸣：单级解锁（机械之星 1000 / 其余共鸣 5000）
-            costText = points > 0 ? t("btn_unlocked") : t("btn_need") + (long) Skills.getMachineCost(button.skillId()) + t("btn_pt");
+            costText = points > 0 ? t("btn_unlocked") : t("btn_need") + (long) Skills.getMachineCost(skillId) + t("btn_pt");
         } else if (type == Skills.SkillType.GIFT) {
             // 子枫的馈赠：时间系列=按游戏时长激活（0点）；洗礼=阶梯消耗；增幅=指数消耗
-            if (Skills.GIFT_TIME_BAPTISM.equals(button.skillId())
-                    || Skills.GIFT_TIME_STORM.equals(button.skillId())
-                    || Skills.GIFT_TIME_FLOOD.equals(button.skillId())) {
+            if (Skills.GIFT_TIME_BAPTISM.equals(skillId)
+                    || Skills.GIFT_TIME_STORM.equals(skillId)
+                    || Skills.GIFT_TIME_FLOOD.equals(skillId)) {
                 // 时间系列：单级，已激活显示"已激活"
-                costText = points > 0 ? t("btn_activated") : t("btn_need") + (Skills.getGiftRequirementTicks(button.skillId()) / 72000) + t("unit_hour");
-            } else if (points > 0 && points < Skills.getGiftMaxPoints(button.skillId())) {
+                costText = points > 0 ? t("btn_activated") : t("btn_need") + (Skills.getGiftRequirementTicks(skillId) / 72000) + t("unit_hour");
+            } else if (points > 0 && points < Skills.getGiftMaxPoints(skillId)) {
                 // 已学未满级：显示下一级消耗（与其他类别技能一致，2026-08-25）
-                costText = t("btn_learned") + points + "/" + Skills.getGiftMaxPoints(button.skillId())
-                        + " " + t("btn_next") + ":" + fmtCost(Skills.getGiftCost(button.skillId(), points)) + t("btn_pt");
+                costText = t("btn_learned") + points + "/" + Skills.getGiftMaxPoints(skillId)
+                        + " " + t("btn_next") + ":" + fmtCost(Skills.getGiftCost(skillId, points)) + t("btn_pt");
             } else if (points > 0) {
-                costText = t("btn_maxed") + " " + points + "/" + Skills.getGiftMaxPoints(button.skillId());
+                costText = t("btn_maxed") + " " + points + "/" + Skills.getGiftMaxPoints(skillId);
             } else {
-                costText = t("btn_need") + fmtCost(Skills.getGiftCost(button.skillId(), points)) + t("btn_pt");
+                costText = t("btn_need") + fmtCost(Skills.getGiftCost(skillId, points)) + t("btn_pt");
             }
         } else {
             costText = points + t("unit_lv");
         }
-        while (!costText.isEmpty() && font.width(costText) > BUTTON_WIDTH - 30) {
-            costText = costText.substring(0, costText.length() - 1);
-        }
-        guiGraphics.drawString(font, costText, button.x() + 22, button.y() + 31, canLearn ? 0xFFFFAA55 : 0xFFAAAAAA);
-        // 禁用（开关关闭）时给图标加半透明暗色遮罩
-        if (!enabled) {
-            guiGraphics.fill(button.x() + 3, button.y() + 3, button.x() + 19, button.y() + 19, 0x88000000);
-        }
-        // ============ 内联按键框（2026-08-13 需求：按钮右侧直接显示/设置该技能开关快捷键，仿原版按键设置） ============
-        // ⚠️ 无需开关的技能（时之环/晴空环常驻被动）不显示开关键；第二框 x 位置相应左移到按钮旁
-        boolean togglable = Skills.isTogglable(button.skillId());
-        int keyShift = 0;
-        int kx = togglable ? button.x() + BUTTON_WIDTH + KEY_BOX_GAP + keyShift
-                : button.x() + BUTTON_WIDTH + KEY_BOX_GAP; // 无开关键时第二框从按钮右缘起
-        int ky = button.y();
-        int kw = KEY_BOX_WIDTH, kh = BUTTON_HEIGHT;
-        // ⚠️ 屏幕坐标 → 技能树局部坐标再比较（lastMouseX 是屏幕坐标，kx/ky 是局部坐标）
-        boolean keyHovered = lastMouseX >= 0 && lastMouseY >= 0
-                && toPanelX(lastMouseX) >= kx && toPanelX(lastMouseX) <= kx + kw
-                && toPanelY(lastMouseY) >= ky && toPanelY(lastMouseY) <= ky + kh;
-        boolean listening = button.skillId().equals(keyBindSkillId) && keyBindListening;
-        var key = org.zifeng.skilltree.client.SkillKeyBinds.getKey(button.skillId());
-        // 第一框（开关键）：仅可开关技能渲染；不可开关技能跳过（第二框左移到按钮旁）
-        if (togglable) {
-            // 背景（监听=高亮橙，有绑定=暗金，悬停提亮，默认=深灰）
-            int kbg = listening ? 0xFF7A4A00
-                    : keyHovered ? (key != null ? 0xFF6E5A00 : 0xFF3A3A4A)
-                    : key != null ? 0xFF4A4200 : 0xFF2A2A3A;
-            guiGraphics.fill(kx, ky, kx + kw, ky + kh, kbg);
-            // 边框（监听=橙，有绑定=金，默认=暗蓝灰）
-            int kbord = listening ? 0xFFFFAA55 : (key != null ? 0xFFFFD700 : 0xFF555566);
-            guiGraphics.fill(kx, ky, kx + kw, ky + 1, kbord);
-            guiGraphics.fill(kx, ky + kh - 1, kx + kw, ky + kh, kbord);
-            guiGraphics.fill(kx, ky, kx + 1, ky + kh, kbord);
-            guiGraphics.fill(kx + kw - 1, ky, kx + kw, ky + kh, kbord);
-            // 按键文字（监听态显示原版 "> 键名 <" 样式；否则显示绑定键名/未绑定）
-            String keyText;
-            int keyColor;
-            if (listening) {
-                keyText = "> " + (key != null ? key.getDisplayName().getString() : "?") + " <";
-                keyColor = 0xFFFFFF55;
-            } else if (key != null) {
-                keyText = key.getDisplayName().getString();
-                keyColor = 0xFFFFFFFF;
-            } else {
-                keyText = t("tip_unbound");
-                keyColor = 0xFF888888;
-            }
-            // 过长截断
-            while (!keyText.isEmpty() && font.width(keyText) > kw - 6) {
-                keyText = keyText.substring(0, keyText.length() - 1);
-            }
-            guiGraphics.drawCenteredString(font, keyText, kx + kw / 2, ky + (kh - font.lineHeight) / 2, keyColor);
-        }
+        costText = clipToWidth(costText, R_NAME_W);
+        return new ButtonTexts(name, effectText, costText);
+    }
 
-        // ============ 第二列按键框（2026-08-13 需求：光环=目标循环键，可调等级技能=等级循环键） ============
-        if (isLevelBindable(button.skillId())) {
-            // 位置：紧跟第一框右侧（无开关键时第一框 x 即按钮右缘 → 自动对齐）
-            int k2x = kx + kw + KEY_BOX_GAP;
-            int k2w = KEY2_BOX_WIDTH, k2h = BUTTON_HEIGHT;
-            boolean k2Hovered = lastMouseX >= 0 && lastMouseY >= 0
-                    && toPanelX(lastMouseX) >= k2x && toPanelX(lastMouseX) <= k2x + k2w
-                    && toPanelY(lastMouseY) >= ky && toPanelY(lastMouseY) <= ky + k2h;
-            boolean k2Listening = button.skillId().equals(levelKeyBindSkillId) && levelKeyBindListening;
-            var k2key = org.zifeng.skilltree.client.SkillKeyBinds.getLevelKey(button.skillId());
-            // 背景/边框（2026-09-07 规范 v1.0：按能力类型分色）——
-            //   敌我目标=紫 / 天气=青 / 搬运=青（模式循环统一紫青调）
-            //   可调等级=蓝（等级循环）；悬停/监听提亮
-            int k2Kind = modeKindOf(button.skillId()); // 0=等级 1=敌我 2=天气 3=搬运
-            boolean k2Mode = k2Kind > 0; // 模式循环（紫/青）
-            int k2BgMode = k2Kind == 1 ? 0xFF5A2A6A : 0xFF2A4A5A; // 敌我紫 / 天气搬运青
-            int k2BgLevel = 0xFF1A2A4A; // 等级蓝
-            int k2BordMode = k2Kind == 1 ? 0xFFCC88FF : 0xFF66CCFF;
-            int k2BordLevel = 0xFF66AAFF;
-            int k2bg = k2Listening ? (k2Mode ? k2BgMode : 0xFF2A3A5A)
-                    : k2Hovered ? (k2key != null ? (k2Mode ? 0xFF3A3A5A : 0xFF2A3A5A) : 0xFF3A3A4A)
-                    : k2key != null ? (k2Mode ? k2BgMode : k2BgLevel) : 0xFF2A2A3A;
-            guiGraphics.fill(k2x, ky, k2x + k2w, ky + k2h, k2bg);
-            int k2bord = k2Listening ? (k2Mode ? k2BordMode : 0xFF88BBFF)
-                    : (k2key != null ? (k2Mode ? k2BordMode : k2BordLevel) : 0xFF555566);
-            guiGraphics.fill(k2x, ky, k2x + k2w, ky + 1, k2bord);
-            guiGraphics.fill(k2x, ky + k2h - 1, k2x + k2w, ky + k2h, k2bord);
-            guiGraphics.fill(k2x, ky, k2x + 1, ky + k2h, k2bord);
-            guiGraphics.fill(k2x + k2w - 1, ky, k2x + k2w, ky + k2h, k2bord);
-            // 文字：监听态显示 "> 键名 <"；已绑定显示键名；未绑定显示"未绑定"
-            String k2Text;
-            int k2Color;
-            if (k2Listening) {
-                k2Text = "> " + (k2key != null ? k2key.getDisplayName().getString() : "?") + " <";
-                k2Color = 0xFFFFFF55;
-            } else if (k2key != null) {
-                k2Text = k2key.getDisplayName().getString();
-                k2Color = 0xFFFFFFFF;
-            } else {
-                k2Text = t("tip_unbound");
-                k2Color = 0xFF888888;
-            }
-            while (font.width(k2Text) > k2w - 6) {
-                k2Text = k2Text.substring(0, k2Text.length() - 1);
-            }
-            guiGraphics.drawCenteredString(font, k2Text, k2x + k2w / 2, ky + (k2h - font.lineHeight) / 2, k2Color);
+    /**
+     * 等级进度条（2026-09-19 列表式改版新增）。
+     *
+     * <p>显示「已学等级 / 等级上限」，并在已学超过生效等级时用一条黄色刻度标出生效位置。
+     *
+     * <p>⚠️ 2026-09-19 性能优化：填充宽/刻度位置/填充色 已在 {@link #buildRowVisual} 算好并缓存在
+     * {@link RowVisual} 里，这里只负责 fill —— 不再每帧做除法与 {@code Skills.getMaxPoints} 查询。
+     *
+     * <p>鼠标是否在条上由 {@link #overLevelBar(double, double, SkillButton)} 用同一套几何判断
+     * （避免两处算法漂移）。
+     */
+    private void renderLevelBar(GuiGraphics guiGraphics, int x, int y, int w, RowVisual v) {
+        // 两层轨道让细条在深浅背景上都保持清楚，避免截图中大块、发糊的观感。
+        fillRound(guiGraphics, x, y, x + w, y + R_BAR_H2, R_BAR_H2 / 2, 0x42000000);
+        fillRound(guiGraphics, x + 1, y + 1, x + w - 1, y + R_BAR_H2 - 1,
+                Math.max(1, R_BAR_H2 / 2 - 1), C_BAR_TRACK);
+        // 已学等级填充。
+        if (v.barFillR() > 0f) {
+            int fw = Math.max(R_BAR_H2, Math.round(w * v.barFillR()));
+            fillRound(guiGraphics, x, y, x + Math.min(w, fw), y + R_BAR_H2, R_BAR_H2 / 2, v.barColor());
         }
+        // 生效等级手柄：位置与右侧 active/learned 数字使用同一个 activeLevel。
+        if (v.barTickR() >= 0f) {
+            int tx = x + Math.round(w * v.barTickR());
+            fillRound(guiGraphics, tx - 2, y - 2, tx + 3, y + R_BAR_H2 + 2, 2, 0xCC202028);
+            fillRound(guiGraphics, tx - 1, y - 1, tx + 2, y + R_BAR_H2 + 1, 1, C_BAR_TICK);
+        }
+    }
 
-        // ============ 第三列按键框（2026-09-07：功能触发键——主动技场景内触发一次） ============
-        // 配色：绿色系（触发=执行动作），与 开关键(金) / 模式循环(紫/青/蓝) 区分
-        if (Skills.isTriggerBindable(button.skillId())) {
-            int k3x = (isLevelBindable(button.skillId())
-                    ? kx + kw + KEY_BOX_GAP + KEY2_BOX_WIDTH + KEY_BOX_GAP   // 有第二框：接第二框右侧
-                    : kx + kw + KEY_BOX_GAP);                                 // 无第二框：接第一框右侧
-            int k3w = KEY3_BOX_WIDTH, k3h = BUTTON_HEIGHT;
-            boolean k3Hovered = lastMouseX >= 0 && lastMouseY >= 0
-                    && toPanelX(lastMouseX) >= k3x && toPanelX(lastMouseX) <= k3x + k3w
-                    && toPanelY(lastMouseY) >= ky && toPanelY(lastMouseY) <= ky + k3h;
-            boolean k3Listening = button.skillId().equals(triggerKeyBindSkillId) && triggerKeyBindListening;
-            var k3key = org.zifeng.skilltree.client.SkillKeyBinds.getTriggerKey(button.skillId());
-            // 背景（监听=亮绿黑，有绑定=暗绿，悬停提亮，默认=深灰）
-            int k3bg = k3Listening ? 0xFF1A4A2A
-                    : k3Hovered ? (k3key != null ? 0xFF1A4A3A : 0xFF2A3A3A)
-                    : k3key != null ? 0xFF123A2A : 0xFF1A2A2A;
-            guiGraphics.fill(k3x, ky, k3x + k3w, ky + k3h, k3bg);
-            // 边框（监听=亮绿，有绑定=绿，默认=暗蓝灰）
-            int k3bord = k3Listening ? 0xFF88FF88
-                    : (k3key != null ? 0xFF66EE66 : 0xFF557766);
-            guiGraphics.fill(k3x, ky, k3x + k3w, ky + 1, k3bord);
-            guiGraphics.fill(k3x, ky + k3h - 1, k3x + k3w, ky + k3h, k3bord);
-            guiGraphics.fill(k3x, ky, k3x + 1, ky + k3h, k3bord);
-            guiGraphics.fill(k3x + k3w - 1, ky, k3x + k3w, ky + k3h, k3bord);
-            String k3Text;
-            int k3Color;
-            if (k3Listening) {
-                k3Text = "> " + (k3key != null ? k3key.getDisplayName().getString() : "?") + " <";
-                k3Color = 0xFFAAFFAA;
-            } else if (k3key != null) {
-                k3Text = k3key.getDisplayName().getString();
-                k3Color = 0xFFFFFFFF;
-            } else {
-                k3Text = t("tip_unbound");
-                k3Color = 0xFF888888;
-            }
-            while (font.width(k3Text) > k3w - 6) {
-                k3Text = k3Text.substring(0, k3Text.length() - 1);
-            }
-            guiGraphics.drawCenteredString(font, k3Text, k3x + k3w / 2, ky + (k3h - font.lineHeight) / 2, k3Color);
+    /** 按鼠标在进度条上的位置设置生效等级，并立即同步文字、条形和服务端。 */
+    private boolean setActiveLevelFromMouse(SkillButton button, double mouseX) {
+        String skillId = button.skillId();
+        int learned = learnedSkills.getOrDefault(skillId, 0);
+        if (learned <= 0 || Skills.getMaxPoints(skillId) <= 1) {
+            return false;
         }
+        double localX = toPanelX(mouseX) - (button.x() + R_BAR_X);
+        int max = Math.max(1, Skills.getMaxPoints(skillId));
+        int next = (int) Math.round(Math.max(0.0, Math.min(1.0, localX / Math.max(1, barW()))) * max);
+        next = Math.max(0, Math.min(learned, next));
+        int old = activeLevels.getOrDefault(skillId, learned);
+        if (next != old) {
+            activeLevels.put(skillId, next);
+            rowVisualCache.remove(skillId);
+            org.zifeng.skilltree.network.ModNetwork.sendToServer(new SetSkillLevelC2SPacket(skillId, next));
+        }
+        return true;
+    }
+
+    /**
+     * 鼠标是否悬停在【该行的等级进度条】上（2026-09-19）。
+     *
+     * <p>用户明确要求：<b>只有鼠标在进度条上时，滚轮才调等级</b>；否则滚轮一律滚动列表。
+     * <p>容差 ±3px（横向）与 ±4px（纵向）—— 条子只有 4px 高，严格判定很难命中。
+     * <p>★ 条宽是弹性的（随窗口变化），这里用同一个 {@link #barW()} 算，避免两处算法漂移。
+     */
+    private boolean overLevelBar(double mouseX, double mouseY, SkillButton button) {
+        double lx = toPanelX(mouseX);
+        double ly = toPanelY(mouseY);
+        int barX = button.x() + R_BAR_X;
+        int w = barW();
+        int barY = button.y() + (BUTTON_HEIGHT - R_BAR_H2) / 2;
+        return lx >= barX - 3 && lx <= barX + w + 3
+                && ly >= barY - 4 && ly <= barY + R_BAR_H2 + 4;
+    }
+
+    /**
+     * 前置条件是否已满足（2026-09-19 新增：未满足则整行变灰）。
+     *
+     * <p>只判前置，<b>不判</b>技能点是否够/是否已满级——那两项行内已有颜色表达
+     * （消耗文字灰/金、等级文字颜色），避免一次表达太多信息反而看不清。
+     */
+    private boolean prereqMetFor(String skillId) {
+        for (Map.Entry<String, Integer> e : Skills.getPrerequisites(skillId)) {
+            if (learnedSkills.getOrDefault(e.getKey(), 0) < e.getValue()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 行内「下一级消耗」短文本（2026-09-19）。
+     *
+     * <p>列表行空间紧，所以只显示一个带前缀的数字（如 {@code +50}），详细单位/含义由 tooltip 承担。
+     * 已满级显示 {@code MAX}；一次性已解锁显示 {@code OK}。
+     */
+    private String nextCostDisplay(String skillId, int points, double nextCost) {
+        if (Skills.isStickTool(skillId)) {
+            return "";
+        }
+        int max = Skills.getMaxPoints(skillId);
+        if (max > 0 && points >= max) {
+            return "MAX";
+        }
+        if (nextCost <= 0) {
+            return "—"; // 时间系列馈赠：按游戏时长激活，不消耗点数
+        }
+        String num = fmtCost(nextCost);
+        return "+" + clipToWidth(num, R_COST_W - 2);
     }
 
     /** 估算下一级消耗（客户端显示用） */
@@ -1509,23 +2196,14 @@ public class SkillTreeScreen extends Screen {
         return mouseX >= b[0] && mouseX <= b[2] && mouseY >= b[1] && mouseY <= b[3];
     }
 
-    /** 顶部信息区包围盒 [left, top, right, bottom]（屏幕坐标，与 renderHeaderInfo 绘制一致） */
+    /**
+     * 顶部信息区包围盒 [left, top, right, bottom]（屏幕坐标，与 renderHeaderInfo 绘制一致）。
+     * ⚠️ 2026-09-15 性能优化：原实现每次调用都重建文字 + 测宽，而本方法被 isIconUnderUI() 对每个按钮调用
+     *    （≈120 次/帧）→ 改为读每帧只算一次的共享缓存；顺带修掉原先硬编码中文测宽（英文环境宽度不准）。
+     */
     private int[] headerBounds() {
-        String title = Component.translatable("ui.zifeng_s_custom_skill_tree.title").getString();
-        String modeText = modeTextOf(Skills.AURA_DAMAGE);
-        String statusLine = t("status_skill_point") + String.format("%.1f", Math.max(0, skillPoints))
-                + "   ·   " + t("status_aura") + ":" + (auraEnabled ? t("status_on") : t("status_off"))
-                + "   ·   " + t("status_target") + ":" + modeText;
-        String hintLine = t("hint_controls");
-        int maxWidth = Math.max(font.width(title), Math.max(font.width(statusLine), font.width(hintLine)));
-        if (org.zifeng.skilltree.client.ModKeyBindingEvents.hasUnboundAuraKeys()) {
-            maxWidth = Math.max(maxWidth, font.width("⚠ 光环技能默认无快捷键：点击技能右下角 🔑 可设置开关快捷键"));
-        }
-        // 渲染时：translate(width/2, 10) + scale(0.8) → 屏幕坐标换算
-        double halfW = (maxWidth / 2.0 + 10) * 0.8;
-        int top = (int) Math.floor(10 - 10 * 0.8);
-        int bottom = (int) Math.ceil(10 + ((org.zifeng.skilltree.client.ModKeyBindingEvents.hasUnboundAuraKeys() ? 45 : 30) + 10) * 0.8);
-        return new int[]{width / 2 - (int) Math.ceil(halfW), top, width / 2 + (int) Math.ceil(halfW), bottom};
+        refreshHeaderCache();
+        return cachedHeaderBounds;
     }
 
     /** 属性行缓存（2026-08-27 性能优化：原每帧 collectRows → 每个 getComputedValue 遍历 29 个 BaseSkill 条目，
@@ -1565,6 +2243,23 @@ public class SkillTreeScreen extends Screen {
         addRow(rows, t("panel_toughness"), attrVal(player, Attributes.ARMOR_TOUGHNESS, rec), "%.1f");
         // 物理减伤（自定义属性）：护甲减伤 80% 封顶后继续叠的独立减伤层
         addRow(rows, t("panel_dmg_reduce"), attrVal(player, org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION.get(), rec) * 100, "%.0f%%");
+
+        // ═══ 奥术防护（2026-09-14）：魔法减伤与反制 ═══
+        // 魔法减伤：对「护甲无效」的伤害生效（魔法/凋零/龙息等）。公式 D/(D+K) 永不达到 100%
+        // ★ 常显（未学显示 0%）：让玩家知道有这项防护可加，且面板行数稳定不跳动
+        addRow(rows, t("panel_magic_reduce"), SkillEffects.getMagicReduction(rec) * 100, "%.0f%%");
+        // 法术抑制：仅对间接伤害（箭矢/法术弹射物）生效的额外减伤（同样常显）
+        addRow(rows, t("panel_spell_dampen"), SkillEffects.getDampenReduction(rec) * 100, "%.0f%%");
+        // 法术反射：触发几率（一次性技能，学了就显示）
+        if (rec.getLearnedPoints(Skills.SPELL_REFLECT) > 0 && rec.isEnabled(Skills.SPELL_REFLECT)) {
+            addRow(rows, t("panel_spell_reflect"),
+                    org.zifeng.skilltree.Config.SPELL_REFLECT_CHANCE.get() * 100, "%.0f%%");
+        }
+        // 法力虹吸：魔法伤害转化为回血的比例
+        if (rec.getLearnedPoints(Skills.MANA_SIPHON) > 0 && rec.isEnabled(Skills.MANA_SIPHON)) {
+            addRow(rows, t("panel_mana_siphon"),
+                    org.zifeng.skilltree.Config.MANA_SIPHON_RATIO.get() * 100, "%.0f%%");
+        }
         // 全能精通：全伤害减免（对所有伤害类型生效，含真伤/混沌/指令）
         boolean masterOn = rec.getLearnedPoints(Skills.ULT_MASTER) > 0 && rec.isEnabled(Skills.ULT_MASTER);
         if (masterOn) {
@@ -1728,7 +2423,7 @@ public class SkillTreeScreen extends Screen {
                 int alv = rec.getLearnedPoints(aSkill);
                 if (alv > 0) {
                     rows.add(new String[]{Skills.getDisplayNameComponent(aSkill).getString() + (rec.isEnabled(aSkill) ? "" : t("panel_off")),
-                            alv + "/100", "#E0B6C8"});
+                            alv + "/" + Skills.getGiftMaxPoints(aSkill), "#E0B6C8"});
                 }
             }
         }
@@ -1940,6 +2635,168 @@ public class SkillTreeScreen extends Screen {
         guiGraphics.fill(type, right - half, bottom - half, right, bottom, color);
     }
 
+    /**
+     * 圆角矩形填充（真圆角，扫描线法；2026-09-19）。
+     *
+     * <p>相比 {@link #fillRoundedRect} 的「四角阶梯近似」，这里每行都按圆的方程算左右内缩量，
+     * 圆弧是平滑的（1px 精度），且只有一个循环 —— 贴片数量多时反而更省。
+     *
+     * <p>用 {@code RenderType.gui()}（与技能贴片同层、有深度），不是 guiOverlay。
+     */
+    private void fillRound(GuiGraphics guiGraphics, int x0, int y0, int x1, int y1, int radius, int color) {
+        final int w = x1 - x0;
+        final int h = y1 - y0;
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        int r = Math.max(0, Math.min(radius, Math.min(w, h) / 2));
+        if (r == 0) {
+            guiGraphics.fill(x0, y0, x1, y1, color);
+            return;
+        }
+        final double rr = r;
+        for (int i = 0; i < h; i++) {
+            int cy; // 到角部圆圆心的竖向距离
+            if (i < r) {
+                cy = r - i;
+            } else if (i >= h - r) {
+                cy = h - 1 - i;
+            } else {
+                cy = 0;
+            }
+            int inset = 0;
+            if (cy > 0) {
+                inset = (int) Math.round(rr - Math.sqrt(Math.max(0.0, rr * rr - (double) cy * cy)));
+            }
+            guiGraphics.fill(x0 + inset, y0 + i, x1 - inset, y0 + i + 1, color);
+        }
+    }
+
+    /**
+     * 圆角矩形描边（真 1px 圆环，扫描线法）。
+     *
+     * <p>⚠️ 不能用「外圈色块 + 内缩底色盖回」的偷懒做法 —— 贴片内部先画了按键格底色，
+     * 盖回会把格底色一起擦掉。所以这里逐行只画最左/最右一像素，四角按圆的方程描点。
+     */
+    private void strokeRound(GuiGraphics guiGraphics, int x0, int y0, int x1, int y1, int radius, int color) {
+        final int w = x1 - x0;
+        final int h = y1 - y0;
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        int r = Math.max(0, Math.min(radius, Math.min(w, h) / 2));
+        if (r == 0) {
+            guiGraphics.fill(x0, y0, x1, y0 + 1, color);
+            guiGraphics.fill(x0, y1 - 1, x1, y1, color);
+            guiGraphics.fill(x0, y0, x0 + 1, y1, color);
+            guiGraphics.fill(x1 - 1, y0, x1, y1, color);
+            return;
+        }
+        final double rr = r;
+        // 四条直边
+        guiGraphics.fill(x0 + r, y0, x1 - r, y0 + 1, color);
+        guiGraphics.fill(x0 + r, y1 - 1, x1 - r, y1, color);
+        guiGraphics.fill(x0, y0 + r, x0 + 1, y1 - r, color);
+        guiGraphics.fill(x1 - 1, y0 + r, x1, y1 - r, color);
+        // 四角弧（逐行描两个像素）
+        for (int i = 0; i < r; i++) {
+            int cy = r - i;
+            int inset = (int) Math.round(rr - Math.sqrt(Math.max(0.0, rr * rr - (double) cy * cy)));
+            int lx = x0 + inset;
+            int rx = x1 - inset - 1;
+            guiGraphics.fill(lx, y0 + i, lx + 1, y0 + i + 1, color);
+            guiGraphics.fill(rx, y0 + i, rx + 1, y0 + i + 1, color);
+            guiGraphics.fill(lx, y1 - i - 1, lx + 1, y1 - i, color);
+            guiGraphics.fill(rx, y1 - i - 1, rx + 1, y1 - i, color);
+        }
+    }
+
+    /** 取当前类别的强调色（贴片描边/左侧色条/进度条填充都用它） */
+    private int categoryAccent() {
+        return CATEGORY_COLORS[Math.max(0, Math.min(CATEGORY_COLORS.length - 1, selectedCategory))];
+    }
+
+    /**
+     * 某技能的属性加成文本（2026-09-19 新增，用户要求：「单技能增加属性如（+10♥）」）。
+     *
+     * <p>数据来源 = {@link org.zifeng.skilltree.skill.SkillEffects#attrEntriesOf}（服务端真正生效的那张表），
+     * 所以<b>行里显示的数字与实际加成永远一致</b>。
+     * <ul>
+     *   <li>加算（ADD）：显示原始数值，如 {@code +2.5♥}</li>
+     *   <li>乘算（MULT）：换算成百分比，如 {@code +10%♥}</li>
+     * </ul>
+     * <p>每个技能最多显示两项（贴片宽度有限）；无属性加成的技能返回空串。
+     *
+     * @param points 已学等级
+     */
+    private String skillAttrText(String skillId, int points) {
+        if (points <= 0 || Skills.isStickTool(skillId)) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        int shown = 0;
+        var record = learnedAsRecord();
+        for (var e : org.zifeng.skilltree.skill.SkillEffects.attrEntriesOf(skillId)) {
+            if (shown >= 2) {
+                break;
+            }
+            double amount;
+            boolean pct;
+            if (e.op() == org.zifeng.skilltree.skill.SkillEffects.Op.MULT) {
+                // 乘算：量 = 技能等级 × 每点倍率 → 百分比
+                amount = org.zifeng.skilltree.skill.SkillEffects.effLevel(record, skillId) * e.perPoint().getAsDouble() * 100.0;
+                pct = true;
+            } else {
+                amount = org.zifeng.skilltree.skill.SkillEffects.effLevel(record, skillId) * e.perPoint().getAsDouble();
+                pct = false;
+            }
+            if (Math.abs(amount) < 1e-6) {
+                continue;
+            }
+            if (shown > 0) {
+                sb.append(' ');
+            }
+            sb.append('+').append(fmtAttr(amount, pct)).append(attrSymbol(e.attribute()));
+            shown++;
+        }
+        return sb.toString();
+    }
+
+    /** 属性数值格式：百分比取一位小数（整则不带小数），普通值保留最多两位 */
+    private static String fmtAttr(double v, boolean percent) {
+        double a = Math.abs(v);
+        if (a >= 10 || a == Math.floor(a)) {
+            return String.valueOf(Math.round(a));
+        }
+        return percent ? String.format("%.1f", a) : String.format("%.2f", a);
+    }
+
+    /**
+     * 属性 → 符号（BMP 范围内的字形，MC 自带 Unicode 字体可渲染）。
+     * <p>用符号而不是文字，是为了在 24px 行内极窄的空间里塞下两项加成，同时不引入语言差异。
+     */
+    private static String attrSymbol(net.minecraft.world.entity.ai.attributes.Attribute attr) {
+        if (attr == null) {
+            return "•";
+        }
+        if (attr.equals(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH)) return "♥";
+        if (attr.equals(net.minecraft.world.entity.ai.attributes.Attributes.ARMOR)) return "✜";
+        if (attr.equals(net.minecraft.world.entity.ai.attributes.Attributes.ARMOR_TOUGHNESS)) return "◈";
+        if (attr.equals(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE)) return "⚔";
+        if (attr.equals(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_SPEED)) return "⚡";
+        if (attr.equals(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED)) return "➤";
+        if (attr.equals(net.minecraft.world.entity.ai.attributes.Attributes.JUMP_STRENGTH)) return "↑";
+        if (attr.equals(net.minecraft.world.entity.ai.attributes.Attributes.FLYING_SPEED)) return "✈";
+        if (attr.equals(net.minecraft.world.entity.ai.attributes.Attributes.LUCK)) return "★";
+        if (attr.equals(net.minecraft.world.entity.ai.attributes.Attributes.KNOCKBACK_RESISTANCE)) return "⚓";
+        if (attr.equals(org.zifeng.skilltree.init.ModAttributes.MINING_EFFICIENCY.get())) return "⛏";
+        if (attr.equals(org.zifeng.skilltree.init.ModAttributes.DAMAGE_REDUCTION.get())) return "✪";
+        if (attr.equals(net.minecraftforge.common.ForgeMod.SWIM_SPEED.get())) return "≈";
+        if (attr.equals(net.minecraftforge.common.ForgeMod.ENTITY_REACH.get())
+                || attr.equals(net.minecraftforge.common.ForgeMod.BLOCK_REACH.get())) return "↔";
+        return "•";
+    }
+
     org.zifeng.skilltree.data.PlayerSkillRecord learnedAsRecord() {
         org.zifeng.skilltree.data.PlayerSkillRecord record = new org.zifeng.skilltree.data.PlayerSkillRecord(java.util.UUID.randomUUID());
         // 直接设置点数（不能用 learnSkill：AURA 消耗递增会因点数不足提前失败，导致光环永远只显示 1 级）
@@ -1982,7 +2839,7 @@ public class SkillTreeScreen extends Screen {
         if (activeSubScreen != null && activeSubScreen.isMouseOver(mouseX, mouseY)) {
             return activeSubScreen.mouseClicked(mouseX, mouseY, button);
         }
-        // 中键：仅用于拖动技能树（任意位置），按下即接管
+        // 中键：新列表布局下不再用于拖动，忽略
         if (button == 2) {
             return true;
         }
@@ -1991,51 +2848,76 @@ public class SkillTreeScreen extends Screen {
             if (isOverUI(mouseX, mouseY)) {
                 return super.mouseClicked(mouseX, mouseY, button);
             }
+            // ① 类别按钮行（分区框 2 内）：切换类别 → 回到顶部
+            int catY = catFrameTop() + FRAME_LINE + LIST_TOP_GAP;
+            if (mouseY >= catY && mouseY <= catY + CAT_BTN_H) {
+                for (int i = 0; i < CATEGORY_COUNT; i++) {
+                    if (mouseX >= catButtonX[i] && mouseX <= catButtonX[i] + catButtonW[i]) {
+                        if (selectedCategory != i) {
+                            selectedCategory = i;
+                        }
+                        scrollY = 0;
+                        rebuildButtons();
+                        return true;
+                    }
+                }
+                return true; // 类别行空白处：吞掉，避免点到列表
+            }
+            // ② 技能行（行内：名称/消耗/进度条/等级 + 固定 3 槽位按键框）
+            final double lx = toPanelX(mouseX);
+            final double ly = toPanelY(mouseY);
             for (SkillButton skillButton : buttons) {
-                double lx = toPanelX(mouseX);
-                double ly = toPanelY(mouseY);
-                boolean togglable = Skills.isTogglable(skillButton.skillId());
-                int kx = skillButton.x() + BUTTON_WIDTH + KEY_BOX_GAP;
+                if (!isButtonVisible(skillButton)) {
+                    continue; // 视口剔除：滚出列表区的行不参与命中
+                }
+                String sid = skillButton.skillId();
+                boolean togglable = Skills.isTogglable(sid);
+                // 贴片内四段（内容区 │ Q │ E │ R；与 renderKeyCell 完全同一套几何）
+                final int cw = contentW();
+                int kx = skillButton.x() + cw;
+                int k2x = kx + KEY_BOX_WIDTH;
+                int k3x = k2x + KEY2_BOX_WIDTH;
                 int ky = skillButton.y();
-                // 第一框（开关键）：仅可开关技能可点击
-                if (togglable && lx >= kx && lx <= kx + KEY_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
-                    if (keyBindSkillId != null && keyBindSkillId.equals(skillButton.skillId()) && keyBindListening) {
+                boolean onRowY = ly >= ky && ly <= ky + BUTTON_HEIGHT;
+                // 进度条优先于整行“学习技能”命中：点击任意位置即定位生效等级，随后可连续拖动。
+                if (overLevelBar(mouseX, mouseY, skillButton)
+                        && learnedSkills.getOrDefault(sid, 0) > 0
+                        && Skills.getMaxPoints(sid) > 1) {
+                    draggingLevelSkillId = sid;
+                    setActiveLevelFromMouse(skillButton, mouseX);
+                    return true;
+                }
+                // 第一框（开关键）：仅可开关技能可点击；空槽位不响应
+                if (togglable && onRowY && lx >= kx && lx <= kx + KEY_BOX_WIDTH) {
+                    if (keyBindSkillId != null && keyBindSkillId.equals(sid) && keyBindListening) {
                         // 再次点击同一按键框 → 退出监听（不改变绑定）
                         keyBindListening = false;
                     } else {
                         // 进入监听态（点击该技能按键框，等待按键输入）
-                        keyBindSkillId = skillButton.skillId();
+                        keyBindSkillId = sid;
                         keyBindListening = true;
                     }
                     return true;
                 }
                 // 第二列按键框（2026-08-13：光环=目标循环键，可调等级技能=等级循环键）
-                if (isLevelBindable(skillButton.skillId())) {
-                    int k2x = kx + KEY_BOX_WIDTH + KEY_BOX_GAP;
-                    if (lx >= k2x && lx <= k2x + KEY2_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
-                        if (levelKeyBindSkillId != null && levelKeyBindSkillId.equals(skillButton.skillId()) && levelKeyBindListening) {
-                            levelKeyBindListening = false;
-                        } else {
-                            levelKeyBindSkillId = skillButton.skillId();
-                            levelKeyBindListening = true;
-                        }
-                        return true;
+                if (isLevelBindable(sid) && onRowY && lx >= k2x && lx <= k2x + KEY2_BOX_WIDTH) {
+                    if (levelKeyBindSkillId != null && levelKeyBindSkillId.equals(sid) && levelKeyBindListening) {
+                        levelKeyBindListening = false;
+                    } else {
+                        levelKeyBindSkillId = sid;
+                        levelKeyBindListening = true;
                     }
+                    return true;
                 }
                 // 第三列按键框（2026-09-07：功能触发键——主动技场景内触发一次）
-                if (Skills.isTriggerBindable(skillButton.skillId())) {
-                    int k3x = (isLevelBindable(skillButton.skillId())
-                            ? kx + KEY_BOX_WIDTH + KEY_BOX_GAP + KEY2_BOX_WIDTH + KEY_BOX_GAP
-                            : kx + KEY_BOX_WIDTH + KEY_BOX_GAP);
-                    if (lx >= k3x && lx <= k3x + KEY3_BOX_WIDTH && ly >= ky && ly <= ky + BUTTON_HEIGHT) {
-                        if (triggerKeyBindSkillId != null && triggerKeyBindSkillId.equals(skillButton.skillId()) && triggerKeyBindListening) {
-                            triggerKeyBindListening = false;
-                        } else {
-                            triggerKeyBindSkillId = skillButton.skillId();
-                            triggerKeyBindListening = true;
-                        }
-                        return true;
+                if (Skills.isTriggerBindable(sid) && onRowY && lx >= k3x && lx <= k3x + KEY3_BOX_WIDTH) {
+                    if (triggerKeyBindSkillId != null && triggerKeyBindSkillId.equals(sid) && triggerKeyBindListening) {
+                        triggerKeyBindListening = false;
+                    } else {
+                        triggerKeyBindSkillId = sid;
+                        triggerKeyBindListening = true;
                     }
+                    return true;
                 }
                 if (skillButton.isHovered(mouseX, mouseY, this)) {
                     if (canLearn(skillButton.skillId())) {
@@ -2243,24 +3125,27 @@ public class SkillTreeScreen extends Screen {
         if (activeSubScreen != null && (activeSubScreen.isMouseOver(mouseX, mouseY) || activeSubScreen.isDragging())) {
             return activeSubScreen.mouseDragged(mouseX, mouseY, button, dragX, dragY);
         }
-        // 中键：任意位置直接拖动技能树（包括按钮上/面板上）
-        if (button == 2) {
-            panX += dragX;
-            panY += dragY;
-            return true;
+        if (button == 0 && draggingLevelSkillId != null) {
+            for (SkillButton skillButton : buttons) {
+                if (draggingLevelSkillId.equals(skillButton.skillId())) {
+                    setActiveLevelFromMouse(skillButton, mouseX);
+                    return true;
+                }
+            }
+            draggingLevelSkillId = null;
         }
-        // 左键：仅空白处拖动（不在技能按钮上、不在第一图层 UI 区域）
-        if (button == 0 && !isOverUI(mouseX, mouseY) && !isHoveringAnyButton(mouseX, mouseY)) {
-            panX += dragX;
-            panY += dragY;
-            return true;
-        }
+        // 2026-09-19 列表式改版：不再有平移/缩放，拖动一律交给列表滚动（滚轮）；
+        // 保留子界面转发即可，其余丢弃，避免误拖把整张表拖跑。
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     /** 鼠标释放（子界面拖动结束后保存位置，2026-09-01） */
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0 && draggingLevelSkillId != null) {
+            draggingLevelSkillId = null;
+            return true;
+        }
         if (activeSubScreen != null) {
             activeSubScreen.mouseReleased(mouseX, mouseY, button);
             return true;
@@ -2268,66 +3153,62 @@ public class SkillTreeScreen extends Screen {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
-    /** 鼠标当前是否悬停在任一技能按钮上 */
-    private boolean isHoveringAnyButton(double mouseX, double mouseY) {
-        for (SkillButton b : buttons) {
-            if (b.isHovered(mouseX, mouseY, this)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        // 子界面打开：仅面板内滚轮交给子界面（面板外正常缩放）
+        // 子界面打开：仅面板内滚轮交给子界面（面板外正常滚动）
         if (activeSubScreen != null && activeSubScreen.isMouseOver(mouseX, mouseY)) {
             return activeSubScreen.mouseScrolled(mouseX, mouseY, delta);
         }
-        // 悬停在基础/增幅/多级终极技能上：滚轮调节生效等级（0 ~ 已学等级）
-        for (SkillButton skillButton : buttons) {
-            if (skillButton.isHovered(mouseX, mouseY, this)) {
-                // 鼠标在第一图层 UI 区域（标题/提示条等）→ 不透过面板调级
-                if (isOverUI(mouseX, mouseY)) {
-                    break;
-                }
-                // 多级判定：等级上限 > 1（基础/增幅/多级终极/束域扩幅/谐振理论均可滚轮调生效等级）
-                int maxLevel = Skills.getMaxPoints(skillButton.skillId());
-                if (maxLevel > 1) {
-                    int points = learnedSkills.getOrDefault(skillButton.skillId(), 0);
-                    int active = activeLevels.getOrDefault(skillButton.skillId(), points);
-                    // Shift+Ctrl 同时按下 → 一次调整 100 级；Shift → 10 级；否则 1 级
-                    int step;
-                    if (Screen.hasShiftDown() && Screen.hasControlDown()) {
-                        step = 100;
-                    } else if (Screen.hasShiftDown()) {
-                        step = 10;
-                    } else {
-                        step = 1;
-                    }
-                    int scrollDelta = delta > 0 ? step : -step;
-                    int next = Math.max(0, Math.min(points, active + scrollDelta));
-                    activeLevels.put(skillButton.skillId(), next);
-                    org.zifeng.skilltree.network.ModNetwork.sendToServer(new SetSkillLevelC2SPacket(skillButton.skillId(), next));
-                    return true;
-                }
-                break;
+        // ============ 滚轮三向分派（2026-09-19 用户要求：★ 必须在【对应分区】内才生效）============
+        //   ① 鼠标在【类别行分区】   → 只横向滚动类别按钮（放不下时）
+        //   ② 鼠标在【技能行分区】的【等级进度条】上 → 只调生效等级
+        //   ③ 鼠标在【技能行分区】其余位置 → 只竖向滚动技能列表
+        //   ④ 鼠标在【标题行分区】   → 不响应（该分区没有对应滚动）
+        if (mouseY >= catFrameTop() && mouseY < catFrameBottom()) {
+            int catScrollMax = Math.max(0, catContentW - catViewW());
+            if (catScrollMax > 0) {
+                catScrollX = Math.max(0, Math.min(catScrollMax, catScrollX + (delta > 0 ? -CAT_BTN_GAP * 4 : CAT_BTN_GAP * 4)));
+                rebuildCategoryRow();
             }
+            return true;
         }
-        // 否则缩放：以鼠标位置为缩放中心（鼠标指向的点保持不动，界面不漂移）
-        // 原理：屏幕坐标 = 变换原点 + scale × 局部坐标；缩放前后保持鼠标下的局部坐标不变，
-        //       反解出新的 panX/panY，使鼠标指向的技能/位置在缩放后仍在鼠标处。
-        double factor = delta > 0 ? 1.1 : 1.0 / 1.1;
-        double newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
-        if (newScale != scale) {
-            double ox = width / 2.0 - 60 + panX;
-            double oy = height / 2.0 + 10 + panY;
-            double localX = (mouseX - ox) / scale;
-            double localY = (mouseY - oy) / scale;
-            scale = newScale;
-            panX = mouseX - (width / 2.0 - 60) - newScale * localX;
-            panY = mouseY - (height / 2.0 + 10) - newScale * localY;
+        if (mouseY < listTop() || mouseY > listBottom()) {
+            return true; // ④ 标题行分区（或界面外）：不响应滚轮
         }
+        // ② 进度条上 → 调级
+        for (SkillButton button : buttons) {
+            if (!isButtonVisible(button)) {
+                continue;
+            }
+            if (!overLevelBar(mouseX, mouseY, button) || !button.isHovered(mouseX, mouseY, this)) {
+                continue;
+            }
+            int maxLevel = Skills.getMaxPoints(button.skillId());
+            if (maxLevel <= 1) {
+                break; // 单级技能无等级可调 → 落到列表滚动
+            }
+            int points = learnedSkills.getOrDefault(button.skillId(), 0);
+            if (points <= 0) {
+                break; // 未学 → 无生效等级可调
+            }
+            int active = activeLevels.getOrDefault(button.skillId(), points);
+            int step;
+            if (Screen.hasShiftDown() && Screen.hasControlDown()) {
+                step = 100;
+            } else if (Screen.hasShiftDown()) {
+                step = 10;
+            } else {
+                step = 1;
+            }
+            int next = Math.max(0, Math.min(points, active + (delta > 0 ? step : -step)));
+            activeLevels.put(button.skillId(), next);
+            rowVisualCache.remove(button.skillId());
+            org.zifeng.skilltree.network.ModNetwork.sendToServer(new SetSkillLevelC2SPacket(button.skillId(), next));
+            return true;
+        }
+        // ③ 竖向滚动技能列表（滚轮一格 = 3 行，与常见列表一致）
+        int step = (BUTTON_HEIGHT + VERTICAL_SPACING) * 3;
+        scrollY = Math.max(0, Math.min(scrollMax, scrollY + (delta > 0 ? -step : step)));
         return true;
     }
 
@@ -2336,20 +3217,20 @@ public class SkillTreeScreen extends Screen {
         return false;
     }
 
-    /** 关闭界面时保存位置/缩放（下次打开恢复，2026-08-13 需求）+ 取消全局状态订阅（2026-08-28） */
+    /** 关闭界面时取消全局状态订阅（2026-08-28）；2026-09-19 起不再保存视图位置/缩放 */
     @Override
     public void onClose() {
-        org.zifeng.skilltree.client.SkillKeyBinds.saveViewState(panX, panY, scale);
         // 关闭技能树 → 服务端取消全局状态订阅（SUB_ALL→0，不再推送，省流量）
         org.zifeng.skilltree.network.ModNetwork.sendToServer(new org.zifeng.skilltree.network.OpenSkillTreeC2SPacket(false));
         super.onClose();
     }
 
     double toPanelX(double screenX) {
-        return (screenX - (width / 2.0 - 60) - panX) / scale;
+        return screenX - rowLeft();
     }
 
+    /** 行内局部坐标的 Y（原点 = 列表左上角，叠加滚动偏移；2026-09-19 列表式改版，不再有平移/缩放） */
     double toPanelY(double screenY) {
-        return (screenY - (height / 2.0 + 10) - panY) / scale;
+        return screenY - (listTop() - scrollY);
     }
 }

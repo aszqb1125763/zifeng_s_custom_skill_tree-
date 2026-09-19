@@ -47,6 +47,16 @@ public class SkillTreeLootModifier extends LootModifier {
     @Nonnull
     @Override
     protected ObjectArrayList<ItemStack> doApply(ObjectArrayList<ItemStack> generatedLoot, LootContext context) {
+        // ★ 2026-09-15 关键修复：选区挖掘的【掉落模拟阶段】→ 原样返回，不产生任何副作用。
+        //    原因：GLM 在 Block.getDrops 内部执行，而选区挖掘批量结算正是调 Block.getDrops
+        //    来“模拟一次掉落”做模板。若此处照常「挪移 + clear」，模拟拿到的永远是空列表
+        //    → 模板恒空 → 结算（×格数）全部跳过 → 玩家只收到“模拟那一次”的量
+        //    （实测：8763 格铁矿只给 1 个粗铁）。
+        //    熔炼/倍率/挪移分别由 ZoneSkillEvents.simulateDrops 与 flushDrops 负责，
+        //    此处跳过不会丢效果（且入容器的是结算后的完整数量）。
+        if (org.zifeng.skilltree.event.ZoneSkillEvents.isSimulatingDrops()) {
+            return generatedLoot;
+        }
         // 只处理方块掉落（方块破坏产生的掉落才有 BLOCK_STATE）
         if (!context.hasParam(LootContextParams.BLOCK_STATE)) {
             return generatedLoot;

@@ -98,9 +98,9 @@ public class ZoneC2SPacket {
                 int minX = Math.min(packet.ax, packet.bx), maxX = Math.max(packet.ax, packet.bx);
                 int minY = Math.min(packet.ay, packet.by), maxY = Math.max(packet.ay, packet.by);
                 int minZ = Math.min(packet.az, packet.bz), maxZ = Math.max(packet.az, packet.bz);
-                if (maxX - minX > org.zifeng.skilltree.data.OperZone.MAX_SIDE
-                        || maxY - minY > org.zifeng.skilltree.data.OperZone.MAX_SIDE
-                        || maxZ - minZ > org.zifeng.skilltree.data.OperZone.MAX_SIDE) {
+                if (maxX - minX > org.zifeng.skilltree.data.OperZone.MAX_SIDE_ZONE
+                        || maxY - minY > org.zifeng.skilltree.data.OperZone.MAX_SIDE_ZONE
+                        || maxZ - minZ > org.zifeng.skilltree.data.OperZone.MAX_SIDE_ZONE) {
                     return;
                 }
                 if (packet.action == 3) {
@@ -152,7 +152,7 @@ public class ZoneC2SPacket {
                             packet.by > 0
                                     ? "chat.zifeng_s_custom_skill_tree.zone_adjust_limit"
                                     : "chat.zifeng_s_custom_skill_tree.zone_adjust_min",
-                            String.valueOf(OperZone.MAX_SIDE)), true);
+                            String.valueOf(OperZone.MAX_SIDE_ZONE)), true);
                     return;
                 }
                 if (idx == 3) {

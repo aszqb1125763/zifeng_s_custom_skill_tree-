@@ -49,6 +49,14 @@ public class SetSkillToggleC2SPacket {
                     ModNetwork.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
                     return;
                 }
+                // ⚠️ 寰宇法则：**开启**需 OP 权限（2026-09-14）。
+                //    ⚠️ 刻意只限制「开」不限制「关」—— 否则被降权的玩家无法关掉已开的全局技能（会锁死服务器状态）。
+                if (packet.enabled && Skills.isGlobalSkill(packet.skillId)
+                        && !org.zifeng.skilltree.event.AuraEvents.canUseGlobalRule(player)) {
+                    org.zifeng.skilltree.event.AuraEvents.sendGlobalNeedOpMessage(player, packet.skillId);
+                    ModNetwork.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
+                    return;
+                }
                 record.setEnabled(packet.skillId, packet.enabled);
                 data.setDirty();
                 // 重挂属性使开关生效
