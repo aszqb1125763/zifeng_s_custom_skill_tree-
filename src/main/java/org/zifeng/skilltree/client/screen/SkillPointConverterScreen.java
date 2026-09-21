@@ -29,6 +29,12 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
     /** 输入速率编辑框（GUI 局部坐标区域，init 时创建） */
     private EditBox rateBox;
     private int rateBoxX = 0, rateBoxY = 0, rateBoxW = 120;
+    /** 输入框可视框高度（与原版 EditBox 传的 14 一致，自绘边框时用） */
+    private static final int RATE_BOX_FRAME_H = 14;
+    /** 文字区相对可视框的左内缩（原版 bordered 时为 4px） */
+    private static final int RATE_TEXT_INSET_X = 4;
+    /** 文字区相对可视框的上内缩（原版 bordered 时为 (h-8)/2 = 3px） */
+    private static final int RATE_TEXT_INSET_Y = 3;
     /** 无限制开关客户端乐观状态（null = 跟随服务端；点击后立即本地翻转，等待同步） */
     private Boolean localUnlimited = null;
     /** 输入速率客户端乐观值（null = 跟随服务端；提交后立即生效显示，等待同步） */
@@ -55,11 +61,32 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
         rateBoxX = x + 14;
         rateBoxY = y + 118;
         rateBoxW = 120;
-        rateBox = new EditBox(font, rateBoxX, rateBoxY, rateBoxW, 14, Component.translatable("ui.zifeng_s_custom_skill_tree.conv_rate"));
+        // ★ 2026-09-21：改用 SkillSearchBox（无投影输入框）。
+        //   原因：原版 EditBox.renderWidget 内部固定用带投影的 drawString（无开关），
+        //   而用户要求全局统一「不要阴影」。控件自带的 (PAD_X, PAD_Y) 内边距在这里被精确抵掉，
+        //   使内层文字恰好落在原版 bordered 的 (X+4, Y+(h-8)/2) —— 位置与改前逐像素一致。
+        rateBox = new SkillSearchBox(font,
+                rateBoxX + RATE_TEXT_INSET_X - SkillSearchBox.PAD_X,
+                rateBoxY + RATE_TEXT_INSET_Y - SkillSearchBox.PAD_Y,
+                (rateBoxW - 8) + SkillSearchBox.PAD_X,
+                8 + SkillSearchBox.PAD_Y * 2,
+                0, t("conv_rate"), 0xFFE0E0E0, 0xFFE0E0E0);
         rateBox.setValue(String.valueOf(menu.getInputRate()));
         rateBox.setMaxLength(13);
         rateBox.setFilter(s -> s.matches("\\d*")); // 仅数字
         addRenderableWidget(rateBox);
+    }
+
+    /**
+     * 把输入框（内层文字区）对齐到可视框 —— 必须与 {@link #init()} 的构造参数用同一套换算。
+     * <p>可视框会被 {@code renderBg} 每帧重算（{@code rateBoxX/rateBoxY}），所以不能只在 init 里摆一次。
+     */
+    private void syncRateBoxPos() {
+        if (rateBox == null) {
+            return;
+        }
+        rateBox.setX(rateBoxX + RATE_TEXT_INSET_X - SkillSearchBox.PAD_X);
+        rateBox.setY(rateBoxY + RATE_TEXT_INSET_Y - SkillSearchBox.PAD_Y);
     }
 
     @Override
@@ -81,7 +108,9 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
         guiGraphics.fill(x, y, x + 2, y + imageHeight, 0xFF87CEEB);
         guiGraphics.fill(x + imageWidth - 2, y, x + imageWidth, y + imageHeight, 0xFF87CEEB);
 
-        guiGraphics.drawCenteredString(font, title.getString(), x + imageWidth / 2, y + 8, 0xFFFFFFFF);
+        // ★ 2026-09-21：全部文字去掉投影（drawCenteredString 无阴影开关 → 自己算居中）
+        String titleText = title.getString();
+        guiGraphics.drawString(font, titleText, x + (imageWidth - font.width(titleText)) / 2, y + 8, 0xFFFFFFFF, false);
 
         // 进度条
         int pct = menu.getProgressPercent();
@@ -94,33 +123,41 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
         if (fillW > 0) {
             guiGraphics.fill(barX, barY, barX + fillW, barY + barH, Config.MACHINE_PROGRESS_COLOR.get());
         }
-        guiGraphics.drawCenteredString(font, t("conv_progress") + " " + pct + "%", x + imageWidth / 2, barY + barH + 5, 0xFFFFFFFF);
+        String pctText = t("conv_progress") + " " + pct + "%";
+        guiGraphics.drawString(font, pctText, x + (imageWidth - font.width(pctText)) / 2, barY + barH + 5, 0xFFFFFFFF, false);
 
         int line = barY + barH + 19;
         int lineH = 11;
         int left = x + 14;
         // 已转换技能点（玩家整体累计，跨机器共享，阶梯消耗依据）
-        guiGraphics.drawString(font, t("conv_total") + " " + fmtBig(menu.getTotalConverted()) + " " + t("btn_pt"), left, line, 0xFFFFD700);
+        guiGraphics.drawString(font, t("conv_total") + " " + fmtBig(menu.getTotalConverted()) + " " + t("btn_pt"), left, line, 0xFFFFD700, false);
         line += lineH;
         // 绑定状态
         String bindText = menu.isBound() ? t("conv_bound") : t("conv_unbound");
         int bindColor = menu.isBound() ? 0xFF55FF55 : 0xFFFF5555;
-        guiGraphics.drawString(font, bindText, left, line, bindColor);
+        guiGraphics.drawString(font, bindText, left, line, bindColor, false);
         line += lineH;
         // 红石状态
         String redstoneText = menu.isRedstoneBlocked() ? t("conv_rs_blocked") : t("conv_rs_ok");
-        guiGraphics.drawString(font, redstoneText, left, line, menu.isRedstoneBlocked() ? 0xFFFF5555 : 0xFF55FF55);
+        guiGraphics.drawString(font, redstoneText, left, line, menu.isRedstoneBlocked() ? 0xFFFF5555 : 0xFF55FF55, false);
         line += lineH + 2;
 
-        // 输入速率标签 + 数字输入框（EditBox，回车提交；无限制输入开启时显示无限制）
-        guiGraphics.drawString(font, t("conv_rate") + " (FE/t):", left, line, 0xFFFFD700);
+        // 输入速率标签 + 数字输入框（回车提交；无限制输入开启时显示无限制）
+        guiGraphics.drawString(font, t("conv_rate") + " (FE/t):", left, line, 0xFFFFD700, false);
         line += lineH + 2;
         // 刷新编辑框位置与当前值（菜单数据变化时同步；本地乐观值优先，避免同步延迟导致输入被重置）
         if (rateBox != null) {
             rateBoxX = left;
             rateBoxY = line;
-            rateBox.setX(rateBoxX);
-            rateBox.setY(rateBoxY);
+            syncRateBoxPos();
+            // ★ 2026-09-21：原版 EditBox 的 bordered 外观（外圈 1px 描边 + 内部纯黑）改由本界面自绘
+            //   —— 输入框本体已换成无投影的 SkillSearchBox（只画文字，不画框）。
+            //   颜色沿用原版常量：边框聚焦 0xFFFFFFFF / 常态 0xFFA0A0A0，填充 0xFF000000。
+            int frameBorder = rateBox.isFocused() ? 0xFFFFFFFF : 0xFFA0A0A0;
+            guiGraphics.fill(rateBoxX - 1, rateBoxY - 1,
+                    rateBoxX + rateBoxW + 1, rateBoxY + RATE_BOX_FRAME_H + 1, frameBorder);
+            guiGraphics.fill(rateBoxX, rateBoxY,
+                    rateBoxX + rateBoxW, rateBoxY + RATE_BOX_FRAME_H, 0xFF000000);
             // 仅在未聚焦时不覆盖用户输入
             if (!rateBox.isFocused()) {
                 long cur = localRate != null ? localRate : menu.getInputRate();
@@ -149,12 +186,12 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
             guiGraphics.fill(btnX + 4, btnY + 6, btnX + 9, btnY + 11, 0xFF666666);
         }
         String btnText = unlimited ? t("conv_ul_on") : t("conv_ul_off");
-        guiGraphics.drawString(font, btnText, btnX + 13, btnY + 3, unlimited ? 0xFF55FFAA : 0xFFAAAAAA);
+        guiGraphics.drawString(font, btnText, btnX + 13, btnY + 3, unlimited ? 0xFF55FFAA : 0xFFAAAAAA, false);
         // 当前生效输入速率（服务端同步实际值）
         line += btnH + 3;
         String rateText = unlimited ? t("conv_rate_unlimited")
                 : t("conv_rate_now") + " " + fmtBig(menu.getInputRate()) + " FE/t";
-        guiGraphics.drawString(font, rateText, left, line, unlimited ? 0xFF55FFAA : 0xFFFFD700);
+        guiGraphics.drawString(font, rateText, left, line, unlimited ? 0xFF55FFAA : 0xFFFFD700, false);
     }
 
     /** 提交输入速率（回车/失焦调用）：解析数字并发送 C2S */

@@ -16,8 +16,11 @@ public record SkillButton(String skillId, int x, int y) {
     public static final int HEIGHT = 28;
 
     public boolean isHovered(double mouseX, double mouseY, SkillTreeScreen screen) {
+        if (!screen.isMouseOverSkillList(mouseX, mouseY)) {
+            return false;
+        }
         double px = screen.toPanelX(mouseX);
         double py = screen.toPanelY(mouseY);
-        return px >= x && px <= x + screen.rowW() && py >= y && py <= y + HEIGHT;
+        return px >= x && px < x + screen.rowW() && py >= y && py < y + HEIGHT;
     }
 }

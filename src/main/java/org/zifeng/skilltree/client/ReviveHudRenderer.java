@@ -68,7 +68,7 @@ public class ReviveHudRenderer {
             // 冷却中：暗色遮罩 + 剩余秒数
             gui.fill(x, y, x + 16, y + 16, 0x88000000);
             int seconds = (cooldownRemainingTicks + 19) / 20;
-            gui.drawString(mc.font, seconds + "s", x + 18, y + 4, 0xFFFFAA55);
+            gui.drawString(mc.font, seconds + "s", x + 18, y + 4, 0xFFFFAA55, false);
         } else {
             // 冷却就绪：亮色描边闪烁 + 「就绪」文字
             int flash = (int) ((System.currentTimeMillis() / 500) % 2);
@@ -76,7 +76,7 @@ public class ReviveHudRenderer {
             gui.fill(x - 1, y - 1, x + 17, y + 17, c);
             gui.fill(x, y, x + 16, y + 16, 0x22000000);
             gui.drawString(mc.font, net.minecraft.network.chat.Component.translatable(
-                    "ui.zifeng_s_custom_skill_tree.revive_ready").getString(), x + 18, y + 4, c);
+                    "ui.zifeng_s_custom_skill_tree.revive_ready").getString(), x + 18, y + 4, c, false);
         }
     }
 }

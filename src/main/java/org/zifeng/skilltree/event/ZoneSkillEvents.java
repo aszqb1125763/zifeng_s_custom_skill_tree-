@@ -444,7 +444,9 @@ public final class ZoneSkillEvents {
      */
     private static void zoneAttack(ServerPlayer player, PlayerSkillRecord record, OperZone zone) {
         int interval = AuraEvents.auraAttackInterval(player, record);
-        if (player.level().getGameTime() % interval != 0) {
+        // ⚠️ 2026-09-20 多人优化：与 AuraEvents.auraAttack 同一问题 —— 原写法
+        //   `gameTime % interval` 会让同等级玩家在同一 tick 齐发。加实体 id 错峰。
+        if ((player.level().getGameTime() + player.getId()) % interval != 0) {
             return;
         }
         float[] p = AuraEvents.auraAttackParams(player, record);

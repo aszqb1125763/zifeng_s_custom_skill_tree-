@@ -1,6 +1,11 @@
 modLoader = "javafml"
 loaderVersion = "[47,)"
-license = "All Rights Reserved"
+# ★ 2026-09-21 修复：原为 MDK 模板默认值 "All Rights Reserved"（错误声明），
+#   本项目实际是 MIT 开源。1.21.1 侧走模板从 gradle.properties 取 mod_license（MIT），
+#   两边现已对齐。
+#   ⚠️ 本文件会被 Groovy 模板展开（build.gradle 的 processResources/expand），
+#      注释里也不能出现美元符号加大括号，否则会被当变量解析导致构建失败。
+license = "MIT"
 
 [[mods]]
 modId = "zifeng_s_custom_skill_tree"

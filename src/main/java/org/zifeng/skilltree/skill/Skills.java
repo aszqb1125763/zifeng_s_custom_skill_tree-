@@ -360,6 +360,33 @@ public final class Skills {
     public static final String IRON_NATURE = "iron_nature";           // 自然
     public static final String IRON_ELDRITCH = "iron_eldritch";       // 异界
 
+    // ============ Goety（诡术）兼容技能（2026-09-20 新增） ============
+    // 来源：Goety 作者 Polarice3，MIT，github.com/Polarice3/Goety-2（未混淆，有公开 api 包）
+    // 它自己就做了铁魔法 + 神化兼容（compat.iron / Vivideru.Goety.compat.apotheosis），
+    // 说明其属性（ModAttributes，共 27 个）本就是为外部模组调优准备的。
+    //
+    // ⚠️ 语义与铁魔法【完全不同】，不能照搬铁魔法的“每级+10%”：
+    //   · 强度类 _POTENCY 是 flat 整数加值（默认 0，范围 0~2048），直接加到法术 potency
+    //   · 减量类 _DISCOUNT / casting_speed / cooldown_discount 是“绝对减量比例”（范围 -1~1），
+    //     属性值 0.8 = 减免 80%；1.0 即 100%（灵魂全免 + 瞬发 + 无冷却）
+    //   · 数值与封顶见 {@link org.zifeng.skilltree.compat.GoetyCompat}
+    /** Goety 通用法术强度（spell_potency）：每级 +1，上限 100（满级 +100） */
+    public static final String GOETY_POTENCY = "goety_potency";
+    /** Goety 通用灵魂消耗折扣（soul_discount）：每级 +0.01，上限 80（满级减 80%） */
+    public static final String GOETY_SOUL_DISCOUNT = "goety_soul_discount";
+    // 9 个流派精通（每个技能同时给该流派的【强度】与【灵魂折扣】）
+    // ⚠️ 流派与铁魔法毫无对应关系：铁魔法是 fire/ice/lightning/holy/ender/blood/evocation/nature/eldritch，
+    //     Goety 是下面这 9 个，因此无法复用铁魔法的流派技能。
+    public static final String GOETY_ABYSS = "goety_abyss";           // 深渊
+    public static final String GOETY_FROST = "goety_frost";           // 冰霜
+    public static final String GOETY_GEOMANCY = "goety_geomancy";     // 地卜
+    public static final String GOETY_NECROMANCY = "goety_necromancy"; // 死灵
+    public static final String GOETY_NETHER = "goety_nether";         // 下界
+    public static final String GOETY_STORM = "goety_storm";           // 风暴
+    public static final String GOETY_VOID = "goety_void";             // 虚空
+    public static final String GOETY_WILD = "goety_wild";             // 荒野
+    public static final String GOETY_WIND = "goety_wind";             // 风
+
     // ============ 奥术防护（2026-09-14 新增）：魔法减伤与反制，填补“护甲只减物理”的空缺 ============
     // 核心机制：魔法减伤用 MOBA 公式 reduction = D/(D+K)，**永不达到 100%**，所以每级都有价值（可无限扩级）
     /** 奥术壁垒：魔法防御值（上限1000，吃奥术真解增幅） */
@@ -450,6 +477,10 @@ public final class Skills {
             IRON_MANA_AMP, IRON_MANA_REGEN, IRON_CAST_TIME, IRON_COOLDOWN,
             IRON_FIRE, IRON_ICE, IRON_LIGHTNING, IRON_HOLY, IRON_ENDER,
             IRON_BLOOD, IRON_EVOCATION, IRON_NATURE, IRON_ELDRITCH,
+            // Goety（诡术，2026-09-20）：通用强度/通用灵魂折扣 + 9 流派精通
+            GOETY_POTENCY, GOETY_SOUL_DISCOUNT,
+            GOETY_ABYSS, GOETY_FROST, GOETY_GEOMANCY, GOETY_NECROMANCY, GOETY_NETHER,
+            GOETY_STORM, GOETY_VOID, GOETY_WILD, GOETY_WIND,
             // 奥术防护（2026-09-14）：自有魔法防护，不受模组依赖限制
             ARCANE_BULWARK, ARCANE_AMP, SPELL_DAMPEN);
     /** 所有机械共鸣（纵列6）：机械之星在最上，其余共鸣技能在前置原技能下方 */
@@ -812,6 +843,21 @@ public final class Skills {
     }
 
     /**
+     * 判断是否为「时间系列」馈赠技能（★ 2026-09-20 新增）。
+     *
+     * <p>时间洗礼 / 时间风暴 / 时间洪流这三个技能的「消耗」是<b>游戏时长</b>而非技能点
+     * （{@link #getGiftCost} 对它们返回 0），因此界面上不能按技能点消耗来显示，
+     * 而要改成显示激活门槛（需1小时 / 需5小时 / 需10小时），否则玩家只看到空白。
+     *
+     * <p>把三个 ID 收敛到这里：此前它们在 {@code SkillTreeScreen}（写死三元判断）、
+     * {@code GiftEvents}（TIME_SKILLS 常量）等处各写了一份。
+     */
+    public static boolean isGiftTimeSkill(String skillId) {
+        return GIFT_TIME_BAPTISM.equals(skillId) || GIFT_TIME_STORM.equals(skillId)
+                || GIFT_TIME_FLOOD.equals(skillId);
+    }
+
+    /**
      * 机械共鸣一次性消耗技能点：机械之星 1000，其余共鸣技能 5000（Config 可调）。
      * ⚠️ 64 位返回（2026-08-12 统一）：所有技能消耗一律 long/double，防高等级 int 溢出。
      * @param skillId 机械共鸣技能 ID
@@ -828,16 +874,42 @@ public final class Skills {
         return Config.MACHINE_RESONANCE_COST.get();
     }
 
-    /** 魔法增幅：每项上限（魔力/恢复/流派 1000 级；吟唱/冷却缩减 100 级） */
+    /**
+     * 魔法增幅：每项上限。
+     *
+     * <p><b>⚠️ 2026-09-20 修正两处「等级上限高于实际封顶点」造成的无效等级</b>
+     * （用户报「看着等级很高，但是几十级之后再升就无效」）：
+     * <ul>
+     *   <li><b>吟唱/冷却 100 → 80</b>：Goety 侧减量类封顶 {@code GoetyCompat.DISCOUNT_CAP} = 0.8，
+     *       而每级只贡献 0.01（这两个技能<b>不受</b>等级压缩）→ 80 级正好抵到封顶，
+     *       原 100 级的后 20 级毫无收益。</li>
+     *   <li><b>灵魂折扣 80 → 8</b>：该技能受等级压缩（MAGIC 列默认压缩 ×10），
+     *       生效等级 = 已学等级 × 10，故 8 级时生效等级已到 80 → ×0.01 = 0.8 封顶；
+     *       原写 80 级时后 72 级毫无收益。</li>
+     * </ul>
+     *
+     * <p>⚠️ Goety 各项的「每级实际效果」= 显示等级 × 10（受压缩）× 系数，
+     * 与技能描述的读数口径不同，描述里已按实际值写明。
+     */
     public static int getMagicMaxPoints(String skillId) {
         return switch (skillId) {
-            case IRON_CAST_TIME, IRON_COOLDOWN -> 100; // 未压缩（原本就是 100 级）
+            // 未压缩（原本就是 100 级）；80 级即 Goety 侧减量封顶点
+            case IRON_CAST_TIME, IRON_COOLDOWN -> 80;
             // 奥术防护（2026-09-14）
             case ARCANE_BULWARK -> 100;                // 等级压缩：原 1000
             case ARCANE_AMP, SPELL_DAMPEN -> 50;       // 等级压缩：原 500
             case MANA_AMP, ARS_MANA_REGEN, IRON_MANA_AMP, IRON_MANA_REGEN,
                     IRON_FIRE, IRON_ICE, IRON_LIGHTNING, IRON_HOLY, IRON_ENDER,
                     IRON_BLOOD, IRON_EVOCATION, IRON_NATURE, IRON_ELDRITCH -> 100; // 等级压缩：原 1000
+            // Goety（2026-09-20）：
+            //   · 通用强度 100 级：受压缩 ×10 → 实际每级 +10 强度（100 级 +1000，属性上限 2048 不溢出）
+            case GOETY_POTENCY -> 100;
+            //   · 灵魂折扣 8 级：受压缩 ×10 → 实际每级 -10%%，8 级（生效等级 80）正好抵到 0.8 封顶
+            case GOETY_SOUL_DISCOUNT -> 8;
+            //   · 9 流派精通 80 级：强度部分线性到 80 级（每级 +10）；折扣部分 8 级即封顶
+            case GOETY_ABYSS, GOETY_FROST, GOETY_GEOMANCY,
+                    GOETY_NECROMANCY, GOETY_NETHER, GOETY_STORM, GOETY_VOID,
+                    GOETY_WILD, GOETY_WIND -> 80;
             default -> 0;
         };
     }
@@ -1363,6 +1435,19 @@ public final class Skills {
             case IRON_EVOCATION -> Items.BONE;                // 召唤法术强度：骨头（召唤骷髅）
             case IRON_NATURE -> Items.OAK_SAPLING;            // 自然法术强度：橡树苗（自然）
             case IRON_ELDRITCH -> Items.SHULKER_SHELL;        // 异界法术强度：潜影贝壳（异界）
+            // ===== Goety（诡术，2026-09-20）：图标选“灵魂/深暗”系物品，与铁魔法（金属系）区分 =====
+            //   注：全部选用 1.20.1 与 1.21.1 都存在的原版物品
+            case GOETY_POTENCY -> Items.DRAGON_BREATH;         // 诡术法术强度：龙息（魔法精华）
+            case GOETY_SOUL_DISCOUNT -> Items.SOUL_SAND;      // 诡术灵魂折扣：灵魂沙（Goety 以“灵魂能量”为施法资源）
+            case GOETY_ABYSS -> Items.ECHO_SHARD;             // 深渊精通：回响碎片（深暗之域，呼应“深渊”）
+            case GOETY_FROST -> Items.BLUE_ICE;               // 冰霜精通：蓝冰（与铁魔法冰霜的浮冰区分）
+            case GOETY_GEOMANCY -> Items.POINTED_DRIPSTONE;   // 地卜精通：滴水石锥（岩石/大地）
+            case GOETY_NECROMANCY -> Items.WITHER_ROSE;       // 死灵精通：凋灵玫瑰（死亡）
+            case GOETY_NETHER -> Items.MAGMA_BLOCK;           // 下界精通：岩浆块（与铁魔法鲜血的下界疣区分）
+            case GOETY_STORM -> Items.LIGHTNING_ROD;          // 风暴精通：避雷针（雷电；与时间风暴同图标，本项目允许此类重复）
+            case GOETY_VOID -> Items.OBSIDIAN;                // 虚空精通：黑曜石（虚空/坚硬）
+            case GOETY_WILD -> Items.VINE;                    // 荒野精通：藤蔓（荒野蔓生；与铁魔法自然的橡树苗区分）
+            case GOETY_WIND -> Items.FIREWORK_ROCKET;         // 风精通：烟花火箭（气流/推进）
             // ===== 基础属性（纵列1） =====
             case BODY_HP -> Items.APPLE;                       // 生命强化：苹果（生命）
             case BODY -> Items.IRON_CHESTPLATE;                // 体魄：铁胸甲（护甲）

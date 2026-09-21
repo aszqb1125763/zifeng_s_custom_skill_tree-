@@ -97,7 +97,7 @@ public class HudAdjustSubScreen extends SkillSubScreen {
         // 行8：重置按钮（红色系）
         drawRow(gui, 7, t("hud_reset"), 0xFFFF5555, 0xFF3A2A2A, 0xFFDD5555, mouseX, mouseY);
         // 步进提示（右下角小字）
-        gui.drawString(parent.font(), t("hud_step_hint"), panelX + PAD, panelY + panelH - 10, 0xFF888888);
+        gui.drawString(parent.font(), t("hud_step_hint"), panelX + PAD, panelY + panelH - 10, 0xFF888888, false);
     }
 
     /** 行矩形（屏幕坐标） */
@@ -121,7 +121,9 @@ public class HudAdjustSubScreen extends SkillSubScreen {
         gui.fill(overlay, x, y, x + w, y + ROW_H, fill);
         gui.fill(overlay, x, y, x + w, y + 1, border);
         gui.fill(overlay, x, y + ROW_H - 1, x + w, y + ROW_H, border);
-        gui.drawCenteredString(parent.font(), text, x + w / 2, y + 4, textColor);
+        // ★ 2026-09-21：全部文字去掉投影（drawCenteredString 内部固定带阴影 → 自己算居中）
+        var rowFont = parent.font();
+        gui.drawString(rowFont, text, x + (w - rowFont.width(text)) / 2, y + 4, textColor, false);
     }
 
     /** 绘制位置行（左箭头 / 文字 / 右箭头），返回是否命中 */
@@ -134,10 +136,12 @@ public class HudAdjustSubScreen extends SkillSubScreen {
         gui.fill(overlay, x, y, x + w, y + ROW_H, hovered ? 0xFF3A3A4A : 0xFF2A2A3A);
         gui.fill(overlay, x, y, x + w, y + 1, 0xFF555566);
         gui.fill(overlay, x, y + ROW_H - 1, x + w, y + ROW_H, 0xFF555566);
-        // 左箭头（◀）/ 文字 / 右箭头（▶）
-        gui.drawCenteredString(parent.font(), "◀", x + 14, y + 4, 0xFF87CEEB);
-        gui.drawCenteredString(parent.font(), label + ":" + value, x + w / 2, y + 4, 0xFFE0B6C8);
-        gui.drawCenteredString(parent.font(), "▶", x + w - 14, y + 4, 0xFF87CEEB);
+        // 左箭头（◀）/ 文字 / 右箭头（▶）—— ★ 2026-09-21：均改为无投影绘制
+        var posFont = parent.font();
+        gui.drawString(posFont, "◀", x + 14 - posFont.width("◀") / 2, y + 4, 0xFF87CEEB, false);
+        String centerText = label + ":" + value;
+        gui.drawString(posFont, centerText, x + (w - posFont.width(centerText)) / 2, y + 4, 0xFFE0B6C8, false);
+        gui.drawString(posFont, "▶", x + w - 14 - posFont.width("▶") / 2, y + 4, 0xFF87CEEB, false);
     }
 
     /** 位置行的箭头区域（左箭头 0~28px，右箭头 w-28~w） */

@@ -6,6 +6,7 @@
   "refmap": "zifeng_s_custom_skill_tree.refmap.json",
   "mixins": [
     "RangedAttributeMixin",
+    "LivingEntityJumpPowerMixin",
     "ItemStackMixin",
     "BlockStateMixin",
     "ServerPlayerGameModeMixin",

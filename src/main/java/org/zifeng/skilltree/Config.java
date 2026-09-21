@@ -734,8 +734,27 @@ public class Config {
         if (server == null) {
             return;
         }
+        // ⚠️ 2026-09-20 修复（严重）：原实现传的是 `new PlayerSkillRecord(p.getUUID())`，即**空记录**。
+        //    而 SkillEffects.applyAll 对每一条目都是「先 removeModifier，amount == 0 就**不再添加**」——
+        //    空记录会让所有 effLevel 返回 0 → **把在线玩家的全部技能属性修饰符清空**
+        //    （最大生命掉回基础值、攻击/攻速/移速/减伤全部清零），
+        //    末尾的 `getHealth() > getMaxHealth()` 还会把血量镐到基础上限。
+        //    即：**改任意一个配置项 = 在线全员属性瞬间裸奔**，且要等重登/重新加点才会恢复。
+        //    正确做法与 SkillEvents.onPlayerJoin 一致：取**真实存档记录**再重挂（applyAll 自带 remove 再 add，无需预先清空）。
         for (net.minecraft.server.level.ServerPlayer p : server.getPlayerList().getPlayers()) {
-            org.zifeng.skilltree.skill.SkillEffects.applyAll(p, new org.zifeng.skilltree.data.PlayerSkillRecord(p.getUUID()));
+            if (p.serverLevel() == null) {
+                continue;
+            }
+            // 血量比例保护（与 onPlayerJoin/onPlayerLogout 同一套）：重挂过程中 MAX_HEALTH 会先降后升，
+            // 不按比例恢复就会把满血玩家变成残血。
+            float beforeHealth = p.getHealth();
+            float beforeMax = Math.max(1.0F, p.getMaxHealth());
+            float ratio = Math.min(1.0F, beforeHealth / beforeMax);
+            org.zifeng.skilltree.data.PlayerSkillRecord rec =
+                    org.zifeng.skilltree.data.PlayerSkillSavedData.get(p.serverLevel())
+                            .getOrCreatePlayer(p.getUUID());
+            org.zifeng.skilltree.skill.SkillEffects.applyAll(p, rec);
+            p.setHealth(Math.max(0.5F, p.getMaxHealth() * ratio));
         }
     }
 }

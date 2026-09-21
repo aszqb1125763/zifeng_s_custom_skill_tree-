@@ -76,9 +76,9 @@ public final class StickToolHudRenderer {
         int totalH = lines * 10 + pad * 2 - 4;
         gg.fill(bgX - 1, bottom - totalH - 1, right + 1, bottom + 1, 0xAA000000);
         int y = bottom - totalH + pad - 2;
-        gg.drawString(font, title, bgX + pad, y, titleColor);
+        gg.drawString(font, title, bgX + pad, y, titleColor, false);
         if (sub != null) {
-            gg.drawString(font, sub, bgX + pad, y + 10, 0xFFDDDDDD);
+            gg.drawString(font, sub, bgX + pad, y + 10, 0xFFDDDDDD, false);
         }
     }
 }

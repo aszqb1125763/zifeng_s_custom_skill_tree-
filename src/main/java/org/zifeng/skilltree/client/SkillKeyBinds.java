@@ -56,6 +56,25 @@ public class SkillKeyBinds {
     private static Boolean panelUseVanillaAttr = null;
     /** 子界面位置（2026-09-01：子界面标识 → [x, y] 面板左上角，持久化拖动结果） */
     private static final Map<String, int[]> SUB_SCREEN_POS = new HashMap<>();
+    /**
+     * 技能树界面尺寸【相对基准的偏移量】（★ 2026-09-21 新增，设置子界面可调）。
+     *
+     * <p><b>0 = 基准</b>（= 显示器 1920×1080 + 游戏 GUI Scale 3 的观感）；
+     * {@code +1} 加大 1%，{@code -1} 缩小 1%；范围 {@code -50 ~ +100}
+     * （即 50% ~ 200%）。
+     * <p><b>客户端本地存储、不跟存档</b>（用户理由：一个玩家基本一台显示器）。
+     * <p>⚠️ 目前仅保存设置值，真正的缩放接线待用户确认后实施。
+     */
+    private static int skillTreeGuiOffset = 0;
+    /** 技能树界面缩放模式：true=自适应屏幕，false=手动偏移。 */
+    private static boolean skillTreeGuiAdaptive = true;
+    /** 技能树上次选中的类别（客户端本地视图状态，0~9）。 */
+    private static int skillTreeSelectedCategory = 0;
+    /** 技能树上次的技能列表纵向滚动位置（客户端本地视图状态）。 */
+    private static int skillTreeScrollY = 0;
+    /** 技能树上次的类别栏横向滚动位置（客户端本地视图状态）。 */
+    private static int skillTreeCatScrollX = 0;
+    private static final int SKILL_TREE_CATEGORY_COUNT = 10;
 
     private static boolean loaded = false;
 
@@ -327,6 +346,51 @@ public class SkillKeyBinds {
         return hudShowMaxValue;
     }
 
+    // ============ 技能树界面尺寸（★ 2026-09-21 设置子界面可调） ============
+
+    /**
+     * 技能树界面尺寸偏移量（{@code -50~+100}，<b>0 = 基准</b>）。
+     * <p>⚠️ 目前仅保存设置值，尚未接入真正的缩放渲染。
+     */
+    public static int getSkillTreeGuiOffset() {
+        load();
+        return skillTreeGuiOffset;
+    }
+
+    /** 设置技能树界面尺寸偏移量（自动钳制到 -50~+100） */
+    public static void setSkillTreeGuiOffset(int off) {
+        skillTreeGuiOffset = Math.max(-50, Math.min(100, off));
+        save();
+    }
+
+    public static boolean isSkillTreeGuiAdaptive() {
+        load();
+        return skillTreeGuiAdaptive;
+    }
+
+    public static void setSkillTreeGuiAdaptive(boolean adaptive) {
+        skillTreeGuiAdaptive = adaptive;
+        save();
+    }
+
+    /**
+     * 获取技能树上次关闭时的视图状态：[类别索引, 技能列表纵向滚动, 类别栏横向滚动]。
+     *
+     * <p>只保存视图位置，不保存搜索关键词；搜索是进入本次界面后的临时状态。
+     */
+    public static int[] getSkillTreeViewState() {
+        load();
+        return new int[]{skillTreeSelectedCategory, skillTreeScrollY, skillTreeCatScrollX};
+    }
+
+    /** 保存技能树视图状态（滚动上限由界面按当前窗口尺寸再次钳制）。 */
+    public static void setSkillTreeViewState(int category, int scrollY, int catScrollX) {
+        skillTreeSelectedCategory = Math.max(0, Math.min(SKILL_TREE_CATEGORY_COUNT - 1, category));
+        skillTreeScrollY = Math.max(0, scrollY);
+        skillTreeCatScrollX = Math.max(0, catScrollX);
+        save();
+    }
+
     public static void setHudShowMaxValue(boolean on) {
         hudShowMaxValue = on;
         save();
@@ -434,6 +498,16 @@ public class SkillKeyBinds {
             hudShowMaxValue = data.hudShowMaxValue != null && data.hudShowMaxValue;
             // 属性面板数据源：null = 未改过 → 继续跟随配置文件
             panelUseVanillaAttr = data.panelUseVanillaAttr;
+            // 技能树界面尺寸偏移量（★ 2026-09-21）：旧配置无此字段 → null → 基准 0；并钳制到合法范围
+            //   注：字段名用 Offset（而非早期的 Scale），旧值自动忽略 → 回到基准，无需迁移
+            skillTreeGuiOffset = data.skillTreeGuiOffset != null
+                    ? Math.max(-50, Math.min(100, data.skillTreeGuiOffset)) : 0;
+            skillTreeGuiAdaptive = data.skillTreeGuiAdaptive == null || data.skillTreeGuiAdaptive;
+            // 技能树视图状态：旧配置没有这些字段时回到默认类别/顶部；滚动上限由界面按当前尺寸重算
+            skillTreeSelectedCategory = data.skillTreeSelectedCategory != null
+                    ? Math.max(0, Math.min(SKILL_TREE_CATEGORY_COUNT - 1, data.skillTreeSelectedCategory)) : 0;
+            skillTreeScrollY = data.skillTreeScrollY != null ? Math.max(0, data.skillTreeScrollY) : 0;
+            skillTreeCatScrollX = data.skillTreeCatScrollX != null ? Math.max(0, data.skillTreeCatScrollX) : 0;
             // 子界面位置（2026-09-01）
             SUB_SCREEN_POS.clear();
             if (data.subScreenPos != null) {
@@ -478,6 +552,11 @@ public class SkillKeyBinds {
             data.hudArmorNumber = hudArmorNumber;
             data.hudShowMaxValue = hudShowMaxValue;
             data.panelUseVanillaAttr = panelUseVanillaAttr;
+            data.skillTreeGuiOffset = skillTreeGuiOffset;
+            data.skillTreeGuiAdaptive = skillTreeGuiAdaptive;
+            data.skillTreeSelectedCategory = skillTreeSelectedCategory;
+            data.skillTreeScrollY = skillTreeScrollY;
+            data.skillTreeCatScrollX = skillTreeCatScrollX;
             data.subScreenPos = new HashMap<>();
             for (Map.Entry<String, int[]> e : SUB_SCREEN_POS.entrySet()) {
                 data.subScreenPos.put(e.getKey(), new int[]{e.getValue()[0], e.getValue()[1]});
@@ -504,6 +583,11 @@ public class SkillKeyBinds {
         Boolean hudArmorNumber;      // 护甲数字开关（2026-09-11）
         Boolean hudShowMaxValue;     // 满值数字开关（2026-09-11；三数字共用，默认关）
         Boolean panelUseVanillaAttr; // 属性面板数据源（2026-09-11；null=跟随配置文件）
+        Integer skillTreeGuiOffset;  // 技能树界面尺寸偏移量（★ 2026-09-21；0=基准，null=旧配置→0）
+        Boolean skillTreeGuiAdaptive; // 技能树界面缩放模式（null=旧配置→自适应）
+        Integer skillTreeSelectedCategory; // 技能树上次选中的类别（旧配置无此字段→0）
+        Integer skillTreeScrollY; // 技能树技能列表纵向滚动位置（旧配置无此字段→0）
+        Integer skillTreeCatScrollX; // 技能树类别栏横向滚动位置（旧配置无此字段→0）
         Map<String, int[]> subScreenPos; // 子界面位置（2026-09-01）
     }
 }

@@ -11,6 +11,10 @@ import net.minecraft.client.gui.GuiGraphics;
 public class AttributePanelSubScreen extends SkillSubScreen {
     /** 面板宽度（与主界面 PANEL_WIDTH 一致） */
     private static final int PANEL_WIDTH = 200;
+    /** 面板高度上限：属性内容较多时在面板内滚动，不再占满整个游戏界面。 */
+    private static final int PANEL_MAX_HEIGHT = 276;
+    /** 上下安全边距，保证面板缩放/小窗口下仍能完整留在屏幕内。 */
+    private static final int PANEL_SCREEN_MARGIN = 20;
     /** 滚动偏移（0 = 顶部） */
     private int scroll = 0;
 
@@ -23,9 +27,9 @@ public class AttributePanelSubScreen extends SkillSubScreen {
     public void init(int screenWidth, int screenHeight) {
         // 右侧竖版：x 贴右缘，y 从 50 到底部 -30（与旧面板区域一致）
         panelW = PANEL_WIDTH;
-        panelH = screenHeight - 30 - 50;
+        panelH = Math.min(PANEL_MAX_HEIGHT, Math.max(120, screenHeight - PANEL_SCREEN_MARGIN * 2));
         panelX = screenWidth - PANEL_WIDTH - 10;
-        panelY = 50;
+        panelY = (screenHeight - panelH) / 2;
         // 恢复上次拖动的位置（有保存值则覆盖默认）
         super.init(screenWidth, screenHeight);
     }
@@ -76,8 +80,10 @@ public class AttributePanelSubScreen extends SkillSubScreen {
         gui.fill(overlay, x, y + SRC_BTN_H - 1, x + SRC_BTN_W, y + SRC_BTN_H, border);
         gui.fill(overlay, x, y, x + 1, y + SRC_BTN_H, border);
         gui.fill(overlay, x + SRC_BTN_W - 1, y, x + SRC_BTN_W, y + SRC_BTN_H, border);
-        gui.drawCenteredString(parent.font(), t(vanilla ? "panel_src_vanilla" : "panel_src_skill"),
-                x + SRC_BTN_W / 2, y + 3, text);
+        // ★ 2026-09-21：全部文字去掉投影（drawCenteredString 内部固定带阴影 → 自己算居中）
+        var btnFont = parent.font();
+        String btnText = t(vanilla ? "panel_src_vanilla" : "panel_src_skill");
+        gui.drawString(btnFont, btnText, x + (SRC_BTN_W - btnFont.width(btnText)) / 2, y + 3, text, false);
     }
 
     /** 按钮悬停提示（简短两行：一行说明作用，一行说明差别） */
@@ -95,8 +101,8 @@ public class AttributePanelSubScreen extends SkillSubScreen {
         gui.fill(overlay, x, y + h - 1, x + w, y + h, 0xFF87CEEB);
         gui.fill(overlay, x, y, x + 1, y + h, 0xFF87CEEB);
         gui.fill(overlay, x + w - 1, y, x + w, y + h, 0xFF87CEEB);
-        gui.drawString(font, l1, x + 4, y + 2, 0xFFFFD700);
-        gui.drawString(font, l2, x + 4, y + 11, 0xFFAAAAAA);
+        gui.drawString(font, l1, x + 4, y + 2, 0xFFFFD700, false);
+        gui.drawString(font, l2, x + 4, y + 11, 0xFFAAAAAA, false);
     }
 
     /** 行高（与原实现一致，本次改动仅在视觉层） */
@@ -138,7 +144,7 @@ public class AttributePanelSubScreen extends SkillSubScreen {
                 gui.fill(overlay, panelX + 7, line - 1, panelX + panelW - 7, line + ROW_H - 1, 0xFF1F2C3A);
                 gui.fill(overlay, panelX + 7, line - 1, panelX + 9, line + ROW_H - 1, 0xFFFFD700);
                 String section = row[0].replace("——", "").trim();
-                gui.drawString(font, section, panelX + 12, line, c);
+                gui.drawString(font, section, panelX + 12, line, c, false);
                 stripe = 0; // 分组后重新计斑马纹
             } else {
                 if ((stripe & 1) == 1) {
@@ -150,9 +156,9 @@ public class AttributePanelSubScreen extends SkillSubScreen {
                 while (!label.isEmpty() && font.width(label) > labelMaxW) {
                     label = label.substring(0, label.length() - 1);
                 }
-                gui.drawString(font, label, panelX + 11, line, 0xFFB0B0B0);
+                gui.drawString(font, label, panelX + 11, line, 0xFFB0B0B0, false);
                 String value = row[1];
-                gui.drawString(font, value, panelX + panelW - 12 - font.width(value), line, c);
+                gui.drawString(font, value, panelX + panelW - 12 - font.width(value), line, c, false);
             }
             line += ROW_H;
         }
@@ -174,10 +180,10 @@ public class AttributePanelSubScreen extends SkillSubScreen {
         // 底部提示条：分隔线 + 左（数据源说明）右（滚动提示）
         int barTop = panelY + panelH - BOTTOM_BAR_H;
         gui.fill(overlay, panelX + 4, barTop, panelX + panelW - 4, barTop + 1, 0x554488AA);
-        gui.drawString(font, t("panel_src_hint"), panelX + 7, barTop + 7, 0xFF7F9AB0);
+        gui.drawString(font, t("panel_src_hint"), panelX + 7, barTop + 7, 0xFF7F9AB0, false);
         if (maxScroll > 0) {
             String sh = t("panel_scroll_hint");
-            gui.drawString(font, sh, panelX + panelW - 9 - font.width(sh), barTop + 7, 0xFF888888);
+            gui.drawString(font, sh, panelX + panelW - 9 - font.width(sh), barTop + 7, 0xFF888888, false);
         }
     }
 

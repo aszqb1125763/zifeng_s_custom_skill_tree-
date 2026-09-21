@@ -64,6 +64,8 @@ public final class ArcaneEvents {
     private static final Map<UUID, String> ADAPT_TYPE = new HashMap<>();
     /** 适应之躯：玩家 → 同类型连续受击层数 */
     private static final Map<UUID, Integer> ADAPT_STACK = new HashMap<>();
+    /** 净化领域间隔缓存：玩家 → [生效等级, 间隔 tick]（等级不变则复用，免每 tick 调 Math.pow） */
+    private static final Map<UUID, int[]> PURIFY_INTERVAL = new HashMap<>();
 
     /** 登出/换存档清理（防跨会话残留） */
     public static void clearPlayer(UUID id) {
@@ -73,6 +75,7 @@ public final class ArcaneEvents {
         PURGE_UNTIL.remove(id);
         ADAPT_TYPE.remove(id);
         ADAPT_STACK.remove(id);
+        PURIFY_INTERVAL.remove(id);
     }
 
     /**
@@ -279,6 +282,40 @@ public final class ArcaneEvents {
     // ══════════════════ 每 tick：净化领域（光环） ══════════════════
 
     /**
+     * 净化领域的作用间隔（tick）——随等级缩短（★ 2026-09-20 修复「100 级里 99 级无效」）。
+     *
+     * <p><b>原 bug</b>：原实现直接用 {@code Config.PURIFY_FIELD_INTERVAL} 常量，
+     * <b>完全不看等级</b>（半径也是常量）→ 1 级与 100 级效果完全相同，99 级全白学。
+     * 符合用户报的「看着等级很高，但是几十级之后再升就无效」。
+     *
+     * <p><b>现公式</b>（乘法递减，与「杀戮光环·速度」同款）：
+     * <pre>interval = base × (1 - 0.03)^(生效等级 - 1)</pre>
+     * 1 级 = base 原值（保持原有手感，Config 改动仍即时生效）；100 级 ≈ 3 tick。
+     *
+     * <p>带缓存：等级未变直接复用（本方法每 tick 被调用）。
+     */
+    private static int purifyInterval(PlayerSkillRecord record) {
+        final int base = Config.PURIFY_FIELD_INTERVAL.get();
+        final int level = record.isEnabled(Skills.PURIFY_FIELD)
+                ? record.getActiveLevel(Skills.PURIFY_FIELD) : 0;
+        if (level <= 1) {
+            return base; // 未学/1 级：原行为
+        }
+        final UUID id = record.getOwner();
+        final int[] cached = PURIFY_INTERVAL.get(id);
+        if (cached != null && cached[0] == level) {
+            return cached[1]; // 等级未变 → 复用
+        }
+        final int interval = (int) Math.max(1L,
+                Math.round(base * Math.pow(1.0 - PURIFY_INTERVAL_REDUCTION, level - 1)));
+        PURIFY_INTERVAL.put(id, new int[]{level, interval});
+        return interval;
+    }
+
+    /** 净化领域间隔每级递减率（×0.97/级）：1 级 = Config 原值，100 级 ≈ 3 tick */
+    private static final double PURIFY_INTERVAL_REDUCTION = 0.03;
+
+    /**
      * 净化领域：周期性清除**自己与范围内友方**各一个负面效果。
      *
      * <p>由 {@link UltimateEvents#tickPlayer} 调用（与夜视/发光等常驻技能同一条 tick 链）。
@@ -288,7 +325,7 @@ public final class ArcaneEvents {
         if (!learned(record, Skills.PURIFY_FIELD)) {
             return;
         }
-        int interval = Config.PURIFY_FIELD_INTERVAL.get();
+        int interval = purifyInterval(record);
         if (interval <= 0 || player.tickCount % interval != 0) {
             return;
         }

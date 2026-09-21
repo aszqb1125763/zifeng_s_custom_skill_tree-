@@ -121,10 +121,13 @@ public final class HealthNumberRenderer {
     /**
      * 右对齐绘制（文字右端对齐到 rightEdge）。
      * <p>⚠️ 2026-09-11：<b>不再铺黑色背景</b>（用户反馈底色难看）—— 改用带阴影的文字保证可读性。
+     * <p>★ 2026-09-21：按用户要求<b>全局去掉文字投影</b>（技能树/界面/HUD 统一无阴影）。
+     * 这一处是直接叠在世界画面上（无底色），去掉投影后可读性会下降——
+     * 若实测看不清，把这里的 {@code false} 改回 {@code true} 即可（其余位置不受影响）。
      */
     private static void drawRightAligned(GuiGraphics gui, Minecraft mc, String text, int rightEdge, int y, int color) {
         int w = mc.font.width(text);
         int x = rightEdge - w;
-        gui.drawString(mc.font, text, x, y, color, true);
+        gui.drawString(mc.font, text, x, y, color, false);
     }
 }

@@ -41,6 +41,14 @@ public class SetSkillLevelC2SPacket {
                 if (!Skills.ALL_SKILLS.contains(packet.skillId)) {
                     return;
                 }
+                // ⚠️ 2026-09-20 修复：修改寰宇法则技能的「生效等级」同样会改全服状态
+                //    （AE_INFINITE_CHANNEL 的生效等级直接决定全局 AE 频道模式），
+                //    因此需要与学技能/开关同样的 OP 门槛 —— 否则被降权的玩家仍能改全服 AE 状态。
+                if (Skills.isGlobalSkill(packet.skillId)
+                        && !org.zifeng.skilltree.event.AuraEvents.canUseGlobalRule(player)) {
+                    org.zifeng.skilltree.event.AuraEvents.sendGlobalNeedOpMessage(player, packet.skillId);
+                    return;
+                }
                 PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
                 PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
                 record.setActiveLevel(packet.skillId, packet.level);

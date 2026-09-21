@@ -34,9 +34,21 @@ public class SkillEvents {
         if (!event.has(EntityType.PLAYER, Attributes.FLYING_SPEED)) {
             event.add(EntityType.PLAYER, Attributes.FLYING_SPEED);
         }
-        // 1.20.1 玩家默认无 JUMP_STRENGTH（1.21 才合入玩家默认属性）：跳跃强化/跳跃增幅需要
+        // 1.20.1 玩家默认无 JUMP_STRENGTH（1.21 才合入玩家默认属性）：跳跃强化/跳跃增幅需要。
+        //
+        // ⚠️ 2026-09-20【必须指定基准值 0.42，不能用属性自身默认值 0.7，也不要改成 0.42D】：
+        //   1.20.1 该属性的注册名是 horse.jump_strength，默认值 0.7 —— 那是**马匹**用的值，
+        //   对玩家从未有过意义（1.20.1 玩家跳跃是硬编码 0.42，不读该属性）。
+        //   而 1.21.1 原版把玩家用的默认值定为 0.41999998688697815（= float 0.42 的 double 值）。
+        //   为何必须对齐：
+        //     ① 「跃升真解」是**乘算**（MULTIPLY_TOTAL，乘的是基准值）→ 基准取 0.7 会让
+        //        两版本的增幅倍率对不上（1.20.1 得 1+1.667L，1.21.1 得 1+L）；
+        //     ② 属性面板「跳跃高度 = 值² × 6.25」会虚高：0.7²×6.25 = 3.06 格，而实际只有 1.10 格。
+        //   写 (double) 0.42F 而不是 0.42D，是为了与 1.21.1 的基准值**逐位一致**
+        //   （0.42D 与 float 0.42 加宽后的值不相等，会让跳跃高度差 1e-8 量级）；
+        //   实际把该属性接进 1.20.1 跳跃计算的是 LivingEntityJumpPowerMixin。
         if (!event.has(EntityType.PLAYER, Attributes.JUMP_STRENGTH)) {
-            event.add(EntityType.PLAYER, Attributes.JUMP_STRENGTH);
+            event.add(EntityType.PLAYER, Attributes.JUMP_STRENGTH, (double) 0.42F);
         }
         // 1.20.1 Forge 的 SWIM_SPEED 属性（玩家默认属性集不含，需手动添加）：游泳技能需要
         if (!event.has(EntityType.PLAYER, net.minecraftforge.common.ForgeMod.SWIM_SPEED.get())) {
@@ -98,6 +110,23 @@ public class SkillEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return; // 仅真玩家（排除机器 FakePlayer 等）
         }
+        PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
+        PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
+        // AE 无限频道是服务器全局运行态；只在真正登录时按持久化技能状态重挂，
+        // 不依赖实体跨维度重建时的事件顺序。
+        org.zifeng.skilltree.compat.Ae2Compat.restoreForPlayer(player, record);
+        // 原版会保存 Abilities.flying，但技能退出时会清理 mayfly/flying。这里按模组记录
+        // 恢复一次“下线时正在飞行”的意图，随后立即清除，避免跨维度时误消费该标记。
+        boolean restoreFlying = record.wasFlyingOnLogout()
+                && record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.ULT_FAVOR) > 0
+                && record.isEnabled(org.zifeng.skilltree.skill.Skills.ULT_FAVOR);
+        if (restoreFlying && !player.getAbilities().instabuild) {
+            player.getAbilities().mayfly = true;
+            player.getAbilities().flying = true;
+            player.onUpdateAbilities();
+        }
+        record.setFlyingOnLogout(false);
+        data.setDirty();
         String version = net.minecraftforge.fml.ModList.get().getModContainerById(org.zifeng.skilltree.SkillTreeMod.MOD_ID)
                 .map(c -> c.getModInfo().getVersion().toString()).orElse("?");
         player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
@@ -126,9 +155,15 @@ public class SkillEvents {
             SkillEffects.applyAll(player, new PlayerSkillRecord(player.getUUID()));
             // 登出前按清空后的基础上限恢复血量比例，避免 player.dat 存档残血
             player.setHealth(Math.max(0.5F, player.getMaxHealth() * logoutRatio));
-            // 飞行权限不回收：宇宙的青睐点亮状态存在存档里，重进后 tick 自动重新授予，
-            // 保留 mayfly=true 让原版 player.dat 持久化，进出存档飞行不丢（只有关闭技能时才回收）
-            // UltimateEvents.clearPlayerFlight(player);
+            // 保存“是否正在飞行”的意图，再回收本模组授予的临时飞行权限。
+            // 记录写入玩家技能 SavedData，避免依赖原版 player.dat 在登出清理后的落盘时序。
+            PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
+            PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
+            boolean favor = record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.ULT_FAVOR) > 0
+                    && record.isEnabled(org.zifeng.skilltree.skill.Skills.ULT_FAVOR);
+            record.setFlyingOnLogout(favor && player.getAbilities().flying);
+            data.setDirty();
+            UltimateEvents.clearPlayerFlight(player);
             // 重置飞行速度防跨存档残留（flyingSpeed 会被原版持久化到 player.dat）
             UltimateEvents.resetFlyingSpeed(player);
             // 再清理终极被动 static 状态（连击/金身冷却）+ 移除连击攻速修饰符
@@ -137,6 +172,13 @@ public class SkillEvents {
             AuraEvents.onPlayerLogout(player);
             // 清理子枫的馈赠在线计时累计（防残留，下次进世界重新计时）
             GiftEvents.onPlayerLogout(player);
+            // ⚠️ 2026-09-20 修复：清理厄法系的三张 per-UUID 表（PURGE_UNTIL/ADAPT_TYPE/ADAPT_STACK）。
+            //    这三个 map 原先定义了 clearPlayer 但**全仓无任何调用点** → 两个后果：
+            //    ① 每个“进过服且挨过魔法伤害/被厄法破咒打过”的 UUID 永久驻留（公开服会累积到数千）；
+            //    ② 更严重：PURGE_UNTIL 存的是**结对的 gameTime**，而 map 是 JVM 级跨存档的 ——
+            //       玩家换存档后 gameTime 从接近 0 重算，旧的 PURGE_UNTIL（如 300000）永远大于新存档 gameTime
+            //       → purgeReady() 长期返回 false → **厄法破咒静默失效**。
+            ArcaneEvents.clearPlayer(player.getUUID());
             // 清理闪现冷却（防残留）
             BLINK_LAST.remove(player.getUUID());
         }

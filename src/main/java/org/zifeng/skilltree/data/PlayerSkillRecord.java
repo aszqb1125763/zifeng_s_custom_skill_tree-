@@ -37,6 +37,8 @@ public class PlayerSkillRecord {
     private final Map<String, Integer> auraTargetModes = new HashMap<>();
     /** 杀戮光环总开关（默认开启） */
     private boolean auraEnabled = true;
+    /** 宇宙的青睐：玩家下线时是否正在技能飞行中（重进存档后恢复一次） */
+    private boolean flyingOnLogout = false;
     /** 玩家整体累计转换的技能点数（原始整数，技能点转换机阶梯消耗按此计算，跨机器共享） */
     private long totalConvertedPoints;
     /** 自动熔炼黑名单（2026-08-13 恢复）：黑名单中的掉落物不参与熔炼判定，当正常方块处理（Item 注册名集合） */
@@ -341,6 +343,14 @@ public class PlayerSkillRecord {
 
     public Map<String, Boolean> getToggles() {
         return Collections.unmodifiableMap(toggles);
+    }
+
+    public boolean wasFlyingOnLogout() {
+        return flyingOnLogout;
+    }
+
+    public void setFlyingOnLogout(boolean flyingOnLogout) {
+        this.flyingOnLogout = flyingOnLogout;
     }
 
     /** 直接设置已学点数（客户端显示用；服务端加点请用 learnSkill 保证消耗/上限校验） */
@@ -668,6 +678,8 @@ public class PlayerSkillRecord {
         tag.put("AuraTargetModes", modeList);
         // 晴空环天气模式（2026-08-27：0=晴 1=雨 2=雷暴）
         tag.putInt("WeatherMode", weatherMode);
+        // 宇宙的青睐：下线时是否正在飞行（只恢复一次，避免重进存档落地）
+        tag.putBoolean("FlyingOnLogout", flyingOnLogout);
         // 旧字段兼容（旧存档读取用）
         tag.putInt("AuraTargetMode", auraTargetModes.getOrDefault(Skills.AURA_DAMAGE, 0));
         tag.putBoolean("AuraEnabled", auraEnabled);
@@ -741,14 +753,27 @@ public class PlayerSkillRecord {
         }
         UUID owner = tag.getUUID("Owner");
         PlayerSkillRecord record = new PlayerSkillRecord(owner);
-        record.skillPoints = tag.contains("SkillPoints", Tag.TAG_DOUBLE) ? tag.getDouble("SkillPoints") : tag.getInt("SkillPoints");
+        // ⚠️ 2026-09-20 加固：反序列化侧原本「零校验」，任何数值照单全收。
+        //    危险链路：learnedSkills 里的 Points 只出现在 totalSpent() 的
+        //    `for (int i = 0; i < points; i++)` 循环里 —— 存档被改坏（手工改 NBT、
+        //    其他工具写坏、旧版本 bug）写成 20 亿 → 点一次重置/`/skilltree reset`
+        //    就能把**服务端主线程**卡死几分钟到几小时（客户端同样有该循环）。
+        //    totalConvertedPoints 为负则会推导出 ≤ 0 的转换阈值 → 转换机除零。
+        // 已学点数的防崩上限：正常玩法下最大只有 BASE 100 / AMPLIFY 50 / 光环与节点更少；
+        // 历史版本曾把增幅上限设为 500，故这里取 10 万 —— 远高于任何合法值（不删老数据），
+        // 又能把循环规模压到毫秒级。
+        // ⚠️ 为什么不用 Skills.getMaxPoints() 收紧：那会直接**删掉**老存档里按旧上限攒下的点数。
+        final int sanityCap = 100_000;
+        record.skillPoints = Math.max(0.0,
+                tag.contains("SkillPoints", Tag.TAG_DOUBLE) ? tag.getDouble("SkillPoints") : tag.getInt("SkillPoints"));
         if (tag.contains("LearnedSkills", Tag.TAG_LIST)) {
             ListTag learned = tag.getList("LearnedSkills", Tag.TAG_COMPOUND);
             for (int i = 0; i < learned.size(); i++) {
                 CompoundTag skillTag = learned.getCompound(i);
                 String id = skillTag.getString("Id");
                 if (!id.isBlank()) {
-                    record.learnedSkills.put(id, skillTag.getInt("Points"));
+                    record.learnedSkills.put(id,
+                            Math.max(0, Math.min(skillTag.getInt("Points"), sanityCap)));
                 }
             }
         }
@@ -777,15 +802,21 @@ public class PlayerSkillRecord {
         }
         // 晴空环天气模式（旧存档无此字段默认 0=晴）
         record.weatherMode = tag.contains("WeatherMode", Tag.TAG_INT) ? Math.max(0, Math.min(2, tag.getInt("WeatherMode"))) : 0;
+        record.flyingOnLogout = tag.contains("FlyingOnLogout", Tag.TAG_BYTE) && tag.getBoolean("FlyingOnLogout");
         record.auraEnabled = !tag.contains("AuraEnabled") || tag.getBoolean("AuraEnabled");
-        record.totalConvertedPoints = tag.getLong("TotalConvertedPoints"); // 旧存档无此字段默认 0
+        // ⚠️ 2026-09-20：负数会推导出 ≤ 0 的转换阈值（见 PlayerPushState.getCurrentCostPerPoint）
+        //    → 转换机 `progress / threshold` 除零。addTotalConvertedPoints() 本就用 Math.max(0,…)，
+        //    读盘路径当时漏了同样的一致处理。
+        record.totalConvertedPoints = Math.max(0L, tag.getLong("TotalConvertedPoints")); // 旧存档无此字段默认 0
         if (tag.contains("ActiveLevels", Tag.TAG_LIST)) {
             ListTag activeList = tag.getList("ActiveLevels", Tag.TAG_COMPOUND);
             for (int i = 0; i < activeList.size(); i++) {
                 CompoundTag activeTag = activeList.getCompound(i);
                 String id = activeTag.getString("Id");
                 if (!id.isBlank()) {
-                    record.activeLevels.put(id, activeTag.getInt("Level"));
+                    // 生效等级不得超过已学点数（与 setActiveLevel 的既有规则保持一致）
+                    record.activeLevels.put(id,
+                            Math.max(0, Math.min(activeTag.getInt("Level"), record.getLearnedPoints(id))));
                 }
             }
         }

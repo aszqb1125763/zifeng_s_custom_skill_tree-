@@ -284,11 +284,61 @@ public final class SkillEffects {
                 record.isEnabled(Skills.IRON_NATURE) ? effLevel(record, Skills.IRON_NATURE) * 0.1 : 0);
         org.zifeng.skilltree.compat.IronSpellsCompat.applySchoolPowerAmp(player, "eldritch",
                 record.isEnabled(Skills.IRON_ELDRITCH) ? effLevel(record, Skills.IRON_ELDRITCH) * 0.1 : 0);
+        // 3.8 Goety（诡术，2026-09-20 新增）：让本模组的魔法技能同样加成 Goety 法术。
+        //     ⚠️ 属性语义与铁魔法完全不同，详见 {@link org.zifeng.skilltree.compat.GoetyCompat}：
+        //       · 强度类 _POTENCY 是 flat 整数加值（默认 0，范围 0~2048），直接加到法术 potency
+        //       · 减量类是“绝对减量比例”（范围 -1~1，1.0 = 100% 减免 = 全免/瞬发/无冷却）
+        //     未装 Goety → isLoaded() 为 false，整块直接跳过（零开销）。
+        if (org.zifeng.skilltree.compat.GoetyCompat.isLoaded()) {
+            // 通用法术强度：每级 +1（flat 整数）
+            org.zifeng.skilltree.compat.GoetyCompat.applySpellPotency(
+                    player, (int) effLevel(record, Skills.GOETY_POTENCY));
+            // 通用灵魂消耗折扣：每级 +0.01（封顶 0.8）
+            org.zifeng.skilltree.compat.GoetyCompat.applySoulDiscount(
+                    player, (int) effLevel(record, Skills.GOETY_SOUL_DISCOUNT));
+            // 9 流派精通：每个技能同时给该流派的「强度」与「灵魂折扣」
+            for (String school : org.zifeng.skilltree.compat.GoetyCompat.SCHOOLS) {
+                String schoolSkill = goetySchoolSkillId(school);
+                int lv = schoolSkill == null ? 0 : (int) effLevel(record, schoolSkill);
+                org.zifeng.skilltree.compat.GoetyCompat.applySchoolPotency(player, school, lv);
+                org.zifeng.skilltree.compat.GoetyCompat.applySchoolDiscount(player, school, lv);
+            }
+            // 施法速度 / 冷却缩减：**合并**进既有的铁魔法技能（同一个技能同时加成两家）。
+            //   注意 Goety 侧对减量类封顶 0.8（这两个技能是 100 级，
+            //   若直接 100×0.01 = 1.0 会让 Goety 法术满级后瞬发且无冷却）。
+            org.zifeng.skilltree.compat.GoetyCompat.applyCastingSpeed(
+                    player, (int) effLevel(record, Skills.IRON_CAST_TIME));
+            org.zifeng.skilltree.compat.GoetyCompat.applyCooldownDiscount(
+                    player, (int) effLevel(record, Skills.IRON_COOLDOWN));
+        }
         // 4. 生命值同步（避免加血上限后血量不涨）
         AttributeInstance maxHealth = player.getAttribute(Attributes.MAX_HEALTH);
         if (maxHealth != null && player.getHealth() > player.getMaxHealth()) {
             player.setHealth(player.getMaxHealth());
         }
+    }
+
+    /**
+     * Goety 流派名 → 本模组的流派精通技能 ID（★ 2026-09-20）。
+     *
+     * <p>流派名用的是 Goety 的属性注册名前缀（{@code goety:<school>_potency} / {@code _discount}），
+     * 与 {@link org.zifeng.skilltree.compat.GoetyCompat#SCHOOLS} 一一对应。
+     *
+     * @return 对应技能 ID；未知流派名 → {@code null}
+     */
+    private static String goetySchoolSkillId(String school) {
+        return switch (school) {
+            case "abyss" -> Skills.GOETY_ABYSS;
+            case "frost" -> Skills.GOETY_FROST;
+            case "geomancy" -> Skills.GOETY_GEOMANCY;
+            case "necromancy" -> Skills.GOETY_NECROMANCY;
+            case "nether" -> Skills.GOETY_NETHER;
+            case "storm" -> Skills.GOETY_STORM;
+            case "void" -> Skills.GOETY_VOID;
+            case "wild" -> Skills.GOETY_WILD;
+            case "wind" -> Skills.GOETY_WIND;
+            default -> null;
+        };
     }
 
     /** 属性修饰符 id（按技能区分；ADD 前缀 skill_base_ / MULT 前缀 skill_amp_，保持与旧版一致的区分，防同属性技能互相覆盖） */
@@ -421,6 +471,68 @@ public final class SkillEffects {
     /** 铁魔法流派法术强度倍率（每级 +10%：level × 0.1；需技能启用） */
     public static double getIronSchoolPercent(PlayerSkillRecord record, String schoolSkillId) {
         return magicAmp(record, schoolSkillId, 0.1);
+    }
+
+    // ============ 行内属性显示专用（★ 2026-09-20 补全） ============
+    //  下面三个技能会改【原版属性】，但它们不登记在 {@link #ATTR_TABLE} 里 ——
+    //  因为它们走的是 {@link #applyAll} 里的特殊路径，如果再放进 ATTR_TABLE
+    //  就会被应用两次（修饰符 id 不同→属性翻倍）。
+    //  所以它们的数值只能在「客户端显示层」单独取；下面每个方法都与 applyAll 的算法严格一致，
+    //  保证「行里显示的数字 = 实际生效的值」。
+
+    /** 全能精通（ULT_MASTER）对全属性的加成比例（默认 0.25 = 25%；未学/关闭 → 0） */
+    public static double getMasterBonusPercent(PlayerSkillRecord record) {
+        return (record.getLearnedPoints(MASTER_SKILL) > 0 && record.isEnabled(MASTER_SKILL))
+                ? org.zifeng.skilltree.Config.MASTER_BONUS.get() : 0;
+    }
+
+    /** 杀戮光环·伤害（AURA_DAMAGE）对攻击伤害的加成比例（生效等级 × 每级；未学/关闭 → 0） */
+    public static double getAuraDamagePercent(PlayerSkillRecord record) {
+        return effLevel(record, AURA_DMG_SKILL)
+                * org.zifeng.skilltree.Config.AURA_DAMAGE_MULTIPLIER_PER_LEVEL.get();
+    }
+
+    /** 浴血奋战（ULT_BLOOD）是否点亮且启用 */
+    private static boolean bloodActive(PlayerSkillRecord record) {
+        return record.getLearnedPoints(BLOOD_SKILL) > 0 && record.isEnabled(BLOOD_SKILL);
+    }
+
+    /** 浴血奋战对攻击伤害的加成比例（未点亮/关闭 → 0） */
+    public static double getBloodAttackPercent(PlayerSkillRecord record) {
+        return bloodActive(record) ? org.zifeng.skilltree.Config.BLOOD_ATTACK_BONUS.get() : 0;
+    }
+
+    /** 浴血奋战对生命上限的加成比例（未点亮/关闭 → 0） */
+    public static double getBloodHealthPercent(PlayerSkillRecord record) {
+        return bloodActive(record) ? org.zifeng.skilltree.Config.BLOOD_HEALTH_BONUS.get() : 0;
+    }
+
+    // ============ Goety（诡术）属性面板取值（★ 2026-09-20） ============
+    //   供属性面板显示；数值与 {@link org.zifeng.skilltree.compat.GoetyCompat} 实际下发的属性保持一致
+    //   （强度 flat 整数；减量比例封顶 DISCOUNT_CAP）
+
+    /** Goety 通用法术强度（flat 整数 = 生效等级，范围 0~2048） */
+    public static double getGoetyPotency(PlayerSkillRecord record) {
+        return effLevel(record, Skills.GOETY_POTENCY);
+    }
+
+    /** Goety 通用灵魂折扣（0~{@code DISCOUNT_CAP}，每级 +0.01；需技能启用） */
+    public static double getGoetySoulDiscountPercent(PlayerSkillRecord record) {
+        return Math.min(org.zifeng.skilltree.compat.GoetyCompat.DISCOUNT_CAP,
+                effLevel(record, Skills.GOETY_SOUL_DISCOUNT)
+                        * org.zifeng.skilltree.compat.GoetyCompat.DISCOUNT_PER_LEVEL);
+    }
+
+    /** Goety 某流派强度（flat 整数；传入该流派对应的精通技能 ID） */
+    public static double getGoetySchoolPotency(PlayerSkillRecord record, String schoolSkillId) {
+        return effLevel(record, schoolSkillId);
+    }
+
+    /** Goety 某流派灵魂折扣（0~{@code DISCOUNT_CAP}，与同技能的强度按同一等级换算） */
+    public static double getGoetySchoolDiscountPercent(PlayerSkillRecord record, String schoolSkillId) {
+        return Math.min(org.zifeng.skilltree.compat.GoetyCompat.DISCOUNT_CAP,
+                effLevel(record, schoolSkillId)
+                        * org.zifeng.skilltree.compat.GoetyCompat.DISCOUNT_PER_LEVEL);
     }
 
     // ============ 暴击 / 吸血 / 治愈光环（事件驱动，非属性，尊重技能开关） ============

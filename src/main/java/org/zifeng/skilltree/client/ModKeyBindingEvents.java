@@ -267,6 +267,9 @@ public class ModKeyBindingEvents {
         stickToolModeClient = 0;
         operZonesClient.clear();
         protectZonesClient.clear();
+        // ⚠️ 2026-09-20 修复：天气模式客户端缓存原先漏了重置 → 换服后
+        //    在服务端 GlobalState 推送到达前，技能树会显示**上个服务器**的天气模式。
+        weatherModeClient = 0;
     }
 
     /** 辅助：已学等级 */

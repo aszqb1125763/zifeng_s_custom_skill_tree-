@@ -134,6 +134,17 @@ public class AuraEvents {
         return currentWeatherMode;
     }
 
+    /**
+     * 该玩家当前是否持有全局锁定状态（★ 2026-09-20 新增）。
+     *
+     * <p>供 {@link org.zifeng.skilltree.system.GlobalRuleModule#activeCondition} 做兜底唤醒判断：
+     * 只要状态 map 里还有本玩家的条目，就必须让它继续 tick，否则锁定计数永远归不了零，
+     * {@code doDaylightCycle}/{@code doWeatherCycle} 会全服永久卡死。
+     */
+    public static boolean hasGlobalLockFor(UUID id) {
+        return id != null && (timeLockState.containsKey(id) || weatherLockState.containsKey(id));
+    }
+
     /** 玩家登出/切换存档时清理锁定计数（防跨会话残留计数，导致 gamerule 永远锁死） */
     public static void onPlayerLogout(ServerPlayer player) {
         if (player == null) {
@@ -363,7 +374,13 @@ public class AuraEvents {
         // ⚠️ 性能优化（2026-08-15）：间隔判断提到最前——大部分 tick 在此直接返回，
         //    后续所有开销（getLearnedPoints/isEnabled/扫描/伤害）只在触发 tick 执行。
         int interval = auraAttackInterval(player, record);
-        if (player.level().getGameTime() % interval != 0) {
+        // ⚠️ 2026-09-20 多人优化：原写法 `gameTime % interval` 中 interval 只由速度光环等级决定，
+        //   而 gameTime 是维度级共享 —— **同等级的所有光环玩家会在完全相同的 tick 齐发**，
+        //   造成周期性尖峰（每 interval tick 集体做 55 格球扫描 + 对最多 64 个目标逐个 hurt），
+        //   其余 tick 全空。加实体 id 做错峰（本文件 auraHeal 早已用同一手法 `(gameTime + player.getId()) % 200`）。
+        //   等价性：每个玩家的触发频率与间隔完全不变，只是相位不同；
+        //   Java 负数取模的**整除性**不受影响（-10 % 10 == 0），玩家实体 id 为负也正确。
+        if ((player.level().getGameTime() + player.getId()) % interval != 0) {
             return;
         }
         // —— 以下仅在触发 tick 执行 ——
@@ -764,14 +781,31 @@ public class AuraEvents {
                         default -> !hostile;     // 敌对模式（默认）：非敌对（治愈默认奶友好）
                     };
                 });
-        // 生命回复效果：amplifier = level - 1（1 级 = 生命回复I，50 级 = 生命回复50）；时长 2400 tick = 2 分钟
+        // 生命回复效果：时长 2400 tick = 2 分钟
+        //
+        // ⚠️ amplifier 封顶 6（★ 2026-09-20 修复用户报的「几十级以后再升就无效」）：
+        //   原版生命回复的触发间隔是 `50 >> amplifier`：
+        //     amp 0→50t / amp 1→25t / amp 2→12t / amp 3→6t / amp 4→3t / amp 5→1t
+        //     **amp 6→0 → 变成「每 tick 回 1 血」（= 20 血/秒，已是原版最快）**
+        //   即 amp 7~49 与 amp 6 效果完全相同。
+        //   而本技能上限 50 级、amplifier 原本取 level-1 → **7 级之后 44 级全白学**，
+        //   但面板/行内显示照常从 +6 涨到 +49 → 「看着在涨、实际不变」。
+        //   现改为：1~7 级走原版药水；7 级以上的成长由「额外直接治疗」承担（线性）。
+        final int REGEN_AMP_CAP = 6;
+        final int amp = Math.min(REGEN_AMP_CAP, level - 1);
+        // 7 级起每级额外 +1 血（直接治疗，绕过原版药水等级上限）：50 级 = +44 血/周期
+        final float extraHeal = Math.max(0, level - 6);
         var regen = new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.REGENERATION, 2400, level - 1, false, false, true);
+                net.minecraft.world.effect.MobEffects.REGENERATION, 2400, amp, false, false, true);
         for (LivingEntity ally : allies) {
             // 只在效果缺失或等级不够/剩余不足 2 分钟时补（避免每 10 秒覆盖刷新造成粒子闪烁）
             var cur = ally.getEffect(net.minecraft.world.effect.MobEffects.REGENERATION);
-            if (cur == null || cur.getAmplifier() < level - 1 || cur.getDuration() < 2400) {
+            if (cur == null || cur.getAmplifier() < amp || cur.getDuration() < 2400) {
                 ally.addEffect(regen);
+            }
+            // 额外直接治疗：与药水效果的每 tick 回血叠加（7 级起才有）
+            if (extraHeal > 0) {
+                ally.heal(extraHeal);
             }
         }
     }

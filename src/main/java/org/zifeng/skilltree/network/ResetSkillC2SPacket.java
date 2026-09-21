@@ -7,6 +7,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import org.zifeng.skilltree.data.PlayerSkillRecord;
 import org.zifeng.skilltree.data.PlayerSkillSavedData;
+import org.zifeng.skilltree.event.AuraEvents;
 import org.zifeng.skilltree.event.UltimateEvents;
 import org.zifeng.skilltree.skill.SkillEffects;
 import org.zifeng.skilltree.skill.Skills;
@@ -64,6 +65,19 @@ public class ResetSkillC2SPacket {
                     UltimateEvents.clearPlayerFlight(player);
                 }
                 UltimateEvents.clearPlayer(player);
+
+                // ⚠️ 2026-09-20 修复（严重）：重置寰宇法则必须同时释放 gamerule 全局锁定。
+                //    链路：重置时之环/晴空环 → resetSkill 把已学点数清 0 →
+                //    GlobalRuleModule.activeCondition 变 false → 模块**冬眠** →
+                //    AuraEvents.tickGlobalLocks 再也不会调 updateTimeLock(player,false) →
+                //    timeLockCount 卡在 1（状态 map 里的条目也留着）→
+                //    而**唯一**能把 RULE_DAYLIGHT 设回 true 的 restoreTimeLock 只在 count 归零时被调
+                //    → doDaylightCycle / doWeatherCycle **全服永久锁死**，只能靠该玩家登出恢复。
+                //    /skilltree reset 命令己有同样的调用（SkillTreeAdminCommands），此处是遗漏。
+                //    只在重置寰宇法则时调用：重置普通技能时调用会瞬时放锁再重锁，造成时间/天气闪动。
+                if (Skills.isGlobalSkill(skillId)) {
+                    AuraEvents.onPlayerLogout(player);
+                }
 
                 // 重置村庄英雄/发光/战利品爆炸/虚空之躯等被动 → 状态由事件每次 tick 按记录重判，无残留
                 double rate = org.zifeng.skilltree.Config.RESET_REFUND_RATE.get();

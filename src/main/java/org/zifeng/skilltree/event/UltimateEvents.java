@@ -395,19 +395,17 @@ public class UltimateEvents {
                 player.setAirSupply(player.getMaxAirSupply());
             }
             // 无限回路：AE2 频道倍增/无限（软集成，未装 AE2 时无操作；全局生效，玩家集合管理）
-            // 4 级：1=X2 2=X3 3=X4 4=INFINITE；多人取所有开启玩家中的最高等级
-            // ⚠️ 2026-08-27 修复：生效等级 0（技能完全不生效）→ 走 disable 恢复默认，勿 Math.max(1,0)=X2
-            // ⚠️ 2026-08-28 性能：未学 AE 技能 → 直接跳过（disable 只在开→关/登出时调用一次即可，未学玩家无需每 tick 进入 synchronized）
+            // 5 档：0=默认(原版8频道) 1=X2 2=X3 3=X4 4=INFINITE
+            // ⚠️ 2026-09-20 修复：生效等级 0 以前走 disable（只解登记、不改模式），
+            //    导致界面显示「默认8频道」/聊天提示「→ 默认」但 AE 模式纹丝不动（仍是 INFINITE）。
+            //    现在 0 级与其他等级一样走 enable，由 Ae2Compat.modeForLevel 映射到 DEFAULT。
+            // ⚠️ 2026-08-28 性能：未学 AE 技能 → 直接跳过（未学玩家无需每 tick 进入 synchronized）
             int aeLearned = record.getLearnedPoints(Skills.AE_INFINITE_CHANNEL);
             if (aeLearned > 0) {
                 boolean aeOn = record.isEnabled(Skills.AE_INFINITE_CHANNEL);
                 if (aeOn) {
                     int aeLevel = record.getActiveLevel(Skills.AE_INFINITE_CHANNEL); // 可低于已学；未设置默认=已学
-                    if (aeLevel <= 0) {
-                        org.zifeng.skilltree.compat.Ae2Compat.disable(player.getUUID());
-                    } else {
-                        org.zifeng.skilltree.compat.Ae2Compat.enable(player.getUUID(), aeLevel);
-                    }
+                    org.zifeng.skilltree.compat.Ae2Compat.enable(player.getUUID(), Math.max(0, aeLevel));
                 } else {
                     org.zifeng.skilltree.compat.Ae2Compat.disable(player.getUUID());
                 }

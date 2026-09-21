@@ -22,3 +22,11 @@ Thumbs.db
 .DS_Store
 
 *.log
+
+# --- 备份 / 临时文件（不提交） ---
+*.bak
+*.bak_*
+*.bak-*
+.codex/
+build_*.txt
+javac.*.args
