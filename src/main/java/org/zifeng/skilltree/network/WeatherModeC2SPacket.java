@@ -37,6 +37,14 @@ public record WeatherModeC2SPacket(int mode) implements CustomPacketPayload {
                 if (record.getLearnedPoints(Skills.AURA_WEATHER) <= 0 || !record.isEnabled(Skills.AURA_WEATHER)) {
                     return;
                 }
+                // ⚠️ 2026-09-20 修复：运行期改全局天气同样必须 OP 校验。
+                //    LearnSkillC2SPacket / SetSkillToggleC2SPacket 对寰宇法则技能已强制 canUseGlobalRule，
+                //    但本入口只判了「已学+开启」→ 玩家在被降权（服务器收回 OP）后仍能单方面
+                //    改全服天气（doWeatherCycle / 天气状态），与「限定为 OP」的设计意图不符，也可用来互相顶掉。
+                if (!AuraEvents.canUseGlobalRule(player)) {
+                    AuraEvents.sendGlobalNeedOpMessage(player, Skills.AURA_WEATHER);
+                    return;
+                }
                 int mode = Math.max(0, Math.min(2, packet.mode()));
                 record.setWeatherMode(mode);
                 data.setDirty();

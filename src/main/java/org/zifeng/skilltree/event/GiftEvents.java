@@ -65,7 +65,9 @@ public final class GiftEvents {
             }
         }
         // 时间系列也清理（风暴/洪流若关闭）
-        for (String skill : List.of(Skills.GIFT_TIME_BAPTISM, Skills.GIFT_TIME_STORM, Skills.GIFT_TIME_FLOOD)) {
+        // ★ 2026-09-20：改用常量 TIME_SKILLS（1.20.1 侧早已如此，1.21.1 漏同步）——
+        //   本方法在 Z-Link 调度下会周期性执行，原来的内联 List.of(...) 每次都新建一个列表对象。
+        for (String skill : TIME_SKILLS) {
             boolean on = record.getLearnedPoints(skill) > 0 && record.isEnabled(skill);
             Boolean prev = last.put(skill, on);
             if (prev != null && prev && !on) {

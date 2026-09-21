@@ -56,6 +56,11 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
         rateBoxY = y + 118;
         rateBoxW = 120;
         rateBox = new EditBox(font, rateBoxX, rateBoxY, rateBoxW, 14, Component.translatable("ui.zifeng_s_custom_skill_tree.conv_rate"));
+        // ★ 2026-09-21：全局统一「不要文字阴影」。
+        //   ⚠️ 与 1.20.1 不同：1.20.1 的 EditBox 投影是写死的（无开关），只能换控件；
+        //   1.21.1 的 NeoForge 给 EditBox 加了 textShadow 字段 + setTextShadow()，
+        //   renderWidget 里所有绘字都读它 —— 直接关掉即可，无需换控件、也保留原生精灵边框。
+        rateBox.setTextShadow(false);
         rateBox.setValue(String.valueOf(menu.getInputRate()));
         rateBox.setMaxLength(13);
         rateBox.setFilter(s -> s.matches("\\d*")); // 仅数字
@@ -81,7 +86,9 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
         guiGraphics.fill(x, y, x + 2, y + imageHeight, 0xFF87CEEB);
         guiGraphics.fill(x + imageWidth - 2, y, x + imageWidth, y + imageHeight, 0xFF87CEEB);
 
-        guiGraphics.drawCenteredString(font, title.getString(), x + imageWidth / 2, y + 8, 0xFFFFFFFF);
+        // ★ 2026-09-21：全部文字去掉投影（drawCenteredString 无阴影开关 → 自己算居中）
+        String titleText = title.getString();
+        guiGraphics.drawString(font, titleText, x + (imageWidth - font.width(titleText)) / 2, y + 8, 0xFFFFFFFF, false);
 
         // 进度条
         int pct = menu.getProgressPercent();
@@ -94,26 +101,27 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
         if (fillW > 0) {
             guiGraphics.fill(barX, barY, barX + fillW, barY + barH, Config.MACHINE_PROGRESS_COLOR.get());
         }
-        guiGraphics.drawCenteredString(font, t("conv_progress") + " " + pct + "%", x + imageWidth / 2, barY + barH + 5, 0xFFFFFFFF);
+        String pctText = t("conv_progress") + " " + pct + "%";
+        guiGraphics.drawString(font, pctText, x + (imageWidth - font.width(pctText)) / 2, barY + barH + 5, 0xFFFFFFFF, false);
 
         int line = barY + barH + 19;
         int lineH = 11;
         int left = x + 14;
         // 已转换技能点（玩家整体累计，跨机器共享，阶梯消耗依据）
-        guiGraphics.drawString(font, t("conv_total") + " " + fmtBig(menu.getTotalConverted()) + " " + t("btn_pt"), left, line, 0xFFFFD700);
+        guiGraphics.drawString(font, t("conv_total") + " " + fmtBig(menu.getTotalConverted()) + " " + t("btn_pt"), left, line, 0xFFFFD700, false);
         line += lineH;
         // 绑定状态
         String bindText = menu.isBound() ? t("conv_bound") : t("conv_unbound");
         int bindColor = menu.isBound() ? 0xFF55FF55 : 0xFFFF5555;
-        guiGraphics.drawString(font, bindText, left, line, bindColor);
+        guiGraphics.drawString(font, bindText, left, line, bindColor, false);
         line += lineH;
         // 红石状态
         String redstoneText = menu.isRedstoneBlocked() ? t("conv_rs_blocked") : t("conv_rs_ok");
-        guiGraphics.drawString(font, redstoneText, left, line, menu.isRedstoneBlocked() ? 0xFFFF5555 : 0xFF55FF55);
+        guiGraphics.drawString(font, redstoneText, left, line, menu.isRedstoneBlocked() ? 0xFFFF5555 : 0xFF55FF55, false);
         line += lineH + 2;
 
-        // 输入速率标签 + 数字输入框（EditBox，回车提交；无限制输入开启时显示无限制）
-        guiGraphics.drawString(font, t("conv_rate") + " (FE/t):", left, line, 0xFFFFD700);
+        // 输入速率标签 + 数字输入框（回车提交；无限制输入开启时显示无限制）
+        guiGraphics.drawString(font, t("conv_rate") + " (FE/t):", left, line, 0xFFFFD700, false);
         line += lineH + 2;
         // 刷新编辑框位置与当前值（菜单数据变化时同步；本地乐观值优先，避免同步延迟导致输入被重置）
         if (rateBox != null) {
@@ -149,12 +157,12 @@ public class SkillPointConverterScreen extends AbstractContainerScreen<SkillPoin
             guiGraphics.fill(btnX + 4, btnY + 6, btnX + 9, btnY + 11, 0xFF666666);
         }
         String btnText = unlimited ? t("conv_ul_on") : t("conv_ul_off");
-        guiGraphics.drawString(font, btnText, btnX + 13, btnY + 3, unlimited ? 0xFF55FFAA : 0xFFAAAAAA);
+        guiGraphics.drawString(font, btnText, btnX + 13, btnY + 3, unlimited ? 0xFF55FFAA : 0xFFAAAAAA, false);
         // 当前生效输入速率（服务端同步实际值）
         line += btnH + 3;
         String rateText = unlimited ? t("conv_rate_unlimited")
                 : t("conv_rate_now") + " " + fmtBig(menu.getInputRate()) + " FE/t";
-        guiGraphics.drawString(font, rateText, left, line, unlimited ? 0xFF55FFAA : 0xFFFFD700);
+        guiGraphics.drawString(font, rateText, left, line, unlimited ? 0xFF55FFAA : 0xFFFFD700, false);
     }
 
     /** 提交输入速率（回车/失焦调用）：解析数字并发送 C2S */

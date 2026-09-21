@@ -80,6 +80,9 @@ public final class MagnetModule implements ZModule {
         }
         // 挪移是否同开生效（每 tick 只判断一次，避免逐物品查绑定）
         boolean vacuumActive = org.zifeng.skilltree.event.LootVacuumEvents.isVacuumActive(record);
+        // ★ 2026-09-20 性能：绑定插入目标改为**每 tick 惰性解析一次**（见循环内注释）
+        boolean boundResolved = false;
+        org.zifeng.skilltree.event.LootVacuumEvents.BoundTarget boundTarget = null;
         // 屏蔽区（2026-09-08 全局共享）：全服同一份列表——任何玩家框选的区对所有磁铁生效。
         //    从服务器全局数据（主世界 SavedData）取；空列表时零开销。
         java.util.List<org.zifeng.skilltree.data.MagnetExclusionZone> zones = null;
@@ -110,8 +113,19 @@ public final class MagnetModule implements ZModule {
             }
             if (vacuumActive) {
                 // 吸星 + 挪移同开：掉落物直传绑定容器（2026-09-06）
+                // ⚠️ 2026-09-20 性能修复：原实现逐物品调 insertIntoBound，而其内部每次都做
+                //    ResourceLocation.tryParse（字符串解析+分配）+ ResourceKey.create + server.getLevel
+                //    + getChunk + capability 查询。LootVacuumEvents 自己在 BoundTarget 的注释里就点名了
+                //    “选区挖掘一次要插入几十万个掉落物 → 这些固定开销是主要耗时来源之一”，
+                //    并为此拆出了 resolveBoundTarget/insertIntoTarget —— **选区侧已用上，吸星侧漏了**。
+                //    磁铁是最热的物品搬运路径（半径可达 55 格且每 tick 都跑），必须每 tick 只解析一次。
+                //    惰性解析：若物品全被屏蔽区排除，就不会白做一次 getChunk（可能触发区块加载）。
+                if (!boundResolved) {
+                    boundResolved = true;
+                    boundTarget = org.zifeng.skilltree.event.LootVacuumEvents.resolveBoundTarget(player, record);
+                }
                 net.minecraft.world.item.ItemStack leftover =
-                        org.zifeng.skilltree.event.LootVacuumEvents.insertIntoBound(player, record, item.getItem());
+                        org.zifeng.skilltree.event.LootVacuumEvents.insertIntoTarget(boundTarget, item.getItem());
                 if (leftover.isEmpty()) {
                     item.discard(); // 全部进容器
                     any = true;

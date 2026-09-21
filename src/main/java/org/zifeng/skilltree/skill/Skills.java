@@ -76,9 +76,39 @@ public final class Skills {
     }
 
     /** 基础类每项上限 */
-    public static final int BASE_MAX_POINTS = 1000;
+    // ══════════ 等级压缩（2026-09-14）══════════
+    /**
+     * 等级压缩倍率：原 1000 级 → 100 级、500 级 → 50 级。
+     *
+     * <p>压缩后 **每级效果自动 ×本倍率**（见 {@code SkillEffects.effLevel}），
+     * 因此技能的总效果与原设计完全一致，只是"级数"变少、每级成长更明显。
+     */
+    public static final int LEVEL_COMPRESSION = 10;
+
+    /**
+     * 该技能是否受等级压缩影响（效果需 ×{@link #LEVEL_COMPRESSION}）。
+     *
+     * <ul>
+     *   <li>BASE 15 项：1000 → 100</li>
+     *   <li>AMPLIFY 15 项：500 → 50</li>
+     *   <li>MAGIC：大上限的（原 1000/500 → 100/50）压缩；吟唱/冷却缩减上限本就是 100 → 不压</li>
+     *   <li>光环伤害（原 1000 → 100）压缩；其余光环上限本就较小 → 不压</li>
+     * </ul>
+     */
+    public static boolean isLevelCompressed(String skillId) {
+        if (AURA_DAMAGE.equals(skillId)) {
+            return true;
+        }
+        return switch (getType(skillId)) {
+            case BASE, AMPLIFY -> true;
+            case MAGIC -> !(IRON_CAST_TIME.equals(skillId) || IRON_COOLDOWN.equals(skillId));
+            default -> false; // 终极/特殊/光环(除伤害)/寰宇/机械/馈赠/工具：上限未压缩
+        };
+    }
+
+    public static final int BASE_MAX_POINTS = 100;
     /** 特殊增幅类每项上限 */
-    public static final int AMPLIFY_MAX_POINTS = 500;
+    public static final int AMPLIFY_MAX_POINTS = 50;   // 2026-09-14 等级压缩：原 500
     /** 基础技能每级技能点消耗（默认值，可被 Config 覆盖） */
     public static final double BASE_POINT_COST = 1.0;
     /** 特殊增幅每级技能点消耗（默认值，可被 Config 覆盖） */
@@ -126,7 +156,10 @@ public final class Skills {
      * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
      */
     public static long getBaseCostAtLevel(int currentLevel) {
-        return (long) currentLevel + 1;
+        // 2026-09-14 等级压缩（1000→100）：二次曲线——前期便宜、后期陡增，
+        // 点满总消耗 ≈ 20.3 万（介于"每级×10"的 5 万与不压缩的 50 万之间，由用户授权平衡）
+        final double n = currentLevel + 1.0;
+        return Math.max(1L, Math.round(0.6 * n * n));
     }
 
     /**
@@ -136,7 +169,9 @@ public final class Skills {
      * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
      */
     public static long getAmplifyCostAtLevel(int currentLevel) {
-        return (long) (currentLevel + 1) * 2;
+        // 2026-09-14 等级压缩（500→50）：二次曲线，点满总消耗 ≈ 10.3 万（与基础列保持 2:1）
+        final double n = currentLevel + 1.0;
+        return Math.max(1L, Math.round(2.4 * n * n));
     }
 
     public static double auraCostMultiplier() {
@@ -164,6 +199,9 @@ public final class Skills {
             case TREASURE_HUNTER -> 500L;    // 寻宝大师：一次性 500 点
             case GLUTTONY -> 5L;             // 暴食：一次性 5 点（2026-09-06）
             case BLINK -> 10L;               // 闪现：一次性 10 点（2026-09-06）
+            // 奥术防护（2026-09-14）：进阶机制各 1000 点；奥术神体走 Config
+            case ARCANE_ADAPT, SPELL_REFLECT, SPELL_PURGE, MANA_SIPHON, SPELLBREAK_BLADE -> 1000L;
+            case ULT_ARCANE_BODY -> Math.round(Config.ARCANE_ULT_COST.get());
             // 终极节点·生存辅助（2026-08-27）：100 点
             case FLY_NO_INERTIA, FLY_MINING, FIRE_PROTECT, WATER_BREATH, DARK_VISION, UNDERWATER_VISION -> 100L;
             default -> 1L; // 普通终极 1 点
@@ -247,15 +285,16 @@ public final class Skills {
     public static final String GIFT_TIME_BAPTISM = "gift_time_baptism"; // 时间洗礼：游戏时长≥1小时可激活，每10分钟+1技能点
     public static final String GIFT_TIME_STORM = "gift_time_storm";     // 时间风暴：游戏时长≥5小时可激活，每5分钟+1技能点（与洗礼叠加）
     public static final String GIFT_TIME_FLOOD = "gift_time_flood";     // 时间洪流：游戏时长≥10小时可激活，每1分钟+1技能点（与洗礼叠加）
-    // 2026-08-25 新增：移动/飞行/挖掘洗礼（1-3级，消耗技能点升级，统计原版数据）+ 各增幅（上限20级，指数消耗）
-    public static final String GIFT_MOVE_BAPTISM = "gift_move_baptism"; // 移动洗礼：统计行走+疾跑距离，1级1000米/2级500米/3级100米 得1技能点
-    public static final String GIFT_MOVE_AMP = "gift_move_amp";         // 移动洗礼增幅：每级每次+1技能点获取，上限20级
-    public static final String GIFT_FLY_BAPTISM = "gift_fly_baptism";   // 飞行洗礼：统计飞行距离，1级1000米/2级500米/3级100米 得1技能点
-    public static final String GIFT_FLY_AMP = "gift_fly_amp";           // 飞行洗礼增幅：每级每次+1技能点获取，上限20级
-    public static final String GIFT_MINE_BAPTISM = "gift_mine_baptism"; // 挖掘洗礼：统计挖掘方块数，1级1000块/2级500块/3级100块 得1技能点
-    public static final String GIFT_MINE_AMP = "gift_mine_amp";         // 挖掘洗礼增幅：每级每次+1技能点获取，上限20级
-    public static final String GIFT_KILL_BAPTISM = "gift_kill_baptism"; // 击杀馈赠：统计击杀生物数，1级1000杀/2级500杀/3级100杀 得1技能点
-    public static final String GIFT_KILL_AMP = "gift_kill_amp";         // 击杀馈赠增幅：每级每次+1技能点获取，上限20级
+    // 2026-08-25 新增：移动/飞行/挖掘洗礼（消耗技能点升级，统计原版数据）+ 各增幅
+    // 2026-09-14：洗礼/增幅 上限 5 级 → 9 级，补齐 10 → 1000 之间的消耗过渡
+    public static final String GIFT_MOVE_BAPTISM = "gift_move_baptism"; // 移动洗礼：统计行走+疾跑距离，1级1000米…9级10米 得1技能点
+    public static final String GIFT_MOVE_AMP = "gift_move_amp";         // 移动洗礼增幅：每级每次+1技能点获取，上限9级
+    public static final String GIFT_FLY_BAPTISM = "gift_fly_baptism";   // 飞行洗礼：统计飞行距离，1级1000米…9级10米 得1技能点
+    public static final String GIFT_FLY_AMP = "gift_fly_amp";           // 飞行洗礼增幅：每级每次+1技能点获取，上限9级
+    public static final String GIFT_MINE_BAPTISM = "gift_mine_baptism"; // 挖掘洗礼：统计挖掘方块数，1级1000块…9级10块 得1技能点
+    public static final String GIFT_MINE_AMP = "gift_mine_amp";         // 挖掘洗礼增幅：每级每次+1技能点获取，上限9级
+    public static final String GIFT_KILL_BAPTISM = "gift_kill_baptism"; // 击杀馈赠：统计击杀生物数，1级1000杀…9级10杀 得1技能点
+    public static final String GIFT_KILL_AMP = "gift_kill_amp";         // 击杀馈赠增幅：每级每次+1技能点获取，上限9级
 
     // ============ 特殊增幅技能（与基础技能一一对应，顺序同纵列1） ============
     public static final String AMP_HP = "amp_hp";                     // 生命增幅（对应生命强化）
@@ -321,6 +360,56 @@ public final class Skills {
     public static final String IRON_NATURE = "iron_nature";           // 自然
     public static final String IRON_ELDRITCH = "iron_eldritch";       // 异界
 
+    // ============ Goety（诡术）兼容技能（2026-09-20 新增） ============
+    // 来源：Goety 作者 Polarice3，MIT，github.com/Polarice3/Goety-2（未混淆，有公开 api 包）
+    // 它自己就做了铁魔法 + 神化兼容（compat.iron / Vivideru.Goety.compat.apotheosis），
+    // 说明其属性（ModAttributes，共 27 个）本就是为外部模组调优准备的。
+    //
+    // ⚠️ 语义与铁魔法【完全不同】，不能照搬铁魔法的“每级+10%”：
+    //   · 强度类 _POTENCY 是 flat 整数加值（默认 0，范围 0~2048），直接加到法术 potency
+    //   · 减量类 _DISCOUNT / casting_speed / cooldown_discount 是“绝对减量比例”（范围 -1~1），
+    //     属性值 0.8 = 减免 80%；1.0 即 100%（灵魂全免 + 瞬发 + 无冷却）
+    //   · 数值与封顶见 {@link org.zifeng.skilltree.compat.GoetyCompat}
+    /** Goety 通用法术强度（spell_potency）：每级 +1，上限 100（满级 +100） */
+    public static final String GOETY_POTENCY = "goety_potency";
+    /** Goety 通用灵魂消耗折扣（soul_discount）：每级 +0.01，上限 80（满级减 80%） */
+    public static final String GOETY_SOUL_DISCOUNT = "goety_soul_discount";
+    // 9 个流派精通（每个技能同时给该流派的【强度】与【灵魂折扣】）
+    // ⚠️ 流派与铁魔法毫无对应关系：铁魔法是 fire/ice/lightning/holy/ender/blood/evocation/nature/eldritch，
+    //     Goety 是下面这 9 个，因此无法复用铁魔法的流派技能。
+    public static final String GOETY_ABYSS = "goety_abyss";           // 深渊
+    public static final String GOETY_FROST = "goety_frost";           // 冰霜
+    public static final String GOETY_GEOMANCY = "goety_geomancy";     // 地卜
+    public static final String GOETY_NECROMANCY = "goety_necromancy"; // 死灵
+    public static final String GOETY_NETHER = "goety_nether";         // 下界
+    public static final String GOETY_STORM = "goety_storm";           // 风暴
+    public static final String GOETY_VOID = "goety_void";             // 虚空
+    public static final String GOETY_WILD = "goety_wild";             // 荒野
+    public static final String GOETY_WIND = "goety_wind";             // 风
+
+    // ============ 奥术防护（2026-09-14 新增）：魔法减伤与反制，填补“护甲只减物理”的空缺 ============
+    // 核心机制：魔法减伤用 MOBA 公式 reduction = D/(D+K)，**永不达到 100%**，所以每级都有价值（可无限扩级）
+    /** 奥术壁垒：魔法防御值（上限1000，吃奥术真解增幅） */
+    public static final String ARCANE_BULWARK = "arcane_bulwark";
+    /** 奥术真解：追加奥术壁垒的防御值（上限500） */
+    public static final String ARCANE_AMP = "arcane_amp";
+    /** 法术抑制：只对**间接伤害**（箭矢/法术）生效的额外减伤（上限500） */
+    public static final String SPELL_DAMPEN = "spell_dampen";
+    /** 适应之躯：同类型伤害连续受击递减，有硬上限，换类型重置（1级） */
+    public static final String ARCANE_ADAPT = "arcane_adapt";
+    /** 法术反射：概率把魔法伤害反射给施法者（不致死 + 防递归，1级） */
+    public static final String SPELL_REFLECT = "spell_reflect";
+    /** 驱法破咒：受击时清除自身一个负面效果（带冷却，1级） */
+    public static final String SPELL_PURGE = "spell_purge";
+    /** 法力虹吸：受到魔法伤害时按比例转为回血（1级） */
+    public static final String MANA_SIPHON = "mana_siphon";
+    /** 净化领域：光环，周期性清除范围内友方的负面效果（上限100） */
+    public static final String PURIFY_FIELD = "purify_field";
+    /** 破法之刃：近战命中驱散目标一个增益，并按目标增益数量增伤（1级） */
+    public static final String SPELLBREAK_BLADE = "spellbreak_blade";
+    /** 子枫的奥术神体：魔法防护终极，是【全能精通】的前置之一（1级） */
+    public static final String ULT_ARCANE_BODY = "ult_arcane_body";
+
     // ============ 机械共鸣（纵列5，模拟玩家机器继承开关） ============
     public static final String MACHINE_STAR = "machine_star";             // 机械之星（前置核心，无前置，1级，消耗1000）
     public static final String MACHINE_LOOT_BOMB = "machine_loot_bomb";   // 战利品爆炸·共鸣（1级，5000）
@@ -342,16 +431,25 @@ public final class Skills {
     public static final String MACHINE_ZONE_PROTECT = "machine_zone_protect";
 
     /** 所有基础技能（纵列1） */
-    public static final List<String> BASE_SKILLS = List.of(BODY_HP, BODY, TOUGH, BLADE, ATTACK_SPEED, MINING, MOVE, REGEN, LUCK, JUMP, FLY, SWIM, CRIT, LIFESTEAL, THORNS, ARMOR_PEN);
+    /** 所有基础技能（纵列1）：2026-09-14 起移除「铁壁金身 BODY」（职责拆给磐石之躯 + 金身真解） */
+    public static final List<String> BASE_SKILLS = List.of(BODY_HP, TOUGH, BLADE, ATTACK_SPEED, MINING, MOVE, REGEN, LUCK, JUMP, FLY, SWIM, CRIT, LIFESTEAL, THORNS, ARMOR_PEN);
     /** 所有增幅技能（纵列2）：与基础技能一一对应，顺序与纵列1相同 */
     public static final List<String> AMPLIFY_SKILLS = List.of(
-            AMP_HP, AMP_ARMOR, AMP_TOUGH, AMP_DAMAGE, AMP_ATTACK_SPEED, AMP_MINING, AMP_MOVE,
+            AMP_HP, AMP_TOUGH, AMP_DAMAGE, AMP_ATTACK_SPEED, AMP_MINING, AMP_MOVE,
             AMP_REGEN, AMP_LUCK, AMP_JUMP, AMP_FLY, AMP_SWIM,
             AMP_CRIT, AMP_LIFESTEAL, AMP_THORNS, AMP_ARMOR_PEN);
     /** 所有终极节点（纵列3，2026-09-06 重新划分）：【成长型大招】——战斗质变/成长生产/吃技能点的主力增强 */
     public static final List<String> ULTIMATE_SKILLS = List.of(
-            // 战斗大招
-            ULT_BLOOD, ULT_GOLDEN, ULT_MASTER, ULT_FAVOR, ULT_REVIVE, ULT_REAPER, ULT_VOID_BODY,
+            // ── 战斗大招（2026-09-14 重排：严格按前置链自上而下排列 —— 前置在上、终极在下）──
+            ULT_BLOOD,       // 浴血奋战（前置：磐石之躯 / 锋刃精通，均在基础列）
+            AMP_ARMOR,       // 金身真解（是「不坏金身」的前置 → 必须排在其上方；上限 80、每级 +1% 免伤）
+            ULT_GOLDEN,      // 不坏金身（前置：磐石之躯 + 金身真解）
+            ULT_REVIVE,      // 凤凰涅槃（前置：生命汲取 / 暴击精通）
+            ULT_REAPER,      // 死神凝视（前置：破甲精通 / 锋刃精通）
+            ULT_ARCANE_BODY, // 子枫的奥术神体（前置：奥术壁垒 / 奥术真解，在魔法列）
+            ULT_MASTER,      // 全能精通（前置：以上 5 个终极 → 必须排在其下方）
+            ULT_VOID_BODY,   // 虚空神体（前置：全能精通 → 必须排在其下方）
+            ULT_FAVOR,       // 宇宙的青睐（无前置）
             // 掉落/生产成长系（自特殊列上移）：财源滚滚/万载不磨/猎魂丰收/点石成金/经验飞涨/妖魂凝卵/斩首夺颅/自动熔炼/万物挖掘/不毁词条/横扫千军/稳如泰山
             LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN,
             MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT, ULT_BREAK_ALL, ULT_UNBREAK_TAG,
@@ -365,10 +463,13 @@ public final class Skills {
             VILLAGE_HERO, REACH, GLOW,
             ENCHANT_RANDOM, ENCHANT_BREAK, ENCHANT_OVER,
             UNLIMITED_TRADES, VILLAGER_MASTER, TREASURE_HUNTER,
-            GLUTTONY, BLINK);
+            GLUTTONY, BLINK,
+            // 奥术防护（2026-09-14）：一次性奇技
+            ARCANE_ADAPT, SPELL_REFLECT, SPELL_PURGE, MANA_SIPHON, SPELLBREAK_BLADE);
     /** 所有杀戮光环（纵列5）：杀戮光环·强化 在 虚空之矛 上方；时之环/晴空环已移至寰宇法则列（2026-08-27）
      *  ⚠️ 2026-09-07：子枫的搬运术（CONTAINER_HAUL）紧随子枫挪移术后（系列，复用其绑定容器）。 */
-    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM, CONTAINER_HAUL, AURA_XP);
+    public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM, CONTAINER_HAUL, AURA_XP,
+            PURIFY_FIELD); // 净化领域（2026-09-14 奥术防护：光环清友方负面）
     /** 所有寰宇法则（纵列6，2026-08-27 新增）：全局更改类技能（服务器全局生效，无法单人隔离） */
     public static final List<String> GLOBAL_SKILLS = List.of(AURA_TIME, AURA_WEATHER, AE_INFINITE_CHANNEL);
     /** 所有魔法增幅（纵列0）：其余模组兼容技能（新生魔艺/铁魔法等），不作为任何前置 */
@@ -378,7 +479,13 @@ public final class Skills {
             // 铁魔法
             IRON_MANA_AMP, IRON_MANA_REGEN, IRON_CAST_TIME, IRON_COOLDOWN,
             IRON_FIRE, IRON_ICE, IRON_LIGHTNING, IRON_HOLY, IRON_ENDER,
-            IRON_BLOOD, IRON_EVOCATION, IRON_NATURE, IRON_ELDRITCH);
+            IRON_BLOOD, IRON_EVOCATION, IRON_NATURE, IRON_ELDRITCH,
+            // Goety（诡术，2026-09-20）：通用强度/通用灵魂折扣 + 9 流派精通
+            GOETY_POTENCY, GOETY_SOUL_DISCOUNT,
+            GOETY_ABYSS, GOETY_FROST, GOETY_GEOMANCY, GOETY_NECROMANCY, GOETY_NETHER,
+            GOETY_STORM, GOETY_VOID, GOETY_WILD, GOETY_WIND,
+            // 奥术防护（2026-09-14）：自有魔法防护，不受模组依赖限制
+            ARCANE_BULWARK, ARCANE_AMP, SPELL_DAMPEN);
     /** 所有机械共鸣（纵列6）：机械之星在最上，其余共鸣技能在前置原技能下方；
      *  2026-09-08 追加 4 个木棍工具区块技能（无机械之星前置） */
     public static final List<String> MACHINE_SKILLS = List.of(
@@ -578,7 +685,7 @@ public final class Skills {
     /** 杀戮光环：每项上限 */
     public static int getAuraMaxPoints(String skillId) {
         return switch (skillId) {
-            case AURA_DAMAGE -> 1000;
+            case AURA_DAMAGE -> 100; // 2026-09-14 等级压缩：原 1000
             case AURA_SPEED -> 20;
             case AURA_HEAL -> 50;
             case AURA_MAGNET -> 1;
@@ -588,6 +695,7 @@ public final class Skills {
             case AURA_LOOT_VACUUM -> 1; // 一次性解锁（10 技能点）
             case CONTAINER_HAUL -> 1; // 子枫的搬运术：一次性解锁（10 技能点，2026-09-07）
             case AURA_XP -> 100; // 汲灵之环：上限 100 级（2026-09-06）
+            case PURIFY_FIELD -> 100; // 净化领域：上限 100 级（2026-09-14 奥术防护）
             default -> 0;
         };
     }
@@ -634,32 +742,39 @@ public final class Skills {
         return 1;
     }
 
-    /** 子枫的馈赠：洗礼 1-5 级 / 增幅 100 级 / 时间系列单级（2026-08-25） */
+    /** 子枫的馈赠：洗礼 1-9 级 / 增幅 1-9 级 / 时间系列单级 */
     public static int getGiftMaxPoints(String skillId) {
         return switch (skillId) {
-            case GIFT_MOVE_BAPTISM, GIFT_FLY_BAPTISM, GIFT_MINE_BAPTISM, GIFT_KILL_BAPTISM -> 5; // 移动/飞行/挖掘/击杀洗礼：5 级
-            case GIFT_MOVE_AMP, GIFT_FLY_AMP, GIFT_MINE_AMP, GIFT_KILL_AMP -> 5;               // 增幅：上限 5 级（2026-08-27 从 100 下调）
+            case GIFT_MOVE_BAPTISM, GIFT_FLY_BAPTISM, GIFT_MINE_BAPTISM, GIFT_KILL_BAPTISM -> 9; // 洗礼：9 级（2026-09-14 从 5 级上调，补齐消耗过渡）
+            case GIFT_MOVE_AMP, GIFT_FLY_AMP, GIFT_MINE_AMP, GIFT_KILL_AMP -> 9;               // 增幅：9 级（2026-09-14 从 5 级上调，与洗礼对齐）
             default -> 1; // 时间洗礼/风暴/洪流：单级
         };
     }
 
     /**
      * 子枫的馈赠激活/升级消耗（技能点）：
-     * 时间系列 0（按游戏时长激活）；移动/飞行/挖掘/击杀洗礼 10/1000/10000/50000/100000；增幅 1000 × 1.3^等级（指数增长 30%）。
+     * 时间系列 0（按游戏时长激活）；移动/飞行/挖掘/击杀洗礼 10/30/100/300/1千/3千/1万/3万/10万（每级约 ×3，共 14.4 万）；
+     * 增幅 1000 × 1.3^等级（指数增长 30%，9 级共约 2.67 万）。
      * @param currentLevel 当前已学等级（0=学第1级）
      */
     public static long getGiftCost(String skillId, int currentLevel) {
         return switch (skillId) {
-            case GIFT_MOVE_BAPTISM, GIFT_FLY_BAPTISM, GIFT_MINE_BAPTISM, GIFT_KILL_BAPTISM -> // 洗礼：10 / 1000 / 10000 / 50000 / 100000
-                    switch (currentLevel) {
+            // 洗礼：2026-09-14 由 10/1000/10000/50000/100000 改为 9 级平滑曲线，
+            // 原因：原第 1 级 10 → 第 2 级 1000 是 100 倍断崖，缺少中间过渡。
+            case GIFT_MOVE_BAPTISM, GIFT_FLY_BAPTISM, GIFT_MINE_BAPTISM, GIFT_KILL_BAPTISM ->
+                    switch (Math.max(0, Math.min(8, currentLevel))) {
                         case 0 -> 10L;
-                        case 1 -> 1000L;
-                        case 2 -> 10000L;
-                        case 3 -> 50000L;
+                        case 1 -> 30L;
+                        case 2 -> 100L;
+                        case 3 -> 300L;
+                        case 4 -> 1000L;
+                        case 5 -> 3000L;
+                        case 6 -> 10000L;
+                        case 7 -> 30000L;
                         default -> 100000L;
                     };
-            case GIFT_MOVE_AMP, GIFT_FLY_AMP, GIFT_MINE_AMP, GIFT_KILL_AMP -> // 增幅：1000 × 1.3^等级（30% 指数）
-                    Math.round(1000 * Math.pow(1.3, currentLevel));
+            case GIFT_MOVE_AMP, GIFT_FLY_AMP, GIFT_MINE_AMP, GIFT_KILL_AMP -> // 增幅：1000 × 1.3^等级（30% 指数，曲线本身平滑，仅上调上限）
+                    Math.round(1000 * Math.pow(1.3, Math.max(0, Math.min(8, currentLevel))));
             default -> 0L; // 时间系列：不消耗
         };
     }
@@ -687,16 +802,21 @@ public final class Skills {
     }
 
     /**
-     * 移动/飞行/挖掘/击杀洗礼的每次触发需求（当前等级 1-5）：
+     * 移动/飞行/挖掘/击杀洗礼的每次触发需求（等级 1-9，随等级递减，满级最快）：
      * 移动/飞行单位 = 米（原版统计是 cm，需 ×100 换算）；挖掘单位 = 方块数；击杀单位 = 个。
+     * <p>2026-09-14：由 5 档（1000/500/100/50/10）拆为 9 档，与 9 级消耗曲线对齐，满级仍为 10（强度不变）。
      */
     public static long getGiftDistanceRequirement(String skillId, int level) {
-        return switch (level) {
-            case 1 -> 1000L;  // 1000 米 / 1000 块 / 1000 杀
-            case 2 -> 500L;   // 500
-            case 3 -> 100L;   // 100
-            case 4 -> 50L;    // 50（2026-08-25 新增 4 级）
-            default -> 10L;   // 10（2026-08-25 新增 5 级）
+        return switch (Math.max(1, Math.min(9, level))) {
+            case 1 -> 1000L; // 1000 米 / 1000 块 / 1000 杀
+            case 2 -> 700L;
+            case 3 -> 500L;
+            case 4 -> 300L;
+            case 5 -> 200L;
+            case 6 -> 100L;
+            case 7 -> 50L;
+            case 8 -> 25L;
+            default -> 10L;  // 9 级：10 米 / 10 块 / 10 杀
         };
     }
 
@@ -728,6 +848,21 @@ public final class Skills {
     }
 
     /**
+     * 判断是否为「时间系列」馈赠技能（★ 2026-09-20 新增）。
+     *
+     * <p>时间洗礼 / 时间风暴 / 时间洪流这三个技能的「消耗」是<b>游戏时长</b>而非技能点
+     * （{@link #getGiftCost} 对它们返回 0），因此界面上不能按技能点消耗来显示，
+     * 而要改成显示激活门槛（需1小时 / 需5小时 / 需10小时），否则玩家只看到空白。
+     *
+     * <p>把三个 ID 收敛到这里：此前它们在 {@code SkillTreeScreen}（写死三元判断）、
+     * {@code GiftEvents}（TIME_SKILLS 常量）等处各写了一份。
+     */
+    public static boolean isGiftTimeSkill(String skillId) {
+        return GIFT_TIME_BAPTISM.equals(skillId) || GIFT_TIME_STORM.equals(skillId)
+                || GIFT_TIME_FLOOD.equals(skillId);
+    }
+
+    /**
      * 机械共鸣一次性消耗技能点：机械之星 1000，其余共鸣技能 5000（Config 可调）。
      * ⚠️ 64 位返回（2026-08-12 统一）：所有技能消耗一律 long/double，防高等级 int 溢出。
      * @param skillId 机械共鸣技能 ID
@@ -744,13 +879,42 @@ public final class Skills {
         return Config.MACHINE_RESONANCE_COST.get();
     }
 
-    /** 魔法增幅：每项上限（魔力/恢复/流派 1000 级；吟唱/冷却缩减 100 级） */
+    /**
+     * 魔法增幅：每项上限。
+     *
+     * <p><b>⚠️ 2026-09-20 修正两处「等级上限高于实际封顶点」造成的无效等级</b>
+     * （用户报「看着等级很高，但是几十级之后再升就无效」）：
+     * <ul>
+     *   <li><b>吟唱/冷却 100 → 80</b>：Goety 侧减量类封顶 {@code GoetyCompat.DISCOUNT_CAP} = 0.8，
+     *       而每级只贡献 0.01（这两个技能<b>不受</b>等级压缩）→ 80 级正好抵到封顶，
+     *       原 100 级的后 20 级毫无收益。</li>
+     *   <li><b>灵魂折扣 80 → 8</b>：该技能受等级压缩（MAGIC 列默认压缩 ×10），
+     *       生效等级 = 已学等级 × 10，故 8 级时生效等级已到 80 → ×0.01 = 0.8 封顶；
+     *       原写 80 级时后 72 级毫无收益。</li>
+     * </ul>
+     *
+     * <p>⚠️ Goety 各项的「每级实际效果」= 显示等级 × 10（受压缩）× 系数，
+     * 与技能描述的读数口径不同，描述里已按实际值写明。
+     */
     public static int getMagicMaxPoints(String skillId) {
         return switch (skillId) {
-            case IRON_CAST_TIME, IRON_COOLDOWN -> 100;
+            // 未压缩（原本就是 100 级）；80 级即 Goety 侧减量封顶点
+            case IRON_CAST_TIME, IRON_COOLDOWN -> 80;
+            // 奥术防护（2026-09-14）
+            case ARCANE_BULWARK -> 100;                // 等级压缩：原 1000
+            case ARCANE_AMP, SPELL_DAMPEN -> 50;       // 等级压缩：原 500
             case MANA_AMP, ARS_MANA_REGEN, IRON_MANA_AMP, IRON_MANA_REGEN,
                     IRON_FIRE, IRON_ICE, IRON_LIGHTNING, IRON_HOLY, IRON_ENDER,
-                    IRON_BLOOD, IRON_EVOCATION, IRON_NATURE, IRON_ELDRITCH -> 1000;
+                    IRON_BLOOD, IRON_EVOCATION, IRON_NATURE, IRON_ELDRITCH -> 100; // 等级压缩：原 1000
+            // Goety（2026-09-20）：
+            //   · 通用强度 100 级：受压缩 ×10 → 实际每级 +10 强度（100 级 +1000，属性上限 2048 不溢出）
+            case GOETY_POTENCY -> 100;
+            //   · 灵魂折扣 8 级：受压缩 ×10 → 实际每级 -10%%，8 级（生效等级 80）正好抵到 0.8 封顶
+            case GOETY_SOUL_DISCOUNT -> 8;
+            //   · 9 流派精通 80 级：强度部分线性到 80 级（每级 +10）；折扣部分 8 级即封顶
+            case GOETY_ABYSS, GOETY_FROST, GOETY_GEOMANCY,
+                    GOETY_NECROMANCY, GOETY_NETHER, GOETY_STORM, GOETY_VOID,
+                    GOETY_WILD, GOETY_WIND -> 80;
             default -> 0;
         };
     }
@@ -763,24 +927,29 @@ public final class Skills {
      * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
      */
     public static long getMagicCostAtLevel(String skillId, int currentLevel) {
+        final double n = currentLevel + 1.0;
         if (IRON_CAST_TIME.equals(skillId) || IRON_COOLDOWN.equals(skillId)) {
-            return (long) (currentLevel + 1) * 5;
+            return (long) (n * 5); // 未压缩（上限 100）：保持线性 +5
         }
-        return (long) (currentLevel + 1) * 2;
+        if (ARCANE_AMP.equals(skillId) || SPELL_DAMPEN.equals(skillId)) {
+            return Math.max(1L, Math.round(2.4 * n * n)); // 等级压缩：原 500 → 50
+        }
+        return Math.max(1L, Math.round(0.6 * n * n));     // 等级压缩：原 1000 → 100
     }
 
     /**
      * 终极节点等级上限：默认单次解锁（1）；多级终极节点（节点类）各自上限：
-     * 村庄英雄 10 / 接触距离 50 / 发光 1 / 战利品爆炸 100 / 工具不毁 5 / 生物掉落 10 / 方块掉落 10 / 经验 10 / 刷怪蛋 10 / 头颅 5
+     * 村庄英雄 10 / 接触距离 50 / 发光 1 / 战利品爆炸 100 / 工具不毁 1（点亮即 100%，故一次性）/ 生物掉落 10 / 方块掉落 10 / 经验 10 / 刷怪蛋 10 / 头颅 5
      */
     public static int getUltimateMaxPoints(String skillId) {
         return switch (skillId) {
+            case AMP_ARMOR -> 80; // 金身真解（2026-09-14 自增幅列移入）：上限 80 级，每级 +1% 免伤
             case VILLAGE_HERO -> 10;
             case REACH -> 50;
             case ULT_SWEEP, ULT_KB_RESIST -> 10; // 横扫范围/击退抗性：上限 10 级
             case GLOW -> 1;
             case LOOT_BOMB -> 100;
-            case UNBREAKABLE -> 5;
+            case UNBREAKABLE -> 1; // 万载不磨（2026-09-14）：点亮即 100% 耐久减免，2~5 级无额外效果，故降为一次性点亮
             case XP_GAIN -> 50; // 经验飞涨：上限 50 级（2026-09-06，原 10 级）
             case MOB_DROP, BLOCK_DROP -> 10;
             case MOB_SPAWN_EGG, MOB_HEAD -> 5;
@@ -795,8 +964,8 @@ public final class Skills {
      * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
      */
     public static double getUltimateLevelCost(String skillId, int currentLevel) {
-        // 横扫范围/击退抗性：线性消耗（每级 2 点，下一级 +2：2,4,6,8...）
-        if (ULT_SWEEP.equals(skillId) || ULT_KB_RESIST.equals(skillId)) {
+        // 横扫范围/击退抗性/金身真解：线性消耗（每级 2 点，下一级 +2：2,4,6,8...）
+        if (ULT_SWEEP.equals(skillId) || ULT_KB_RESIST.equals(skillId) || AMP_ARMOR.equals(skillId)) {
             return (double) (currentLevel + 1) * 2.0;
         }
         double base = switch (skillId) {
@@ -980,7 +1149,11 @@ public final class Skills {
             case BLINK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
             case MACHINE_ZONE_PLACE, MACHINE_ZONE_EXCAVATE, MACHINE_ZONE_ATTACK, MACHINE_ZONE_PROTECT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name"; // 木棍工具区块技能（2026-09-08）
             case STICK_TOOL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name"; // 木棍工具占位（2026-09-08）
-            default -> "skill.zifeng_s_custom_skill_tree.unknown.name";
+            // 奥术防护（2026-09-14）：name/desc 走统一 key 后缀，新增技能自动兼容
+            case ARCANE_BULWARK, ARCANE_AMP, SPELL_DAMPEN, ARCANE_ADAPT, SPELL_REFLECT,
+                    SPELL_PURGE, MANA_SIPHON, PURIFY_FIELD, SPELLBREAK_BLADE, ULT_ARCANE_BODY ->
+                    "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
+            default -> "skill.zifeng_s_custom_skill_tree." + skillId + ".name";
         };
     }
 
@@ -1109,7 +1282,8 @@ public final class Skills {
             case BLINK -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
             case MACHINE_ZONE_PLACE, MACHINE_ZONE_EXCAVATE, MACHINE_ZONE_ATTACK, MACHINE_ZONE_PROTECT -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc"; // 木棍工具区块技能（2026-09-08）
             case STICK_TOOL -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc"; // 木棍工具占位（2026-09-08）
-            default -> "skill.zifeng_s_custom_skill_tree.unknown.desc";
+            // 奥术防护（2026-09-14）：desc 同样走统一 key 后缀，新增技能自动兼容
+            default -> "skill.zifeng_s_custom_skill_tree." + skillId + ".desc";
         };
     }
 
@@ -1132,50 +1306,44 @@ public final class Skills {
         return switch (skillId) {
             // ===== 基础属性（每点数值走 Config） =====
             case BODY_HP -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.BODY_HP_PER_POINT.get()));
-            case BODY -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.BODY_ARMOR_PER_POINT.get()),
-                    fmt(org.zifeng.skilltree.Config.BODY_DR_PER_POINT.get() * 100) + "%");
-            case TOUGH -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.TOUGH_TOUGHNESS_PER_POINT.get()),
-                    fmt(org.zifeng.skilltree.Config.TOUGH_KB_PER_POINT.get() * 100) + "%");
+                    fmt(org.zifeng.skilltree.Config.BODY_HP_PER_POINT.get() * LEVEL_COMPRESSION));
             case BLADE -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.BLADE_DAMAGE_PER_POINT.get()));
+                    fmt(org.zifeng.skilltree.Config.BLADE_DAMAGE_PER_POINT.get() * LEVEL_COMPRESSION));
             case ATTACK_SPEED -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.ATTACK_SPEED_PER_POINT.get()));
+                    fmt(org.zifeng.skilltree.Config.ATTACK_SPEED_PER_POINT.get() * LEVEL_COMPRESSION));
             case MINING -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.MINING_SPEED_PER_POINT.get()));
+                    fmt(org.zifeng.skilltree.Config.MINING_SPEED_PER_POINT.get() * LEVEL_COMPRESSION));
             case MOVE -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.MOVE_SPEED_PER_POINT.get()));
+                    fmt(org.zifeng.skilltree.Config.MOVE_SPEED_PER_POINT.get() * LEVEL_COMPRESSION));
             case LUCK -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.LUCK_PER_POINT.get()));
+                    fmt(org.zifeng.skilltree.Config.LUCK_PER_POINT.get() * LEVEL_COMPRESSION));
             case JUMP -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.JUMP_PER_POINT.get()));
+                    fmt(org.zifeng.skilltree.Config.JUMP_PER_POINT.get() * LEVEL_COMPRESSION));
             case FLY -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.FLY_SPEED_PER_POINT.get()));
+                    fmt(org.zifeng.skilltree.Config.FLY_SPEED_PER_POINT.get() * LEVEL_COMPRESSION));
             case SWIM -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.SWIM_SPEED_PER_POINT.get()));
+                    fmt(org.zifeng.skilltree.Config.SWIM_SPEED_PER_POINT.get() * LEVEL_COMPRESSION));
             // ===== 增幅属性（每点百分比走 Config） =====
             case AMP_HP -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.AMP_HP_PER_POINT.get() * 100) + "%");
+                    fmt(org.zifeng.skilltree.Config.AMP_HP_PER_POINT.get() * LEVEL_COMPRESSION * 100) + "%");
             case AMP_TOUGH -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.AMP_TOUGH_PER_POINT.get() * 100) + "%");
+                    fmt(org.zifeng.skilltree.Config.AMP_TOUGH_PER_POINT.get() * LEVEL_COMPRESSION * 100) + "%");
             case AMP_LUCK -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.AMP_LUCK_PER_POINT.get() * 100) + "%");
+                    fmt(org.zifeng.skilltree.Config.AMP_LUCK_PER_POINT.get() * LEVEL_COMPRESSION * 100) + "%");
             case AMP_DAMAGE -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.AMP_DAMAGE_PER_POINT.get() * 100) + "%");
+                    fmt(org.zifeng.skilltree.Config.AMP_DAMAGE_PER_POINT.get() * LEVEL_COMPRESSION * 100) + "%");
             case AMP_ATTACK_SPEED -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.AMP_ATTACK_SPEED_PER_POINT.get() * 100) + "%");
+                    fmt(org.zifeng.skilltree.Config.AMP_ATTACK_SPEED_PER_POINT.get() * LEVEL_COMPRESSION * 100) + "%");
             case AMP_MINING -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.AMP_MINING_PER_POINT.get() * 100) + "%");
+                    fmt(org.zifeng.skilltree.Config.AMP_MINING_PER_POINT.get() * LEVEL_COMPRESSION * 100) + "%");
             case AMP_MOVE -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.AMP_MOVE_PER_POINT.get() * 100) + "%");
+                    fmt(org.zifeng.skilltree.Config.AMP_MOVE_PER_POINT.get() * LEVEL_COMPRESSION * 100) + "%");
             case AMP_JUMP -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.AMP_JUMP_PER_POINT.get() * 100) + "%");
+                    fmt(org.zifeng.skilltree.Config.AMP_JUMP_PER_POINT.get() * LEVEL_COMPRESSION * 100) + "%");
             case AMP_FLY -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.AMP_FLY_PER_POINT.get() * 100) + "%");
+                    fmt(org.zifeng.skilltree.Config.AMP_FLY_PER_POINT.get() * LEVEL_COMPRESSION * 100) + "%");
             case AMP_SWIM -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
-                    fmt(org.zifeng.skilltree.Config.AMP_SWIM_PER_POINT.get() * 100) + "%");
+                    fmt(org.zifeng.skilltree.Config.AMP_SWIM_PER_POINT.get() * LEVEL_COMPRESSION * 100) + "%");
             // 防御强化（金身真解）：物理减伤百分比（Config 是小数 0.005 = 0.5%）
             case AMP_ARMOR -> net.minecraft.network.chat.Component.translatable(getDescription(skillId),
                     fmt(org.zifeng.skilltree.Config.AMP_ARMOR_DR_PER_POINT.get() * 100) + "%");
@@ -1196,15 +1364,19 @@ public final class Skills {
      */
     public static List<Map.Entry<String, Integer>> getPrerequisites(String skillId) {
         return switch (skillId) {
-            case ULT_BLOOD -> List.of(Map.entry(BODY, 500), Map.entry(BLADE, 500));
-            case ULT_GOLDEN -> List.of(Map.entry(TOUGH, 500), Map.entry(AMP_ARMOR, 500));
-            case ULT_MASTER -> List.of(Map.entry(ULT_BLOOD, 1), Map.entry(ULT_GOLDEN, 1), Map.entry(ULT_REVIVE, 1), Map.entry(ULT_REAPER, 1));
-            case ULT_REVIVE -> List.of(Map.entry(LIFESTEAL, 500), Map.entry(CRIT, 500));
-            case ULT_REAPER -> List.of(Map.entry(ARMOR_PEN, 500), Map.entry(BLADE, 500));
+            // 2026-09-14：前置由「铁壁金身 BODY」改为「磐石之躯 TOUGH」（BODY 已删除）
+            case ULT_BLOOD -> List.of(Map.entry(TOUGH, 50), Map.entry(BLADE, 50));
+            // 2026-09-14：金身真解上限为 80，前置要求同步下调（原 500 会永远无法满足）
+            case ULT_GOLDEN -> List.of(Map.entry(TOUGH, 50), Map.entry(AMP_ARMOR, 80));
+            case ULT_MASTER -> List.of(Map.entry(ULT_BLOOD, 1), Map.entry(ULT_GOLDEN, 1), Map.entry(ULT_REVIVE, 1), Map.entry(ULT_REAPER, 1), Map.entry(ULT_ARCANE_BODY, 1));
+            // 奥术神体（2026-09-14 奥术防护）：需先点出奥术壁垒与真解，形成“壁垒→真解→神体”链路
+            case ULT_ARCANE_BODY -> List.of(Map.entry(ARCANE_BULWARK, 10), Map.entry(ARCANE_AMP, 5));
+            case ULT_REVIVE -> List.of(Map.entry(LIFESTEAL, 50), Map.entry(CRIT, 50));
+            case ULT_REAPER -> List.of(Map.entry(ARMOR_PEN, 50), Map.entry(BLADE, 50));
             case ULT_VOID_BODY -> List.of(Map.entry(ULT_MASTER, 1)); // 前置：全能精通
-            case AURA_DAMAGE, AURA_SPEED -> List.of(Map.entry(BLADE, 100), Map.entry(ATTACK_SPEED, 100)); // 锋刃/疾攻 100
-            case AURA_EMPOWER -> List.of(Map.entry(AURA_DAMAGE, 50)); // 杀戮伤害 50
-            case AURA_VOID -> List.of(Map.entry(AURA_DAMAGE, 100)); // 杀戮伤害 100
+            case AURA_DAMAGE, AURA_SPEED -> List.of(Map.entry(BLADE, 10), Map.entry(ATTACK_SPEED, 10)); // 锋刃/疾攻（等级压缩后 10）
+            case AURA_EMPOWER -> List.of(Map.entry(AURA_DAMAGE, 5)); // 杀戮伤害（等级压缩后 5）
+            case AURA_VOID -> List.of(Map.entry(AURA_DAMAGE, 10)); // 杀戮伤害（等级压缩后 10）
             // 机械共鸣：机械之星无前置；共鸣技能需 机械之星 + 对应原技能已学
             case MACHINE_LOOT_BOMB -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(LOOT_BOMB, 1));
             case MACHINE_UNBREAKABLE -> List.of(Map.entry(MACHINE_STAR, 1), Map.entry(UNBREAKABLE, 1));
@@ -1267,6 +1439,19 @@ public final class Skills {
             case IRON_EVOCATION -> Items.BONE;                // 召唤法术强度：骨头（召唤骷髅）
             case IRON_NATURE -> Items.OAK_SAPLING;            // 自然法术强度：橡树苗（自然）
             case IRON_ELDRITCH -> Items.SHULKER_SHELL;        // 异界法术强度：潜影贝壳（异界）
+            // ===== Goety（诡术，2026-09-20）：图标选“灵魂/深暗”系物品，与铁魔法（金属系）区分 =====
+            //   注：全部选用 1.20.1 与 1.21.1 都存在的原版物品（避开 WIND_CHARGE/BREEZE_ROD 等 1.20.5+ 新增物）
+            case GOETY_POTENCY -> Items.DRAGON_BREATH;         // 诡术法术强度：龙息（魔法精华）
+            case GOETY_SOUL_DISCOUNT -> Items.SOUL_SAND;      // 诡术灵魂折扣：灵魂沙（Goety 以“灵魂能量”为施法资源）
+            case GOETY_ABYSS -> Items.ECHO_SHARD;             // 深渊精通：回响碎片（深暗之域，呼应“深渊”）
+            case GOETY_FROST -> Items.BLUE_ICE;               // 冰霜精通：蓝冰（与铁魔法冰霜的浮冰区分）
+            case GOETY_GEOMANCY -> Items.POINTED_DRIPSTONE;   // 地卜精通：滴水石锥（岩石/大地）
+            case GOETY_NECROMANCY -> Items.WITHER_ROSE;       // 死灵精通：凋灵玫瑰（死亡）
+            case GOETY_NETHER -> Items.MAGMA_BLOCK;           // 下界精通：岩浆块（与铁魔法鲜血的下界疣区分）
+            case GOETY_STORM -> Items.LIGHTNING_ROD;          // 风暴精通：避雷针（雷电；与时间风暴同图标，本项目允许此类重复）
+            case GOETY_VOID -> Items.OBSIDIAN;                // 虚空精通：黑曜石（虚空/坚硬）
+            case GOETY_WILD -> Items.VINE;                    // 荒野精通：藤蔓（荒野蔓生；与铁魔法自然的橡树苗区分）
+            case GOETY_WIND -> Items.FIREWORK_ROCKET;         // 风精通：烟花火箭（气流/推进）
             // ===== 基础属性（纵列1） =====
             case BODY_HP -> Items.APPLE;                       // 生命强化：苹果（生命）
             case BODY -> Items.IRON_CHESTPLATE;                // 体魄：铁胸甲（护甲）
@@ -1384,6 +1569,17 @@ public final class Skills {
             case MACHINE_ZONE_ATTACK -> Items.NETHERITE_SWORD;   // 选区攻击：下界合金剑
             case MACHINE_ZONE_PROTECT -> Items.SHIELD;        // 防护选区：盾牌
             case STICK_TOOL -> Items.STICK;                   // 木棍工具占位：木棍（2026-09-08）
+            // ===== 奥术防护（2026-09-14）：图标与语义强关联（魔法/防护类原版物品） =====
+            case ARCANE_BULWARK -> Items.ENCHANTING_TABLE;    // 奥术壁垒：附魔台（奥术）
+            case ARCANE_AMP -> Items.ENCHANTED_BOOK;          // 奥术真解：附魔书（增幅）
+            case SPELL_DAMPEN -> Items.COBWEB;                // 法术抑制：蜘蛛网（拦截弹射物）
+            case ARCANE_ADAPT -> Items.TURTLE_HELMET;         // 适应之躯：海龟壳（逐步适应）
+            case SPELL_REFLECT -> Items.PRISMARINE_SHARD;     // 法术反射：海晶碎片（棱镜折射）
+            case SPELL_PURGE -> Items.MILK_BUCKET;            // 驱法破咒：牛奶桶（清除效果）
+            case MANA_SIPHON -> Items.GHAST_TEAR;             // 法力虹吸：恶魂之泪（吸取）
+            case PURIFY_FIELD -> Items.CONDUIT;               // 净化领域：潮涌核心（领域）
+            case SPELLBREAK_BLADE -> Items.NETHERITE_AXE;     // 破法之刃：下界合金斧（破防）
+            case ULT_ARCANE_BODY -> Items.NETHERITE_CHESTPLATE; // 奥术神体：下界合金胸甲（终极防护）
             default -> Items.BARRIER;
         };
     }

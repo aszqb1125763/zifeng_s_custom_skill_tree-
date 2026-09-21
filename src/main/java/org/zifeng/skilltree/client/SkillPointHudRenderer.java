@@ -217,10 +217,17 @@ public class SkillPointHudRenderer {
 
         // 2. 总技能点（绿色固定，先画——速率行向上堆叠不推它）
         gui.drawString(mc.font, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.hud_skill_point").getString()
-                + String.format("%.1f", totalSkillPoints), x, totalY, COLOR_TOTAL);
+                + String.format("%.1f", totalSkillPoints), x, totalY, COLOR_TOTAL, false);
 
         // 3. 速率行从总数行往上排列（动画：新值滑入放大）
         int rateY = totalY - 10;
+        // ★ 2026-09-20 性能：单位后缀是**字面常量**，原本却写在循环体里逐行重取
+        //   （5 行速率 = 15 次 translatable().getString() / 帧）。提到循环外后只剩 2 次/帧，
+        //   HUD 是常驻渲染，全天候受益。
+        final String unitPerSec = net.minecraft.network.chat.Component.translatable(
+                "ui.zifeng_s_custom_skill_tree.unit_per_sec").getString();
+        final String unitPt = net.minecraft.network.chat.Component.translatable(
+                "ui.zifeng_s_custom_skill_tree.unit_pt").getString();
         for (Map.Entry<String, Line> e : lines.entrySet()) {
             Line line = e.getValue();
             String source = e.getKey();
@@ -238,17 +245,18 @@ public class SkillPointHudRenderer {
             }
             String text;
             int color;
-            String perSec = net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_per_sec").getString();
-            String pt = net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.unit_pt").getString();
+            // ★ 2026-09-21 修复同步缺口：这里原本又重复取了一遍翻译（perSec / pt），
+            //   等于把上面「提到循环外」的优化白做了（5 行速率 = 10 次 translatable/帧）。
+            //   直接用循环外的 unitPerSec / unitPt —— 与 1.20.1 对齐。
             if (converter) {
-                text = displayName + " +" + String.format("%.3f", line.value) + perSec;
+                text = displayName + " +" + String.format("%.3f", line.value) + unitPerSec;
                 color = COLOR_CONVERTER;
             } else if (point) {
                 String sign = line.value >= 0 ? "+" : "";
-                text = displayName + " " + sign + String.format("%.1f", line.value) + pt;
+                text = displayName + " " + sign + String.format("%.1f", line.value) + unitPt;
                 color = line.value >= 0 ? COLOR_CONVERTER : COLOR_DECREASE;
             } else {
-                text = displayName + " +" + String.format("%.0f", line.value) + pt;
+                text = displayName + " +" + String.format("%.0f", line.value) + unitPt;
                 color = COLOR_GIFT;
             }
 
@@ -280,7 +288,7 @@ public class SkillPointHudRenderer {
             gui.pose().pushPose();
             gui.pose().translate(x + slideX, rateY, 0);
             gui.pose().scale(scale, scale, 1.0f);
-            gui.drawString(mc.font, text, 0, 0, curColor);
+            gui.drawString(mc.font, text, 0, 0, curColor, false);
             gui.pose().popPose();
             rateY -= 10;
             if (rateY < 10) {

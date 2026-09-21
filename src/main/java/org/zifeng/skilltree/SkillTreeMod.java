@@ -55,6 +55,8 @@ public class SkillTreeMod {
 
         NeoForge.EVENT_BUS.register(SkillEvents.class);
         NeoForge.EVENT_BUS.register(UltimateEvents.class);
+        // 奥术防护（2026-09-14）：魔法减伤/反射/虹吸/破法之刃/净化领域
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.ArcaneEvents.class);
         // ⚠️ 2026-09-09 Z-Link 迁移后 AuraEvents/ZoneSkillEvents 已无 @SubscribeEvent 方法，
         //    NeoForge 注册空类会崩（has no @SubscribeEvent methods）→ 不再 register（逻辑已由 ZModules 模块接管）。
         NeoForge.EVENT_BUS.register(MagnetEvents.class);

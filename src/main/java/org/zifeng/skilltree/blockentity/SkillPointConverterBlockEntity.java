@@ -354,7 +354,11 @@ public class SkillPointConverterBlockEntity extends BlockEntity implements MenuP
             return;
         }
         long threshold = be.getThreshold();
-        if (be.progress >= threshold) {
+        // ⚠️ 2026-09-20 修复：getThreshold() 由玩家总体转换点数推导，存档被改坏（totalConvertedPoints 为负）
+        //    时可能返回 ≤ 0；原写法 `progress >= threshold` 对 progress=0, threshold=0 也成立，
+        //    紧接着 `progress / threshold` → **ArithmeticException 崩掉服务端方块实体 tick 循环**。
+        //    与 getProgressPercent() 已有的 `threshold <= 0` 守卫保持一致（那里早就防了，这里漏了）。
+        if (threshold > 0 && be.progress >= threshold) {
             long points = be.progress / threshold;
             be.progress %= threshold;
             be.totalConverted += points;

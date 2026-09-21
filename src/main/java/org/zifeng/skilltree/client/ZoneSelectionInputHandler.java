@@ -401,13 +401,14 @@ public final class ZoneSelectionInputHandler {
             mc.player.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 0.6F, 1.0F);
             return;
         }
-        // 本地校验单边 ≤ OperZone.MAX_SIDE 格（超限保留第一角重选，提示同磁铁）
+        // 本地校验单边 ≤ OperZone.MAX_SIDE_ZONE 格（超限保留第一角重选，提示同磁铁）
+        // ⚠️ 2026-09-19：选区专用常量（512）；磁铁屏蔽区仍用 MAX_SIDE（256）
         int minX = Math.min(first.getX(), pos.getX()), maxX = Math.max(first.getX(), pos.getX());
         int minY = Math.min(first.getY(), pos.getY()), maxY = Math.max(first.getY(), pos.getY());
         int minZ = Math.min(first.getZ(), pos.getZ()), maxZ = Math.max(first.getZ(), pos.getZ());
-        if (maxX - minX > OperZone.MAX_SIDE || maxY - minY > OperZone.MAX_SIDE || maxZ - minZ > OperZone.MAX_SIDE) {
+        if (maxX - minX > OperZone.MAX_SIDE_ZONE || maxY - minY > OperZone.MAX_SIDE_ZONE || maxZ - minZ > OperZone.MAX_SIDE_ZONE) {
             mc.player.displayClientMessage(Component.translatable(
-                    "chat.zifeng_s_custom_skill_tree.zone_too_large", String.valueOf(OperZone.MAX_SIDE)), true);
+                    "chat.zifeng_s_custom_skill_tree.zone_too_large", String.valueOf(OperZone.MAX_SIDE_ZONE)), true);
             return;
         }
         // 大选区温馨提醒（2026-09-12）：格数超阀值→提示可能卡顿，由玩家自行决定是否使用

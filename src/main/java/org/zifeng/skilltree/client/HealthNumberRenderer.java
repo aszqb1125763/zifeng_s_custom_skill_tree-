@@ -144,6 +144,6 @@ public final class HealthNumberRenderer {
     private static void drawRightAligned(GuiGraphics gui, Minecraft mc, String text, int rightEdge, int y, int color) {
         int w = mc.font.width(text);
         int x = rightEdge - w;
-        gui.drawString(mc.font, text, x, y, color, true);
+        gui.drawString(mc.font, text, x, y, color, false);
     }
 }

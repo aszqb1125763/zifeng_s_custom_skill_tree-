@@ -78,13 +78,43 @@ public final class ZoneSkillEvents {
     /** 进度上报间隔（tick；20 tick = 1 秒） */
     private static final int PROGRESS_REPORT_TICKS = 20;
 
+    /**
+     * ★ 2026-09-15 掉落模拟标志（<b>1.20.1 专用</b>；NeoForge 无需，见下）。
+     *
+     * <h2>为什么需要</h2>
+     * 1.20.1 的技能掉落管线挂在 <b>GLM（全局掉落修饰器）</b>上，而 GLM 是在
+     * {@code Block.getDrops} <b>内部</b>执行的；本模块的 {@link #simulateDrops} 恰好在
+     * 「清空方块之前」调 {@code Block.getDrops} 去模拟一次掉落 → GLM 在模拟里
+     * 【把掉落当场挪进容器并 clear 列表】→ 模板恒为空 → 结算（×格数）全部跳过，
+     * 玩家只收到「模拟那一次」的量（实测：8763 格铁矿只给 1 个粗铁）。
+     *
+     * <h2>怎么办</h2>
+     * 模拟期间置位本标志；{@code SkillTreeLootModifier} 见标志为真则<b>原样返回</b>
+     * （不熔炼/不倍率/不挪移）——这三项由 {@link #simulateDrops} 自己按模板应用、
+     * 由 {@link #flushDrops} 在 tick 末按「结算后的完整数量」入容器，因此不丢效果。
+     *
+     * <p>NeoForge 的掉落事件（{@code BlockDropsEvent}）在方块破坏路径上触发、
+     * <b>不在</b> {@code Block.getDrops} 内，所以 1.21.1 本来就不会中招；
+     * 本标志在 1.21.1 为兼容保留（双版本源码一致），无人读取、无副作用。
+     * <p>用 {@link ThreadLocal} 而非 static 字段：模拟只发生在服务器主线程，且同一线程
+     * 内其它来源（区块生成掉落等）不会被误判。
+     */
+    private static final ThreadLocal<Boolean> DROP_SIMULATION =
+            ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+    /** 供 {@code SkillTreeLootModifier} 查询：当前是否处于选区挖掘的掉落模拟阶段 */
+    public static boolean isSimulatingDrops() {
+        return Boolean.TRUE.equals(DROP_SIMULATION.get());
+    }
+
     /** 进行中的选区作业（玩家 UUID → 作业）。单人生效，每人最多一个。 */
     private static final java.util.Map<java.util.UUID, Job> JOBS = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * 一次选区作业（放置或挖掘）：选区快照 + 遍历状态 + 本次改动计数。
      *
-     * <p><b>遍历顺序：X 最快 → Z → Y 最慢，且 Y 从高到低（自上而下逐层）。</b>
+     * <p><b>遍历顺序（2026-09-15 纵向切片起）：Y 最内（高→低）→ X 中间 → Z 最外。</b>
+     * 即“柱 (minX,minZ) 自上而下走完 → 柱 (minX+1,minZ) → … → 柱 (maxX,maxZ)”。
      * <p>高→低的好处：上层重力方块（沙/砾石）在被处理时其下方支撑还在，会被**直接挖掉**，
      * 不会因为支撑先被抽走而转化为掉落物（避免成千上万个掉落实体）。
      * <p>⚠️ 2026-09-12 曾试过层内按区块分组（C 方案）以提升缓存局部性，用户确认不需要。
@@ -98,8 +128,22 @@ public final class ZoneSkillEvents {
         final BlockState placeState;              // 仅放置：要放的方块状态
         final BlockItem tagItem;                  // 仅放置：标签物品（取材料比对用）
 
-        // ---- 遍历状态（curX 用 minX-1 哨兵，使首次 advanceCursor() 落到 minX） ----
+        // ---- 遍历状态（只有 Y 需要哨兵：Y 最内层，首次 --curY 落到 maxY） ----
         int curX, curY, curZ;
+
+        // ★ 2026-09-19 分批（batch）：把选区在 X-Z 平面上切成 batchSide×batchSide 根柱的块，
+        //    逐批处理（批内仍是「整柱自上而下」）。这样单批规模与旧的 256³ 同量级，
+        //    内存与单 tick 负载不随【总选区面积】增长 → 单边上限才敢从 256 提到 512。
+        //    ⚠️ Y 方向【不分批】（始终 minY..maxY 全高）：分批只切 X-Z 平面，
+        //       否则一根柱会被切断，丧失「整柱原子化」与光照一次到位的性能优势。
+        /** 批次边长（格）：构造时从配置快照，作业期间不变 */
+        final int batchSide;
+        /** X 方向批数 / Z 方向批数（向上取整） */
+        final int batchColsX, batchColsZ;
+        /** 当前批次索引（0 起，先 X 后 Z 推进）；达到 batchColsX*batchColsZ 即全部完成 */
+        int batchIndex;
+        /** 当前批次的 X / Z 范围（Y 不分批，始终 minY..maxY） */
+        int batchMinX, batchMaxX, batchMinZ, batchMaxZ;
 
         int scanned;               // 已扫描格数（含空气；进度分子）
         int changed;               // 实际改动方块数
@@ -114,10 +158,33 @@ public final class ZoneSkillEvents {
         final java.util.List<ItemStack> pendingDrops = new java.util.ArrayList<>();
 
         // ---- 分项计时（2026-09-12：定位真实瓶颈，完成时打进日志） ----
-        long tDrops;   // Block.getDrops（战利品表）
-        long tSmelt;   // 自动熔炼 / 点石成金
+        long tDrops;   // 掉落模拟（每类型一次）
+        long tSmelt;   // 结算建栈（类型 → 物品×数量）
         long tRemove;  // 移除方块
         long tInsert;  // 掉落入容器
+
+        // ---- ★ 2026-09-15 批量结算（每层：扫描建表 → 统一清空 → 按类型结算）----
+        // 设计：逐格“读方块 + 计数 + 清空”，每遇到新类型时【立即模拟一次掉落】
+        // （此刻方块还在，带真工具→粗矿/模组掉落/精准采集/时运全部由原版自己算）；
+        // 层末用“模板 × 格数”一次性结算 → 掉落管线从 O(格数) 降到 O(类型数)。
+        /** 当前柱的类型计数（类型 → 格数）；每柱结算后清空 */
+        final java.util.Map<BlockState, Integer> layerCounts = new java.util.LinkedHashMap<>();
+        /**
+         * ★ 掉落模板缓存（<b>作业级</b>，不随柱结算清空！）。
+         *
+         * <p>⚠️ 2026-09-15 回归修复：原先本字段随每次结算清空。当结算粒度从“层”改成“柱”后，
+         * 变成了每 256 格就清一次 → {@code simulateDrops} 的调用量暴涨约 256 倍
+         * （实测「取掉落」分项从 194ms 涨到 2076~3207ms）。
+         * 现改为<b>作业级缓存</b>，仅在<b>工具变化</b>时失效重建（工具变了掉落才可能变）。
+         */
+        final java.util.Map<BlockState, java.util.List<ItemStack>> dropTemplates = new java.util.LinkedHashMap<>();
+        /** dropTemplates 对应的工具快照（工具变化 → 模板失效） */
+        ItemStack dropTemplatesTool = ItemStack.EMPTY;
+        // ★ 当前正在处理的柱子（用于判定“换柱”）；Integer.MIN_VALUE = 尚未开始
+        int layerX = Integer.MIN_VALUE;
+        int layerZ = Integer.MIN_VALUE;
+        /** 当前柱使用的工具（每柱开始时读一次，不逐格读） */
+        ItemStack layerTool = ItemStack.EMPTY;
 
         Job(String skillId, String dim, OperZone zone, BlockState placeState, BlockItem tagItem) {
             this.skillId = skillId;
@@ -132,22 +199,87 @@ public final class ZoneSkillEvents {
             this.maxY = zone.maxY();
             this.maxZ = zone.maxZ();
             this.total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-            this.curX = minX - 1; // 哨兵（见字段注释）
-            this.curY = maxY;     // ★ 从最高层开始（Y 高→低）
-            this.curZ = minZ;
+            // ★ 2026-09-19 分批：先把选区在 X-Z 平面上切块，算出批数与【第一批】范围
+            this.batchSide = Math.max(1, org.zifeng.skilltree.Config.ZONE_BATCH_SIDE.get());
+            this.batchColsX = (maxX - minX) / batchSide + 1;
+            this.batchColsZ = (maxZ - minZ) / batchSide + 1;
+            this.batchIndex = 0;
+            this.applyBatchBounds();
+            // ★ 2026-09-15 纵向切片：最小单位 = 一根 (x,z) 上的整根柱（Y 高→低）
+            //    ⚠️ 只有 Y 需要哨兵（最内层，第一次先递减落到 maxY）；X/Z 直接取起始值。
+            //       曾犯的错：curX 也写成 minX-1，而首次调用只推进 Y、X 不会被补上
+            //       → 第一根柱实际跑在 (minX-1, *, minZ)，**多挖了选区外一整列**（已修）
+            this.curY = maxY + 1; // Y 最内层哨兵：首次 --curY 落到 maxY
+            this.curX = batchMinX; // ★ X 从【当前批次】起点开始（非整个选区）
+            this.curZ = batchMinZ; // ★ Z 从【当前批次】起点开始（非整个选区）
         }
 
-        /** 推进到下一个坐标；无更多坐标返回 false。顺序：X → Z → Y，且 Y 从高到低 */
+        /**
+         * ★ 2026-09-15 纵列优先（纵向切片）推进器。
+         *
+         * <p><b>顺序</b>：Y 最内（高→低）→ X 中间（低→高）→ Z 最外（低→高）。
+         * 即“柱 (minX,minZ) 从上到下走完 → 柱 (minX+1,minZ) → … → 柱 (maxX,maxZ)”。
+         *
+         * <p><b>为什么换成这个顺序</b>（原来的顺序是 X 内→Z 中→Y 外，即“一层一层”）：
+         * 原顺序下，同一根柱的相邻两格分属相邻两层，而一层有 65536 格、要跨好几 tick →
+         * 同一列的 256 格被拉得非常开，中间穿插了几百次 tick 末的 {@code runLightUpdates}，
+         * 导致该列的天空光被反复重算。
+         *
+         * <p>纵列优先后，256 格（远小于每 tick 产能）能在极短时间内连续处理完 →
+         * 该列的天空光状态一次性走到最终值，列更新有望从 256 次降到 1 次。
+         *
+         * <p>⚠️ 重力方块：柱内 Y 高→低，上层沙/砾石先被主动删除（此时下方支撑还在），
+         * 因此不会因失去支撑而变成掉落物（与旧顺序同理）。
+         *
+         * <p>★ 2026-09-19 分批：X/Z 的推进边界不是整个选区，而是【当前批次】的
+         * {@code batchMinX/MaxX/MinZ/MaxZ}；每批走完调 {@link #nextBatch()} 切下一批。
+         * 因此「柱内自上而下」这个原子单位完全没变，只是把大选区拆成多次小作业。
+         */
         boolean advanceCursor() {
-            if (++curX <= maxX) {
-                return true;
+            if (--curY >= minY) {
+                return true;        // ① Y 最内：柱内自上而下（高→低）
             }
-            curX = minX;
-            if (++curZ <= maxZ) {
-                return true;
+            curY = maxY;
+            if (++curX <= batchMaxX) {
+                return true;        // ② X 中间：换下一根柱（★ 至【批次】右边界为止）
             }
-            curZ = minZ;
-            return --curY >= minY;
+            curX = batchMinX;
+            if (++curZ <= batchMaxZ) {
+                return true;        // ③ Z 最外：换下一排（★ 至【批次】后边界为止）
+            }
+            return nextBatch();     // ④ ★ 本批走完 → 切下一批；所有批完成才返回 false
+        }
+
+        /**
+         * ★ 2026-09-19 按 batchIndex 重算当前批次的 X / Z 范围（Y 始终全高 minY..maxY）。
+         * <p>批次网格按「先 X 后 Z」排列：{@code bx = idx % colsX}、{@code bz = idx / colsX}。
+         * <p>边界钳制到选区真实范围（最后一行/列可能不满一个 batchSide）。
+         */
+        private void applyBatchBounds() {
+            int bx = batchIndex % batchColsX;
+            int bz = batchIndex / batchColsX;
+            batchMinX = minX + bx * batchSide;
+            batchMinZ = minZ + bz * batchSide;
+            batchMaxX = Math.min(batchMinX + batchSide - 1, maxX);
+            batchMaxZ = Math.min(batchMinZ + batchSide - 1, maxZ);
+        }
+
+        /**
+         * ★ 2026-09-19 切到下一批。返回 false = 全部批次已完成（作业结束）。
+         * <p>把游标搬到新批起点；Y 无需处理——{@code advanceCursor()} 每轮都会重新从 maxY 开始。
+         *
+         * <p>⚠️ 切批会让 curX/curZ 跳变，下一轮循环的「换柱判定」会因此触发一次
+         * {@code settleColumn} —— 这正是期望行为（旧批最后一列必须结算），
+         * 且 layerCounts 为空时 settleColumn 会提前返回，无额外开销。
+         */
+        private boolean nextBatch() {
+            if (++batchIndex >= batchColsX * batchColsZ) {
+                return false;       // 所有批处理完毕
+            }
+            applyBatchBounds();
+            curX = batchMinX;
+            curZ = batchMinZ;
+            return true;
         }
 
         int percent() {
@@ -267,11 +399,15 @@ public final class ZoneSkillEvents {
         advance(player, record, level, job, jobDeadlineNanos());
     }
 
-    /** 不可被选区挖掘破坏的方块（基岩/末地门框架/末地折跃门/屏障等，参考方块破坏保护） */
+    /**
+     * 不可被选区挖掘破坏的方块（末地门框架/末地折跃门/屏障/命令方块/结构方块等，参考方块破坏保护）。
+     * <p>⚠️ 2026-09-15 用户要求：<b>基岩不在本表</b> —— 它走 {@code advanceExcavate} 里的
+     * <b>直接清除分支</b>（与流体同款）：不产掉落、不进掉落管线、不计入 layerCounts。
+     * <p>保留的 9 种仍不可破：末地门框架 / 末地传送门 / 末地折跃门 / 屏障 / 命令方块×3 / 结构方块 / 拼图方块。
+     */
     private static boolean isUnyielding(BlockState state) {
         Block b = state.getBlock();
-        return b == net.minecraft.world.level.block.Blocks.BEDROCK
-                || b == net.minecraft.world.level.block.Blocks.END_PORTAL_FRAME
+        return b == net.minecraft.world.level.block.Blocks.END_PORTAL_FRAME
                 || b == net.minecraft.world.level.block.Blocks.END_PORTAL
                 || b == net.minecraft.world.level.block.Blocks.END_GATEWAY
                 || b == net.minecraft.world.level.block.Blocks.BARRIER
@@ -311,7 +447,9 @@ public final class ZoneSkillEvents {
      */
     private static void zoneAttack(ServerPlayer player, PlayerSkillRecord record, OperZone zone) {
         int interval = AuraEvents.auraAttackInterval(player, record);
-        if (player.level().getGameTime() % interval != 0) {
+        // ⚠️ 2026-09-20 多人优化：与 AuraEvents.auraAttack 同一问题 —— 原写法
+        //   `gameTime % interval` 会让同等级玩家在同一 tick 齐发。加实体 id 错峰。
+        if ((player.level().getGameTime() + player.getId()) % interval != 0) {
             return;
         }
         float[] p = AuraEvents.auraAttackParams(player, record);
@@ -418,51 +556,262 @@ public final class ZoneSkillEvents {
         if (System.nanoTime() >= deadlineNanos) {
             return true;
         }
-        boolean place = Skills.MACHINE_ZONE_PLACE.equals(job.skillId);
-        ItemStack tool = player.getMainHandItem();
-        // 挖掘用：自动熔炼/点石成金（getBlockDropMultiplier 内部已尊重开关+生效等级，未学=1.0）
-        boolean smeltOn = !place && record.getLearnedPoints(Skills.AUTO_SMELT) > 0
-                && record.isEnabled(Skills.AUTO_SMELT);
-        double blockMult = place ? 1.0
-                : org.zifeng.skilltree.skill.SkillEffects.getBlockDropMultiplier(record);
-        job.vacuumBound = !place && record.hasLootVacuumBind(); // 掉落是"攒起来批量入"还是"直接丢弃"
+        // ★ 2026-09-15：挖掘走「逐层扫描建表 → 统一清空 → 按类型结算」批量路径；放置保持原逻辑
+        if (!Skills.MACHINE_ZONE_PLACE.equals(job.skillId)) {
+            return advanceExcavate(player, record, level, job, deadlineNanos);
+        }
+        job.vacuumBound = false;
         int sinceCheck = 0; // 距离上次时间检查已处理格数（降频用，见 TIME_CHECK_INTERVAL）
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
         while (job.advanceCursor()) {
             pos.set(job.curX, job.curY, job.curZ);
             job.scanned++;
-            if (place) {
-                BlockState cur = level.getBlockState(pos);
-                if (cur.isAir() || cur.canBeReplaced()) {
-                    ItemStack material = takeMaterial(player, record, job.tagItem, 1);
-                    if (material.isEmpty()) {
-                        // 材料耗尽：中断作业（与旧行为一致：缺则停）
-                        flushDrops(player, record, job);
-                        finishJob(player, job, false);
-                        player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
-                                "chat.zifeng_s_custom_skill_tree.zone_job_nomaterial"), true);
-                        return false;
-                    }
-                    level.setBlock(pos, job.placeState, 3);
-                    job.changed++;
+            BlockState cur = level.getBlockState(pos);
+            if (cur.isAir() || cur.canBeReplaced()) {
+                ItemStack material = takeMaterial(player, record, job.tagItem, 1);
+                if (material.isEmpty()) {
+                    // 材料耗尽：中断作业（与旧行为一致：缺则停）
+                    finishJob(player, job, false);
+                    player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                            "chat.zifeng_s_custom_skill_tree.zone_job_nomaterial"), true);
+                    return false;
                 }
-            } else if (excavateOne(player, record, level, job, pos, tool, smeltOn, blockMult)) {
+                level.setBlock(pos, job.placeState, 3);
                 job.changed++;
             }
             // 时间检查降频：每 TIME_CHECK_INTERVAL 格才调一次 nanoTime（见常量注释）
             if (++sinceCheck >= TIME_CHECK_INTERVAL) {
                 sinceCheck = 0;
                 if (System.nanoTime() >= deadlineNanos) {
-                    flushDrops(player, record, job); // 本 tick 攒的掉落先入容器
                     reportProgress(player, job);
                     return true; // 预算用完：保持作业，下 tick 继续（由 ZoneWorkModule 驱动）
                 }
             }
         }
-        flushDrops(player, record, job);
         finishJob(player, job, true);  // 遍历结束 = 完成
         return false;
+    }
+
+    /**
+     * ★ 2026-09-15 挖掘批量路径：<b>逐层「扫描建表 → 统一清空 → 按类型结算」</b>。
+     *
+     * <h2>为什么快</h2>
+     * 原实现每格都跑一遍掉落管线（战利品表 + 熔炼 + 倍率），在"同质方块占绝大多数"的场景下
+     * 是纯粹的重复劳动。现改为：
+     * <ol>
+     *   <li><b>逐格</b>：读方块 → 类型计数 +1 → 清空（<b>不算掉落</b>）</li>
+     *   <li><b>遇新类型时</b>：立即用真工具模拟一次掉落（此刻方块还在）→ 存为模板</li>
+     *   <li><b>层末</b>：模板 × 格数 → 一次性结算入容器</li>
+     * </ol>
+     * 掉落计算从 {@code O(格数)} 降到 {@code O(类型数)}。
+     *
+     * <h2>为什么粗矿/模组矿石不用写死映射</h2>
+     * "模拟"就是真的调 {@code Block.getDrops}，所以粗矿、模组新增矿石、模组改写掉落、
+     * 精准采集、时运全部由原版自己算，我们不需要知道任何规则。
+     *
+     * <p>⚠️ 未绑定容器时（掉落本来就全丢弃）连计数与模拟都跳过 → 最快路径。
+     * <p>⚠️ 工具<b>每柱读一次</b>（不逐格读）；柱内换工具不影响本柱（玩家感知不到）。
+     * <p>⚠️ 掉落模板缓存是<b>作业级</b>的（{@link Job#dropTemplates}），仅在工具变化时失效。
+     *
+     * <h2>★ 2026-09-15 不产生更新（用户要求）</h2>
+     * 清空方块用 {@code setBlock(pos, AIR, 18)}（= {@code UPDATE_CLIENTS | UPDATE_KNOWN_SHAPE}），
+     * 而不是 {@code removeBlock}（标志 3），因此：
+     * <ul>
+     *   <li>{@code UPDATE_CLIENTS(2)} 保留 → 客户端照常看到方块消失</li>
+     *   <li>无 {@code UPDATE_NEIGHBORS(1)} → 邻居不收到 {@code neighborChanged}
+     *       → <b>流体不会因为邻居变化而被调度（这就是“边界处水很卡”的根源）</b></li>
+     *   <li>有 {@code UPDATE_KNOWN_SHAPE(16)} → {@code Level.markAndNotifyBlock} 里
+     *       {@code (flags & 16) == 0} 为假 → 整块跳过形状传播（栅栏/墙/管道/水流那套）</li>
+     * </ul>
+     * 保留的（与 flags 无关，在 {@code LevelChunk.setBlockState} 内）：高度图x4 / 光照 / 区块标记。
+     * <p>代价：挖空区<b>边缘</b>的沙/砾石/水不会即时反应（悬停不动）—— 用户明确选择此行为。
+     */
+    private static boolean advanceExcavate(ServerPlayer player, PlayerSkillRecord record, ServerLevel level,
+                                           Job job, long deadlineNanos) {
+        // 未绑容器 → 掉落全部丢弃，连计数/模拟都不需要（最快路径）
+        job.vacuumBound = record.hasLootVacuumBind();
+        final boolean needDrops = job.vacuumBound;
+        final boolean smeltOn = needDrops && record.getLearnedPoints(Skills.AUTO_SMELT) > 0
+                && record.isEnabled(Skills.AUTO_SMELT);
+        final double blockMult = needDrops
+                ? org.zifeng.skilltree.skill.SkillEffects.getBlockDropMultiplier(record) : 1.0;
+
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        // ★ 2026-09-15 纵列原子化（用户实测反馈）：预算检查只在【柱末】做。
+        //    原实现每 TIME_CHECK_INTERVAL(64) 格查一次截止时刻，与柱高（如 256）不对齐
+        //    → 柱子在中间被 tick 边界切断 → 玩家看到“纵列走到一半就分段消失”。
+        //    现改为整根柱处理完才检查 → 每根柱要么整根消失、要么完全不发生。
+        //    超支上限 = 一根柱的耗时（256 格 × 2.83μs ≈ 0.72ms），对 45ms 预算 ≈ 1.6%，可忽略。
+
+        while (job.advanceCursor()) {
+            // ★ 换柱（X/Z 变化）：先结算上一根柱，再刷新本柱工具
+            if (job.curX != job.layerX || job.curZ != job.layerZ) {
+                settleColumn(player, record, job);
+                job.layerX = job.curX;
+                job.layerZ = job.curZ;
+                job.layerTool = player.getMainHandItem().copy(); // 每柱读一次工具
+                // ★ 工具变化 → 作业级模板缓存失效（掉落只取决于「方块类型 + 工具」）
+                if (!ItemStack.matches(job.layerTool, job.dropTemplatesTool)) {
+                    job.dropTemplates.clear();
+                    job.dropTemplatesTool = job.layerTool.copy();
+                }
+            }
+            pos.set(job.curX, job.curY, job.curZ);
+            job.scanned++;
+
+            BlockState state = level.getBlockState(pos);
+            if (!state.isAir()) {
+                // ★ 2026-09-15：基岩与流体同款处理 —— 直接清除，**完全不进掉落管线**。
+                //    用户要求：区块拆解可破基岩、不联动「万物挖掘」、不给掉落。
+                //    为何走这条分支而不只是从 isUnyielding 移除：
+                //      · 不调 simulateDrops → 不会触发【模拟期副作用】挂载点
+                //        （1.20.1 = GLM + BlockDropsMixin；1.21.1 = BlockDropsEvent）
+                //      · 不计入 layerCounts → 结算阶段不会为基岩做任何展开
+                //      · 无掉落表也不查，省一次 Block.getDrops
+                final boolean directClear = !state.getFluidState().isEmpty()
+                        || state.getBlock() == net.minecraft.world.level.block.Blocks.BEDROCK;
+                if (directClear) {
+                    // 流体（水/岩浆，含流动态）/ 基岩：直接清空为空气——不产掉落、不计数
+                    // ★ 标志 18：不通知邻居/不传播形状 → 避免流体被调度（水的级联扩散）
+                    level.setBlock(pos, EXCAVATE_AIR, EXCAVATE_FLAGS);
+                    job.changed++;
+                } else if (!isUnyielding(state)) {
+                    if (needDrops) {
+                        // ★ 新类型 → 立即模拟一次掉落（此刻方块还没被清掉，能拿到方块实体）
+                        if (!job.dropTemplates.containsKey(state)) {
+                            long t0 = System.nanoTime();
+                            job.dropTemplates.put(state,
+                                    simulateDrops(player, record, level, pos, state, job.layerTool, smeltOn, blockMult));
+                            job.tDrops += System.nanoTime() - t0;
+                        }
+                        job.layerCounts.merge(state, 1, Integer::sum);
+                    }
+                    // ★ 清空方块（掉落已在上面模拟成模板，这里不再逐格计算）
+                    // ★ 标志 18：客户端同步保留（玩家能看到消失），但不通知邻居、不传播形状
+                    long tr0 = System.nanoTime();
+                    level.setBlock(pos, EXCAVATE_AIR, EXCAVATE_FLAGS);
+                    job.tRemove += System.nanoTime() - tr0;
+                    job.changed++;
+                }
+            }
+
+            // ★ 预算检查点 = 柱末（Y 已递减到底，本格是本柱最后一格）。
+            //    为何放柱末而不是柱首：advanceCursor() 已把游标推到位，若在柱首中断返回，
+            //    下个 tick 会再推进一格 → 跳过新柱的第一格（少挖一格）。放柱末则游标停在
+            //    本柱最后一格，下个 tick 正好推进到下一根柱首，一格不漏。✓
+            if (job.curY == job.minY && System.nanoTime() >= deadlineNanos) {
+                // ★ 只在 tick 末尾真正入容器（解析绑定容器有开销，不能每柱解析）
+                flushDrops(player, record, job);
+                reportProgress(player, job);
+                return true; // 预算用完：本柱已处理完并结算，下 tick 从下一根柱继续
+            }
+        }
+        settleColumn(player, record, job); // 最后一根柱
+        flushDrops(player, record, job);  // 最后一次入容器
+        finishJob(player, job, true);     // 遍历结束 = 完成
+        return false;
+    }
+
+    /**
+     * ★ 2026-09-15：区块拆解清空方块用的固定参数。
+     * <pre>
+     * EXCAVATE_FLAGS = Block.UPDATE_CLIENTS(2) | Block.UPDATE_KNOWN_SHAPE(16) = 18
+     * </pre>
+     * <b>为什么不通知邻居（用户明确要求“区域内方块消失不产生更新”）</b>：
+     * <ul>
+     *   <li><b>性能</b>：去掉 {@code UPDATE_NEIGHBORS(1)} → 省掉每格 6 次邻居回调 + 级联；
+     *       去掉形状传播 → 跳过 {@code Level.markAndNotifyBlock} 里的 {@code updateNeighbourShapes}</li>
+     *   <li><b>★ 避开流体卡顿</b>：{@code LiquidBlock.neighborChanged} 会调 {@code level.scheduleTick(...)}
+     *       调度流体 tick —— 之前“边界处的水运算很卡”正是这里来的。不通知邻居 → 不会被调度。</li>
+     *   <li><b>正确性</b>：遍历是「自上而下、整层扫完再下一层」，区域内每格都会被我们主动清掉，
+     *       所以它们不需要“因邻居变化而反应”；重力方块也不会因为支撑被抽走而变成掉落物。</li>
+     * </ul>
+     * <b>保留</b>：{@code UPDATE_CLIENTS} → 客户端照常收到方块消失（玩家能看到）。
+     * <p><b>已知代价</b>：挖空区<b>边缘</b>（选区外那一圈）的沙/砾石/水不会即时反应（悬停不动），
+     * 需等其它原因触发更新。用户已确认接受此行为。
+     */
+    private static final int EXCAVATE_FLAGS = 2 | 16; // UPDATE_CLIENTS | UPDATE_KNOWN_SHAPE
+
+    /** 区块拆解清空后的方块状态（空气，复用同一实例） */
+    private static final BlockState EXCAVATE_AIR =
+            net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+
+    /**
+     * 结算一根柱：把「类型 → 格数」按<b>作业级</b>掉落模板展开成物品堆，<b>只写入 pendingDrops（纯内存）</b>。
+     * <p>模板已在扫描时模拟并应用过熔炼/倍率，这里只做「×格数」的批量展开。
+     * <p>⚠️ 建栈时按单堆上限切分（5000 个物品 → 79 个 64 堆，而不是 5000 个 1 堆）。
+     * <p>⚠️ <b>不在此处入容器</b>：解析绑定容器有开销（{@code ResourceLocation.parse} + {@code getChunk}），
+     * 而本方法每根柱（256 格）就调一次，共 65536 次 → 必须在 tick 末尾统一 {@link #flushDrops}。
+     * <p>⚠️ <b>也不清 {@link Job#dropTemplates}</b>：它是作业级缓存，否则每 256 格就要重新模拟一次掉落。
+     */
+    private static void settleColumn(ServerPlayer player, PlayerSkillRecord record, Job job) {
+        if (job.layerCounts.isEmpty()) {
+            return;
+        }
+        long t0 = System.nanoTime();
+        for (java.util.Map.Entry<BlockState, Integer> e : job.layerCounts.entrySet()) {
+            java.util.List<ItemStack> tpl = job.dropTemplates.get(e.getKey());
+            if (tpl == null || tpl.isEmpty()) {
+                continue;
+            }
+            int blocks = e.getValue();
+            for (ItemStack one : tpl) {
+                if (one == null || one.isEmpty()) {
+                    continue;
+                }
+                long remaining = (long) one.getCount() * blocks;
+                int maxStack = Math.max(1, one.getMaxStackSize());
+                while (remaining > 0) {
+                    int take = (int) Math.min(maxStack, remaining);
+                    ItemStack s = one.copy();
+                    s.setCount(take);
+                    job.pendingDrops.add(s);
+                    remaining -= take;
+                }
+            }
+        }
+        job.tSmelt += System.nanoTime() - t0; // 结算建栈耗时（复用 tSmelt 槽位）
+        job.layerCounts.clear();
+        // ⚠️ 不清 dropTemplates：它是作业级缓存（仅在工具变化时失效）
+    }
+
+    /**
+     * 掉落模拟（每个方块类型只调一次）：走原版 {@link Block#getDrops}，再按技能规则应用
+     * 自动熔炼与点石成金倍率，得到「该类型的基准掉落」作为模板。
+     * <p>因为用的是玩家主手真工具，所以精准采集 / 时运 / 粗矿 / 模组自定义掉落全部自动正确。
+     * <p>★ 每种方块类型独立一项（铁矿石/深板岩铁矿石/末地铁矿石/模组铁矿各算一次），
+     * 结算时按物品自动合并（多种铁矿 → 同一个粗铁堆）。
+     */
+    private static java.util.List<ItemStack> simulateDrops(ServerPlayer player, PlayerSkillRecord record,
+                                                           ServerLevel level, BlockPos pos, BlockState state,
+                                                           ItemStack tool, boolean smeltOn, double blockMult) {
+        // ⚠️ 先用 state.hasBlockEntity() 判断（纯数据标志，零查询开销），只有真有 BE 才查区块
+        net.minecraft.world.level.block.entity.BlockEntity be =
+                state.hasBlockEntity() ? level.getBlockEntity(pos) : null;
+        // ★ 2026-09-15 关键修复（见 DROP_SIMULATION 注释）：模拟期间屏蔽 GLM 副作用。
+        //    1.20.1 的 GLM 在 Block.getDrops 内部执行，若不禁用会【当场把掉落挪走并 clear】
+        //    → 本方法拿到空模板 → 结算（×格数）全部跳过 → 玩家只收到“模拟那一次”的量。
+        //    禁用后拿到的是【原始掉落】；熔炼/倍率由下面两段自己应用
+        //    （与 1.21.1 的 BlockDropsEvent 语义一致）。
+        //    另：包一层 ArrayList —— 原版在无掉落表时返回 Collections.emptyList()（不可变），
+        //    而下面的 applyAutoSmelt 会 set(i, ...)，防御性转可变避免潜在 UnsupportedOperationException。
+        java.util.List<ItemStack> drops;
+        DROP_SIMULATION.set(Boolean.TRUE);
+        try {
+            drops = new java.util.ArrayList<>(Block.getDrops(state, level, pos, be, player, tool));
+        } finally {
+            DROP_SIMULATION.set(Boolean.FALSE);
+        }
+        // 自动熔炼：统一走 UltimateEvents.applyAutoSmelt（唯一入口，含黑名单/配方缓存）
+        if (smeltOn && !drops.isEmpty()) {
+            org.zifeng.skilltree.event.UltimateEvents.applyAutoSmelt(player, drops, record);
+        }
+        // 点石成金：仅吃时运的方块（矿石类）掉落×倍率（与正常挖掘语义一致，防泥土/石头刷量）
+        if (blockMult > 1.0 && org.zifeng.skilltree.event.UltimateEvents.isOreBlock(state, level)) {
+            org.zifeng.skilltree.event.UltimateEvents.applyDropMultiplierStacks(drops, player, blockMult);
+        }
+        return drops;
     }
 
     /**
@@ -482,64 +831,6 @@ public final class ZoneSkillEvents {
         }
         job.pendingDrops.clear();
         job.tInsert += System.nanoTime() - t0;
-    }
-
-    /**
-     * 挖掘单格。
-     * @return true = 实际改动了方块（非空气、非不可破坏方块）
-     */
-    private static boolean excavateOne(ServerPlayer player, PlayerSkillRecord record, ServerLevel level,
-                                       Job job, BlockPos pos, ItemStack tool, boolean smeltOn, double blockMult) {
-        BlockState state = level.getBlockState(pos);
-        if (state.isAir()) {
-            return false;
-        }
-        // 流体（水/岩浆，含流动态）：直接清空为空气——不产掉落、不走熔炼/倍率（2026-09-08）
-        if (!state.getFluidState().isEmpty()) {
-            level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
-            return true;
-        }
-        if (isUnyielding(state)) {
-            return false; // 基岩等无法破坏方块：直接忽视、不拆除（不兼容万物挖掘，太 OP）
-        }
-        long t0 = System.nanoTime();
-        // 取掉落（附魔生效：精准采集/时运由工具提供）
-        // ⚠️ 2026-09-12 性能优化：先用 state.hasBlockEntity() 判断（纯数据标志，来自 Block，
-        //    零查询开销），只有真有 BE 的方块才调 level.getBlockEntity(pos)（会查区块）。
-        net.minecraft.world.level.block.entity.BlockEntity be =
-                state.hasBlockEntity() ? level.getBlockEntity(pos) : null;
-        List<ItemStack> drops = Block.getDrops(state, level, pos, be, player, tool);
-        long t1 = System.nanoTime();
-        // 自动熔炼：统一走 UltimateEvents.applyAutoSmelt（唯一入口，含黑名单/配方缓存）
-        if (smeltOn && !drops.isEmpty()) {
-            org.zifeng.skilltree.event.UltimateEvents.applyAutoSmelt(player, drops, record);
-        }
-        // 点石成金：仅吃时运的方块（矿石类）掉落×倍率（与正常挖掘语义一致，防泥土/石头刷量）
-        if (blockMult > 1.0 && org.zifeng.skilltree.event.UltimateEvents.isOreBlock(state, level)) {
-            org.zifeng.skilltree.event.UltimateEvents.applyDropMultiplierStacks(drops, player, blockMult);
-        }
-        long t2 = System.nanoTime();
-        // ⚠️ 2026-09-12：恢复 flag 3（removeBlock 默认行为）——实时通知邻居，
-        //    沙/砾石/流体/红石/藤蔓等会立即反应。配合「Y 高→低」遍历，
-        //    上层重力方块在处理时下方支撑还在 → 被直接挖掉，不会变成掉落物。
-        //    （曾试过 flag 2 换速度 + 收尾统一结算 refreshOuterLayer，用户选择行为更自然的 flag 3）
-        level.removeBlock(pos, false);
-        long t3 = System.nanoTime();
-        // 掉落先攒起来（本 tick 结束时一次入容器，见 flushDrops）；未绑定容器则不攒（直接丢弃）
-        if (job.vacuumBound) {
-            for (int i = 0, n = drops.size(); i < n; i++) {
-                ItemStack d = drops.get(i);
-                if (d != null && !d.isEmpty()) {
-                    job.pendingDrops.add(d);
-                }
-            }
-        }
-        long t4 = System.nanoTime();
-        job.tDrops += t1 - t0;
-        job.tSmelt += t2 - t1;
-        job.tRemove += t3 - t2;
-        job.tInsert += t4 - t3;
-        return true;
     }
 
     /** 进度上报（动作栏；节流到每 PROGRESS_REPORT_TICKS tick 一次） */

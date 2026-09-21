@@ -26,3 +26,11 @@ Desktop.ini
 # --- 日志 ---
 *.log
 logs/
+
+# --- 备份 / 临时文件（不提交） ---
+*.bak
+*.bak_*
+*.bak-*
+.codex/
+build_*.txt
+javac.*.args

@@ -90,6 +90,23 @@ public class SkillEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return; // 仅真玩家（排除机器 FakePlayer 等）
         }
+        PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
+        PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
+        // AE 无限频道是服务器全局运行态；只在真正登录时按持久化技能状态重挂，
+        // 不依赖实体跨维度重建时的事件顺序。
+        org.zifeng.skilltree.compat.Ae2Compat.restoreForPlayer(player, record);
+        // 原版会保存 Abilities.flying，但技能退出时会清理 mayfly/flying。这里按模组记录
+        // 恢复一次“下线时正在飞行”的意图，随后立即清除，避免跨维度时误消费该标记。
+        boolean restoreFlying = record.wasFlyingOnLogout()
+                && record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.ULT_FAVOR) > 0
+                && record.isEnabled(org.zifeng.skilltree.skill.Skills.ULT_FAVOR);
+        if (restoreFlying && !player.getAbilities().instabuild) {
+            player.getAbilities().mayfly = true;
+            player.getAbilities().flying = true;
+            player.onUpdateAbilities();
+        }
+        record.setFlyingOnLogout(false);
+        data.setDirty();
         String version = net.neoforged.fml.ModList.get().getModContainerById(org.zifeng.skilltree.SkillTreeMod.MOD_ID)
                 .map(c -> c.getModInfo().getVersion().toString()).orElse("?");
         player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
@@ -118,9 +135,15 @@ public class SkillEvents {
             SkillEffects.applyAll(player, new PlayerSkillRecord(player.getUUID()));
             // 登出前按清空后的基础上限恢复血量比例，避免 player.dat 存档残血
             player.setHealth(Math.max(0.5F, player.getMaxHealth() * logoutRatio));
-            // 飞行权限不回收：宇宙的青睐点亮状态存在存档里，重进后 tick 自动重新授予，
-            // 保留 mayfly=true 让原版 player.dat 持久化，进出存档飞行不丢（只有关闭技能时才回收）
-            // UltimateEvents.clearPlayerFlight(player);
+            // 保存“是否正在飞行”的意图，再回收本模组授予的临时飞行权限。
+            // 记录写入玩家技能 SavedData，避免依赖原版 player.dat 在登出清理后的落盘时序。
+            PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
+            PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
+            boolean favor = record.getLearnedPoints(org.zifeng.skilltree.skill.Skills.ULT_FAVOR) > 0
+                    && record.isEnabled(org.zifeng.skilltree.skill.Skills.ULT_FAVOR);
+            record.setFlyingOnLogout(favor && player.getAbilities().flying);
+            data.setDirty();
+            UltimateEvents.clearPlayerFlight(player);
             // 重置飞行速度防跨存档残留（flyingSpeed 会被原版持久化到 player.dat）
             UltimateEvents.resetFlyingSpeed(player);
             // 再清理终极被动 static 状态（连击/金身冷却）+ 移除连击攻速修饰符
@@ -129,6 +152,13 @@ public class SkillEvents {
             AuraEvents.onPlayerLogout(player);
             // 清理子枫的馈赠在线计时累计（防残留，下次进世界重新计时）
             GiftEvents.onPlayerLogout(player);
+            // ⚠️ 2026-09-20 修复：清理厄法系的三张 per-UUID 表（PURGE_UNTIL/ADAPT_TYPE/ADAPT_STACK）。
+            //    这三个 map 原先定义了 clearPlayer 但**全仓无任何调用点** → 两个后果：
+            //    ① 每个“进过服且挨过魔法伤害/被厄法破咒打过”的 UUID 永久驻留（公开服会累积到数千）；
+            //    ② 更严重：PURGE_UNTIL 存的是**结对的 gameTime**，而 map 是 JVM 级跨存档的 ——
+            //       玩家换存档后 gameTime 从接近 0 重算，旧的 PURGE_UNTIL（如 300000）永远大于新存档 gameTime
+            //       → purgeReady() 长期返回 false → **厄法破咒静默失效**。
+            ArcaneEvents.clearPlayer(player.getUUID());
             // 清理闪现冷却（防残留）
             BLINK_LAST.remove(player.getUUID());
         }

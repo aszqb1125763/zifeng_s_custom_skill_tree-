@@ -234,8 +234,9 @@ public class UltimateEvents {
             // ⚠️ 基准换算：FLYING_SPEED 属性默认 0.4，而 abilities.flyingSpeed 原版基准 0.05 → 同步时 ÷8 对齐
             // （否则新存档飞行速度会被设成 0.4，比原版快 8 倍！）
             // 只在学过且启用的技能时同步；关闭后还原默认 → 不覆盖其他模组设置的飞行速度
-            int flyPoints = record.isEnabled(Skills.FLY) ? record.getActiveLevel(Skills.FLY) : 0;
-            int ampFlyPoints = record.isEnabled(Skills.AMP_FLY) ? record.getActiveLevel(Skills.AMP_FLY) : 0;
+            // 2026-09-14 等级压缩：飞行速度用 effLevel（FLY/AMP_FLY 属基础/增幅列，等级已压缩 10 倍）
+            double flyPoints = SkillEffects.effLevel(record, Skills.FLY);
+            double ampFlyPoints = SkillEffects.effLevel(record, Skills.AMP_FLY);
             var flyAttr = player.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.FLYING_SPEED);
             if (flyAttr != null) {
                 if (flyPoints > 0 || ampFlyPoints > 0) {
@@ -268,6 +269,8 @@ public class UltimateEvents {
                     }
                 }
             }
+            // 奥术防护（2026-09-14）：净化领域光环（清自己与友方负面）
+            ArcaneEvents.tick(player);
             // 星食·饱腹：饱食度与饱和度永远满值（%20 节流，避免每 tick 标记 FoodData 脏）
             if (record.getLearnedPoints(Skills.SATURATION) > 0 && record.isEnabled(Skills.SATURATION)
                     && player.tickCount % 20 == 0) {
@@ -389,19 +392,17 @@ public class UltimateEvents {
                 player.setAirSupply(player.getMaxAirSupply());
             }
             // 无限回路：AE2 频道倍增/无限（软集成，未装 AE2 时无操作；全局生效，玩家集合管理）
-            // 4 级：1=X2 2=X3 3=X4 4=INFINITE；多人取所有开启玩家中的最高等级
-            // ⚠️ 2026-08-27 修复：生效等级 0（技能完全不生效）→ 走 disable 恢复默认，勿 Math.max(1,0)=X2
-            // ⚠️ 2026-08-28 性能：未学 AE 技能 → 直接跳过（disable 只在开→关/登出时调用一次即可，未学玩家无需每 tick 进入 synchronized）
+            // 5 档：0=默认(原版8频道) 1=X2 2=X3 3=X4 4=INFINITE
+            // ⚠️ 2026-09-20 修复：生效等级 0 以前走 disable（只解登记、不改模式），
+            //    导致界面显示「默认8频道」/聊天提示「→ 默认」但 AE 模式纹丝不动（仍是 INFINITE）。
+            //    现在 0 级与其他等级一样走 enable，由 Ae2Compat.modeForLevel 映射到 DEFAULT。
+            // ⚠️ 2026-08-28 性能：未学 AE 技能 → 直接跳过（未学玩家无需每 tick 进入 synchronized）
             int aeLearned = record.getLearnedPoints(Skills.AE_INFINITE_CHANNEL);
             if (aeLearned > 0) {
                 boolean aeOn = record.isEnabled(Skills.AE_INFINITE_CHANNEL);
                 if (aeOn) {
                     int aeLevel = record.getActiveLevel(Skills.AE_INFINITE_CHANNEL); // 可低于已学；未设置默认=已学
-                    if (aeLevel <= 0) {
-                        org.zifeng.skilltree.compat.Ae2Compat.disable(player.getUUID());
-                    } else {
-                        org.zifeng.skilltree.compat.Ae2Compat.enable(player.getUUID(), aeLevel);
-                    }
+                    org.zifeng.skilltree.compat.Ae2Compat.enable(player.getUUID(), Math.max(0, aeLevel));
                 } else {
                     org.zifeng.skilltree.compat.Ae2Compat.disable(player.getUUID());
                 }
@@ -947,7 +948,15 @@ public class UltimateEvents {
                         filterable.add(drop);
                     }
                 }
+                // ⚠️ 2026-09-16 修复（猎魂丰收一直不翻倍）：filterable 是【局部过滤副本】，
+                //    不是 event.getDrops() 本身 —— applyDropMultiplier 把额外掉落追加在它的末尾，
+                //    必须把新增部分写回事件列表，否则倍率完全无效（等于白算）。
+                //    历史 bug：2026-08-26 引入防刷物品过滤副本时漏了写回。
+                int before = filterable.size();
                 applyDropMultiplier(filterable, sp, mult);
+                for (int i = before; i < filterable.size(); i++) {
+                    event.getDrops().add(filterable.get(i));
+                }
             }
         }
         // ============ 凋落物挪移（光环技能，2026-08-24）：掉落物直传绑定容器，不生成实体（防卡顿）============
@@ -1405,6 +1414,10 @@ public class UltimateEvents {
      * 按倍率放大掉落物数量（确定性）：
      * 每个掉落物最终总数量 = floor(原数量 × 倍率 + 随机小数)，
      * 超出单堆上限的拆成多个 ItemEntity（保持原位置/速度/拾取延迟）。
+     *
+     * <p>⚠️ 额外掉落是【追加到传入集合的末尾】。调用方若传的是事件列表的【副本】，
+     * 必须把末尾新增部分写回事件列表，否则倍率不生效
+     * （2026-08-26 ~ 2026-09-16 猎魂丰收失效就是这个原因）。
      */
     private static void applyDropMultiplier(java.util.Collection<net.minecraft.world.entity.item.ItemEntity> drops,
                                             ServerPlayer sp, double mult) {

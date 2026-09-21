@@ -48,6 +48,26 @@ public class Config {
     /** Converter GUI progress bar color (starlight blue, ARGB). 机器进度条颜色 */
     public static final ModConfigSpec.IntValue MACHINE_PROGRESS_COLOR;
 
+    // ============ 配置迁移（2026-09-14）/ Config migration ============
+    /**
+     * 配置迁移版本（**请勿手动修改**，内部用）。
+     *
+     * <p><b>为什么需要它</b>：Forge/NeoForge 对**已存在的配置文件会保留旧值**——我们在代码里改了某键的
+     * 默认值后，老整合包（已有 toml）仍用旧值，导致改动"看起来根本没生效"。
+     * 典型事故：金身真解每级免伤 0.005→0.01，老包沿用 0.005，80 级只有 40%（应为 80%）。
+     *
+     * <p><b>机制</b>：加载配置时若 {@code configVersion < CONFIG_MIGRATION_VERSION}，
+     * 则把「我们改过默认值」的键强制 {@code set()} 成新默认值并落盘，随后把本键提到当前版本。
+     * 迁移是**幂等**的（只跑一次），之后玩家仍可自由修改这些值。
+     */
+    public static final ModConfigSpec.IntValue CONFIG_VERSION;
+
+    /**
+     * 当前配置迁移版本：**每当我们修改了某键的默认值、且需要强制覆盖老整合包时 +1**。
+     * <p>迁移表见 {@link #migrateConfig()}。
+     */
+    public static final int CONFIG_MIGRATION_VERSION = 3;
+
     // ============ Economy values (hot-reloadable) / 技能树经济数值（可热重载） ============
 
     /** Skill points per level for base skills. 基础技能每级消耗 */
@@ -93,6 +113,42 @@ public class Config {
 
     /** Void Body: one-time point cost (default 5000). 虚空之躯消耗 */
     public static final ModConfigSpec.DoubleValue VOID_BODY_COST;
+
+    // ============ 奥术防护（2026-09-14 新增）——魔法减伤用 MOBA 公式 D/(D+K)，永不封顶 ============
+    /** 奥术壁垒：每级防御值 */
+    public static final ModConfigSpec.DoubleValue ARCANE_DEF_PER_LEVEL;
+    /** 奥术真解：每级追加防御值 */
+    public static final ModConfigSpec.DoubleValue ARCANE_AMP_DEF_PER_LEVEL;
+    /** 奥术壁垒：公式常数 K */
+    public static final ModConfigSpec.DoubleValue ARCANE_K;
+    /** 法术抑制：每级防御值（仅间接伤害） */
+    public static final ModConfigSpec.DoubleValue SPELL_DAMPEN_PER_LEVEL;
+    /** 法术抑制：公式常数 K */
+    public static final ModConfigSpec.DoubleValue SPELL_DAMPEN_K;
+    /** 奥术神体：额外魔法减伤（乘算） */
+    public static final ModConfigSpec.DoubleValue ARCANE_ULT_REDUCTION;
+    /** 适应之躯：每层减伤增量 */
+    public static final ModConfigSpec.DoubleValue ARCANE_ADAPT_STEP;
+    /** 适应之躯：叠加上限 */
+    public static final ModConfigSpec.DoubleValue ARCANE_ADAPT_MAX;
+    /** 法术反射：触发几率 */
+    public static final ModConfigSpec.DoubleValue SPELL_REFLECT_CHANCE;
+    /** 法术反射：反射比例 */
+    public static final ModConfigSpec.DoubleValue SPELL_REFLECT_RATIO;
+    /** 法力虹吸：转化回血比例 */
+    public static final ModConfigSpec.DoubleValue MANA_SIPHON_RATIO;
+    /** 驱法破咒：冷却（tick） */
+    public static final ModConfigSpec.IntValue SPELL_PURGE_COOLDOWN;
+    /** 净化领域：半径（格） */
+    public static final ModConfigSpec.DoubleValue PURIFY_FIELD_RADIUS;
+    /** 净化领域：间隔（tick） */
+    public static final ModConfigSpec.IntValue PURIFY_FIELD_INTERVAL;
+    /** 破法之刃：目标每层增益的增伤 */
+    public static final ModConfigSpec.DoubleValue SPELLBREAK_PER_BUFF;
+    /** 破法之刃：增伤上限 */
+    public static final ModConfigSpec.DoubleValue SPELLBREAK_MAX;
+    /** 奥术神体：一次性消耗 */
+    public static final ModConfigSpec.LongValue ARCANE_ULT_COST;
 
     /** Glowing (node ultimate): radius to apply Glowing to nearby mobs (blocks, default 35). 发光半径 */
     public static final ModConfigSpec.DoubleValue GLOW_RADIUS;
@@ -226,6 +282,9 @@ public class Config {
     public static final ModConfigSpec.DoubleValue BODY_DR_PER_POINT;
     /** Tough: +X armor toughness per point (default 0.3). 韧性每点 */
     public static final ModConfigSpec.DoubleValue TOUGH_TOUGHNESS_PER_POINT;
+
+    /** 磐石之躯：每级护甲（2026-09-14 新增，原为体魄强化的职责） */
+    public static final ModConfigSpec.DoubleValue TOUGH_ARMOR_PER_POINT;
     /** Tough: +X knockback resistance per point (default 0.001 = 0.1%). 坚韧击退每点 */
     public static final ModConfigSpec.DoubleValue TOUGH_KB_PER_POINT;
     /** Blade: +X attack damage per point (default 0.4). 锋刃伤害每点 */
@@ -463,6 +522,61 @@ public class Config {
                 .defineInRange("goldenFireResistanceLevel", 5, 0, 255);
         builder.pop();
 
+        builder.comment("Arcane protection (2026-09-14). Magic reduction uses the MOBA formula D/(D+K): it never reaches 100%, so every level keeps its value.\n奥术防护：魔法减伤用 MOBA 公式 D/(D+K)，永不封顶")
+                .push("arcane");
+        ARCANE_DEF_PER_LEVEL = builder
+                .comment("Arcane Bulwark: defense value per level (default 0.6).\n奥术壁垒每级防御值")
+                .defineInRange("arcaneDefPerLevel", 0.6, 0.0, 1000.0);
+        ARCANE_AMP_DEF_PER_LEVEL = builder
+                .comment("Arcane Mastery: extra defense per level added to Bulwark (default 0.4).\n奥术真解每级防御值")
+                .defineInRange("arcaneAmpDefPerLevel", 0.4, 0.0, 1000.0);
+        ARCANE_K = builder
+                .comment("Arcane Bulwark: formula constant K (default 1200); reduction = D/(D+K).\n奥术壁垒公式常数")
+                .defineInRange("arcaneK", 1200.0, 1.0, 1000000.0);
+        SPELL_DAMPEN_PER_LEVEL = builder
+                .comment("Spell Dampening: defense value per level, only for indirect damage (default 0.5).\n法术抑制每级防御值")
+                .defineInRange("spellDampenPerLevel", 0.5, 0.0, 1000.0);
+        SPELL_DAMPEN_K = builder
+                .comment("Spell Dampening: formula constant K (default 800).\n法术抑制公式常数")
+                .defineInRange("spellDampenK", 800.0, 1.0, 1000000.0);
+        ARCANE_ULT_REDUCTION = builder
+                .comment("Arcane Body (ultimate): multiplicative extra magic reduction (default 0.35).\n奥术神体额外魔法减伤")
+                .defineInRange("arcaneUltReduction", 0.35, 0.0, 0.95);
+        ARCANE_ADAPT_STEP = builder
+                .comment("Adaptive Body: reduction added per consecutive hit of the same damage type (default 0.02).\n适应之躯每层增量")
+                .defineInRange("arcaneAdaptStep", 0.02, 0.0, 0.5);
+        ARCANE_ADAPT_MAX = builder
+                .comment("Adaptive Body: maximum stacked reduction (default 0.60).\n适应之躯叠加上限")
+                .defineInRange("arcaneAdaptMax", 0.60, 0.0, 0.95);
+        SPELL_REFLECT_CHANCE = builder
+                .comment("Spell Reflection: chance to reflect magic damage (default 0.30).\n法术反射几率")
+                .defineInRange("spellReflectChance", 0.30, 0.0, 1.0);
+        SPELL_REFLECT_RATIO = builder
+                .comment("Spell Reflection: reflected damage ratio (default 1.0).\n法术反射比例")
+                .defineInRange("spellReflectRatio", 1.0, 0.0, 10.0);
+        MANA_SIPHON_RATIO = builder
+                .comment("Mana Siphon: magic damage taken converted into healing (default 0.10).\n法力虹吸转化比例")
+                .defineInRange("manaSiphonRatio", 0.10, 0.0, 1.0);
+        SPELL_PURGE_COOLDOWN = builder
+                .comment("Spell Purge: cooldown in ticks (default 100 = 5s).\n驱法破咒冷却")
+                .defineInRange("spellPurgeCooldown", 100, 1, 24000);
+        PURIFY_FIELD_RADIUS = builder
+                .comment("Purification Field: aura radius in blocks (default 8).\n净化领域半径")
+                .defineInRange("purifyFieldRadius", 8.0, 1.0, 64.0);
+        PURIFY_FIELD_INTERVAL = builder
+                .comment("Purification Field: interval in ticks (default 60 = 3s).\n净化领域间隔")
+                .defineInRange("purifyFieldInterval", 60, 5, 24000);
+        SPELLBREAK_PER_BUFF = builder
+                .comment("Spellbreak Blade: bonus damage per beneficial effect on the target (default 0.15).\n破法之刃每层增益增伤")
+                .defineInRange("spellbreakPerBuff", 0.15, 0.0, 2.0);
+        SPELLBREAK_MAX = builder
+                .comment("Spellbreak Blade: maximum bonus damage (default 0.60).\n破法之刃增伤上限")
+                .defineInRange("spellbreakMax", 0.60, 0.0, 5.0);
+        ARCANE_ULT_COST = builder
+                .comment("Arcane Body: one-time point cost (default 2000).\n奥术神体消耗")
+                .defineInRange("arcaneUltCost", 2000L, 1L, Long.MAX_VALUE);
+        builder.pop();
+
         builder.comment("New skill values (crit/lifesteal/rebirth/healing aura) & skill reset. Changes apply immediately.\n新增技能数值与技能重洗")
                 .push("newSkills");
         CRIT_CHANCE_PER_POINT = builder
@@ -514,24 +628,26 @@ public class Config {
         BODY_HP_PER_POINT = builder.comment("Body HP: +X max health per point (default 2.0)\n生命强化每点").defineInRange("bodyHpPerPoint", 2.0, 0.0, 1000.0);
         BODY_ARMOR_PER_POINT = builder.comment("Body: +X armor per point (default 0.2)\n体魄护甲每点").defineInRange("bodyArmorPerPoint", 0.2, 0.0, 100.0);
         BODY_DR_PER_POINT = builder.comment("Body: +X damage reduction per point (default 0.0005 = 0.05%)\n体魄减伤每点").defineInRange("bodyDrPerPoint", 0.0005, 0.0, 1.0);
-        TOUGH_TOUGHNESS_PER_POINT = builder.comment("Tough: +X armor toughness per point (default 0.3)\n韧性每点").defineInRange("toughToughnessPerPoint", 0.3, 0.0, 100.0);
-        TOUGH_KB_PER_POINT = builder.comment("Tough: +X knockback resistance per point (default 0.001 = 0.1%)\n坚韧击退每点").defineInRange("toughKbPerPoint", 0.001, 0.0, 1.0);
-        BLADE_DAMAGE_PER_POINT = builder.comment("Blade: +X attack damage per point (default 0.4)\n锋刃伤害每点").defineInRange("bladeDamagePerPoint", 0.4, 0.0, 100.0);
-        ATTACK_SPEED_PER_POINT = builder.comment("Attack Speed: +X attack speed per point (default 0.02)\n疾攻攻速每点").defineInRange("attackSpeedPerPoint", 0.02, 0.0, 100.0);
+        TOUGH_ARMOR_PER_POINT = builder.comment("Tough: +X armor per point (default 2.0, 2026-09-14).\n磐石之躯每级护甲").defineInRange("toughArmorPerPoint", 2.0, 0.0, 1000.0);
+        TOUGH_TOUGHNESS_PER_POINT = builder.comment("Tough: +X armor toughness per point (default 1.0, 2026-09-14 was 0.3).\n磐石之躯每级护甲韧性").defineInRange("toughToughnessPerPoint", 1.0, 0.0, 1000.0);
+        // ⚠️ 2026-09-14：磐石之躯不再提供击退抗性（已有专门的【稳如泰山】ULT_KB_RESIST），此配置项保留仅为兼容旧配置。
+        TOUGH_KB_PER_POINT = builder.comment("DEPRECATED 2026-09-14: Tough no longer grants knockback resistance; use the Steadfast ultimate instead.\n[已废弃] 磐石之躯不再提供击退抗性").defineInRange("toughKbPerPoint", 0.001, 0.0, 1.0);
+        BLADE_DAMAGE_PER_POINT = builder.comment("Blade: +X attack damage per point (default 1.0 = +10 per level; 2026-09-14, was 0.4)\n剑心通明每点（描述显示 = 本值 × 10）").defineInRange("bladeDamagePerPoint", 1.0, 0.0, 100.0);
+        ATTACK_SPEED_PER_POINT = builder.comment("Attack Speed: +X attack speed per point (default 0.2 = +2 per level; 2026-09-14, was 0.02)\n疾风连击每点（描述显示 = 本值 × 10）").defineInRange("attackSpeedPerPoint", 0.2, 0.0, 100.0);
         MINING_SPEED_PER_POINT = builder.comment("Mining: +X mining speed per point (default 0.3)\n采掘挖速每点").defineInRange("miningSpeedPerPoint", 0.3, 0.0, 100.0);
         MOVE_SPEED_PER_POINT = builder.comment("Move: +X movement speed per point (default 0.005)\n疾行移速每点").defineInRange("moveSpeedPerPoint", 0.005, 0.0, 100.0);
         LUCK_PER_POINT = builder.comment("Luck: +X luck per point (default 0.1)\n幸运每点").defineInRange("luckPerPoint", 0.1, 0.0, 100.0);
         JUMP_PER_POINT = builder.comment("Jump: +X jump strength per point (default 0.01)\n跳跃每点").defineInRange("jumpPerPoint", 0.01, 0.0, 100.0);
         FLY_SPEED_PER_POINT = builder.comment("Fly: +X fly speed per point (default 0.005)\n飞行每点").defineInRange("flySpeedPerPoint", 0.005, 0.0, 100.0);
         SWIM_SPEED_PER_POINT = builder.comment("Swim: +X swim speed per point (default 0.005)\n游泳每点").defineInRange("swimSpeedPerPoint", 0.005, 0.0, 100.0);
-        AMP_ARMOR_DR_PER_POINT = builder.comment("Armor Truth: +X damage reduction per point (default 0.005 = 0.5%)\n金身减伤每点").defineInRange("ampArmorDrPerPoint", 0.005, 0.0, 1.0);
+        AMP_ARMOR_DR_PER_POINT = builder.comment("Armor Truth (now an ULTIMATE, cap 80): +X damage reduction per level (default 0.01 = 1%).\n金身真解每级免伤（已改为终极节点，上限 80）").defineInRange("ampArmorDrPerPoint", 0.01, 0.0, 1.0);
         REACH_PER_LEVEL = builder.comment("Reach: +X blocks reach & attack range per level (default 1.0)\n长臂距离每级").defineInRange("reachPerLevel", 1.0, 0.0, 100.0);
         KB_RESIST_PER_LEVEL = builder.comment("KB Resist: +X knockback resistance per level (default 0.1 = 10%)\n稳如泰山每级").defineInRange("kbResistPerLevel", 0.1, 0.0, 1.0);
         AMP_HP_PER_POINT = builder.comment("Amp HP: +X max health multiplier per point (default 0.1 = +10%)\n血魄真解每点").defineInRange("ampHpPerPoint", 0.1, 0.0, 10.0);
-        AMP_TOUGH_PER_POINT = builder.comment("Amp Tough: +X toughness/KB multiplier per point (default 0.1 = +10%)\n磐石真解每点").defineInRange("ampToughPerPoint", 0.1, 0.0, 10.0);
+        AMP_TOUGH_PER_POINT = builder.comment("Amp Tough: +X armor AND armor toughness multiplier per point (default 0.1 = +10%, 2026-09-14).\n磐石真解每级护甲与韧性").defineInRange("ampToughPerPoint", 0.1, 0.0, 10.0);
         AMP_LUCK_PER_POINT = builder.comment("Amp Luck: +X luck multiplier per point (default 0.1 = +10%)\n鸿运真解每点").defineInRange("ampLuckPerPoint", 0.1, 0.0, 10.0);
         AMP_DAMAGE_PER_POINT = builder.comment("Amp Damage: +X damage multiplier per point (default 0.1 = +10%)\n剑心真解每点").defineInRange("ampDamagePerPoint", 0.1, 0.0, 10.0);
-        AMP_ATTACK_SPEED_PER_POINT = builder.comment("Amp Attack Speed: +X attack speed multiplier per point (default 0.08 = +8%)\n疾风真解每点").defineInRange("ampAttackSpeedPerPoint", 0.08, 0.0, 10.0);
+        AMP_ATTACK_SPEED_PER_POINT = builder.comment("Amp Attack Speed: +X attack speed multiplier per point (default 0.1 = +100% per level; 2026-09-14, was 0.08)\n疾风真解每点").defineInRange("ampAttackSpeedPerPoint", 0.1, 0.0, 10.0);
         AMP_MINING_PER_POINT = builder.comment("Amp Mining: +X mining speed multiplier per point (default 0.12 = +12%)\n破岩真解每点").defineInRange("ampMiningPerPoint", 0.12, 0.0, 10.0);
         AMP_MOVE_PER_POINT = builder.comment("Amp Move: +X movement multiplier per point (default 0.1 = +10%)\n健步真解每点").defineInRange("ampMovePerPoint", 0.1, 0.0, 10.0);
         AMP_JUMP_PER_POINT = builder.comment("Amp Jump: +X jump multiplier per point (default 0.1 = +10%)\n蹦跳真解每点").defineInRange("ampJumpPerPoint", 0.1, 0.0, 10.0);
@@ -539,9 +655,44 @@ public class Config {
         AMP_SWIM_PER_POINT = builder.comment("Amp Swim: +X swim multiplier per point (default 0.1 = +10%)\n游鱼真解每点").defineInRange("ampSwimPerPoint", 0.1, 0.0, 10.0);
         ZONE_MSP_LIMIT_MS = builder.comment("Zone job: target max total tick time in ms (default 45; higher = faster large zones but higher MSPT. 50ms is the hard limit - beyond it TPS drops)\n选区作业：每 tick 总耗时上限（毫秒，默认 45；调大=大选区更快但 MSPT 更高；50ms 是硬上限，超过会掉 TPS）")
                 .defineInRange("zoneMspLimitMs", 45, 10, 48);
+        ZONE_BATCH_SIDE = builder.comment("Zone batching: side length (blocks) of one batch on the X-Z plane, full height.\nA zone is split into batchSide x batchSide columns and processed batch by batch,\nso memory and per-tick load stay flat no matter how large the zone is.\nSmaller = smoother but more batch switches; 64 keeps one batch at 64 x 64 x worldHeight.\n选区分批：单个批次在 X-Z 平面上的边长（格），Y 方向不分批（全高）。\n选区会被切成 batchSide x batchSide 根柱逐批处理 → 内存与单 tick 负载不随选区面积增长。\n调小=更平滑但切批更频繁；默认 64 → 单批 = 64 x 64 x 世界高度。")
+                .defineInRange("zoneBatchSide", 256, 32, 512);
         builder.pop();
 
+        // ── 配置迁移版本（内部用，勿手改）：用于强制同步我们改过的问题默认值 ──
+        CONFIG_VERSION = builder
+                .comment("INTERNAL - do not edit. Config migration version used to force-sync defaults we changed.\n内部配置迁移版本【请勿手动修改】，用于强制同步我们修改过的默认值")
+                .defineInRange("configVersion", 0, 0, Integer.MAX_VALUE);
+
         SPEC = builder.build();
+    }
+
+    /**
+     * 配置迁移：把「我们改过默认值、但老整合包 toml 仍沿用旧值」的键强制顶成新默认值。
+     *
+     * <p><b>只顶这几类键，绝不碰玩家可能自定义过的配色 / 面板开关 / 能量倍率 / 性能参数。</b>
+     * 靠 {@link #CONFIG_VERSION} 标记保证幂等（只跑一次），之后玩家仍可自由修改。
+     *
+     * @return 是否发生了迁移（需要落盘）
+     */
+    private static boolean migrateConfig() {
+        final int from = CONFIG_VERSION.get();
+        if (from >= CONFIG_MIGRATION_VERSION) {
+            return false; // 已是最新版本，不再重复迁移
+        }
+        if (from < 2) {
+            // v2（2026-09-14 等级压缩 + 平衡调整）：老包 toml 沿用旧值 → 改动"看不到效果"
+            AMP_ARMOR_DR_PER_POINT.set(0.01);   // 旧 0.005：金身真解 80 级只有 40% 免伤（应为 80%）
+            TOUGH_TOUGHNESS_PER_POINT.set(1.0); // 旧 0.3  ：磐石之躯韧性只有设计值的 1/3
+        }
+        if (from < 3) {
+            // v3（2026-09-14 数值调整）：剑心通明/疾风连击/疾风真解 每级显示值提升
+            BLADE_DAMAGE_PER_POINT.set(1.0);       // 旧 0.4 ：显示 +4 → +10
+            ATTACK_SPEED_PER_POINT.set(0.2);       // 旧 0.02：显示 +0.2 → +2
+            AMP_ATTACK_SPEED_PER_POINT.set(0.1);   // 旧 0.08：显示 +80% → +100%
+        }
+        CONFIG_VERSION.set(CONFIG_MIGRATION_VERSION);
+        return true;
     }
 
     /**
@@ -557,6 +708,8 @@ public class Config {
      * → 自适应天花板（本方案）。用户实测"延迟完全不高"后由 30 提到 45。
      */
     public static final ModConfigSpec.IntValue ZONE_MSP_LIMIT_MS;
+    /** 选区分批：单批次 X-Z 平面边长（格），Y 全高不分批（2026-09-19 新增） */
+    public static final ModConfigSpec.IntValue ZONE_BATCH_SIDE;
 
     /**
      * Called on config reload/load: re-applies all attribute modifiers to online players
@@ -567,12 +720,41 @@ public class Config {
         if (event.getConfig().getSpec() != SPEC) {
             return;
         }
+        // ⚠️ 配置迁移必须在任何 return 之前执行（否则专用服务器/无玩家时不迁移，主菜单又不建 server 就永远不生效）
+        // 注意：NeoForge 的 ModConfig 没有 save()，落盘要用 ModConfigSpec 自己的 save()。
+        try {
+            if (migrateConfig()) {
+                SPEC.save();
+                SkillTreeMod.LOGGER.info("[配置迁移] 已把过期默认值顶成新值（configVersion → {}）", CONFIG_MIGRATION_VERSION);
+            }
+        } catch (Exception e) {
+            SkillTreeMod.LOGGER.warn("[配置迁移] 失败（不影响游戏）：{}", e.toString());
+        }
         net.minecraft.server.MinecraftServer server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
         if (server == null) {
             return;
         }
+        // ⚠️ 2026-09-20 修复（严重）：原实现传的是 `new PlayerSkillRecord(p.getUUID())`，即**空记录**。
+        //    而 SkillEffects.applyAll 对每一条目都是「先 removeModifier，amount == 0 就**不再添加**」——
+        //    空记录会让所有 effLevel 返回 0 → **把在线玩家的全部技能属性修饰符清空**
+        //    （最大生命掉回基础值、攻击/攻速/移速/减伤全部清零），
+        //    末尾的 `getHealth() > getMaxHealth()` 还会把血量钳到基础上限。
+        //    即：**改任意一个配置项 = 在线全员属性瞬间裸奔**，且要等重登/重新加点才会恢复。
+        //    正确做法与 SkillEvents.onPlayerJoin 一致：取**真实存档记录**再重挂（applyAll 自带 remove 再 add，无需预先清空）。
         for (net.minecraft.server.level.ServerPlayer p : server.getPlayerList().getPlayers()) {
-            org.zifeng.skilltree.skill.SkillEffects.applyAll(p, new org.zifeng.skilltree.data.PlayerSkillRecord(p.getUUID()));
+            if (p.serverLevel() == null) {
+                continue;
+            }
+            // 血量比例保护（与 onPlayerJoin/onPlayerLogout 同一套）：重挂过程中 MAX_HEALTH 会先降后升，
+            // 不按比例恢复就会把满血玩家变成残血。
+            float beforeHealth = p.getHealth();
+            float beforeMax = Math.max(1.0F, p.getMaxHealth());
+            float ratio = Math.min(1.0F, beforeHealth / beforeMax);
+            org.zifeng.skilltree.data.PlayerSkillRecord rec =
+                    org.zifeng.skilltree.data.PlayerSkillSavedData.get(p.serverLevel())
+                            .getOrCreatePlayer(p.getUUID());
+            org.zifeng.skilltree.skill.SkillEffects.applyAll(p, rec);
+            p.setHealth(Math.max(0.5F, p.getMaxHealth() * ratio));
         }
     }
 }

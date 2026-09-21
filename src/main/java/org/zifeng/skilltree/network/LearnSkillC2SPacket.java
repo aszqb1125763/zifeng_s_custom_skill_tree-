@@ -40,6 +40,15 @@ public record LearnSkillC2SPacket(String skillId, int levels) implements CustomP
                 // 校验技能 ID 合法 + 级数有效（防刷包）
                 int levels = Math.max(1, Math.min(100, packet.levels()));
                 if (Skills.ALL_SKILLS.contains(skillId) && checkUltimateRequirements(record, skillId)) {
+                    // ⚠️ 寰宇法则（时之环/晴空环/无限回路）需要 OP 权限（2026-09-14）：
+                    //    这三个技能改的是服务器全局状态（gamerule 时间/天气、AE2 全局频道模式）。
+                    //    单人世界开启作弊时玩家自带 OP → hasPermissions(2) 为 true，天然放行。
+                    if (Skills.isGlobalSkill(skillId)
+                            && !org.zifeng.skilltree.event.AuraEvents.canUseGlobalRule(player)) {
+                        org.zifeng.skilltree.event.AuraEvents.sendGlobalNeedOpMessage(player, skillId);
+                        org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player, SkillTreeDataS2CPacket.from(record));
+                        return;
+                    }
                     // 其余模组兼容技能：对应模组未安装 → 拒绝学习 + 红字提示（防刷包/误点）
                     if (!checkModLoaded(skillId, player)) {
                         org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,

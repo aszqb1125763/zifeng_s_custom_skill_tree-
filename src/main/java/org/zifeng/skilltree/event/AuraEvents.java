@@ -47,7 +47,7 @@ public class AuraEvents {
     private static final Map<UUID, Boolean> timeLockState = new HashMap<>();
     /** 当前开启时之环的玩家数（最后一个关闭时恢复 gamerule） */
     private static int timeLockCount = 0;
-    /** 锁定的世界时间（一天内 0~23999；第一个开启时记录，-1 = 未锁定） */
+    /** 锁定的世界时间（一天内 0~23999；最后激活者开启时记录，-1 = 未锁定） */
     private static long lockedDayTime = -1;
     /** 玩家 UUID → 当前是否开启晴空环（状态 diff 用） */
     private static final Map<UUID, Boolean> weatherLockState = new HashMap<>();
@@ -57,11 +57,73 @@ public class AuraEvents {
     private static final Map<UUID, Integer> weatherModeByPlayer = new HashMap<>();
     /** 全局当前锁定天气模式（最后切换者生效；0=晴 1=雨 2=雷暴） */
     private static volatile int currentWeatherMode = 0;
+    /** 最后激活时之环的玩家（2026-09-14「谁最后激活谁生效」：锁定时间点以他开启时的世界时间为准） */
+    private static UUID lastTimeActivator = null;
+    /** 最后激活/切换晴空环的玩家（2026-09-14「谁最后激活谁生效」：天气模式以他的选择为准） */
+    private static UUID lastWeatherActivator = null;
+
+    // ============ 寰宇法则：OP 权限门槛（2026-09-14） ============
+
+    /**
+     * 寰宇法则（时之环/晴空环/无限回路）是否允许该玩家激活/开启。
+     *
+     * <p><b>为什么要 OP</b>：这三个技能改的是<b>服务器全局状态</b>（gamerule 时间/天气、AE2 全局频道模式），
+     * 会同时影响所有玩家。开放给普通玩家会互相顶掉、无法收拾，故限定为 OP。
+     *
+     * <p>⚠️ <b>单人世界</b>：开启"允许作弊"时玩家自动获得 OP（权限等级 4），
+     * 因此 {@code hasPermissions(2)} 为 true —— 单人作弊模式天然放行，无需特殊判断。
+     */
+    public static boolean canUseGlobalRule(ServerPlayer player) {
+        return player != null && player.hasPermissions(2);
+    }
+
+    /** 无 OP 权限提示（红字） */
+    public static void sendGlobalNeedOpMessage(ServerPlayer player, String skillId) {
+        if (player == null) {
+            return;
+        }
+        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                        "chat.zifeng_s_custom_skill_tree.global_need_op",
+                        Skills.getDisplayNameComponent(skillId))
+                .withColor(0xFFFF5555));
+    }
+
+    /** 提示：寰宇法则已激活（私发给激活者） */
+    private static void notifyGlobalActivated(ServerPlayer player, String skillId) {
+        if (player == null) {
+            return;
+        }
+        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                "chat.zifeng_s_custom_skill_tree.global_activated",
+                Skills.getDisplayNameComponent(skillId),
+                player.getDisplayName()));
+    }
+
+    /** 提示：告知被顶掉的玩家（"谁最后激活谁生效"；已被顶掉者离线则不打扰） */
+    private static void notifyGlobalOverridden(ServerPlayer actor, UUID victimId, String skillId) {
+        if (actor == null || victimId == null || victimId.equals(actor.getUUID())) {
+            return;
+        }
+        MinecraftServer server = actor.getServer();
+        ServerPlayer victim = server != null ? server.getPlayerList().getPlayer(victimId) : null;
+        if (victim == null) {
+            return;
+        }
+        victim.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                        "chat.zifeng_s_custom_skill_tree.global_overridden",
+                        Skills.getDisplayNameComponent(skillId),
+                        actor.getDisplayName())
+                .withColor(0xFFFFFF55));
+    }
 
     /** 玩家切换晴空环天气模式（WeatherModeC2SPacket 调用） */
     public static void setPlayerWeatherMode(ServerPlayer player, int mode) {
         weatherModeByPlayer.put(player.getUUID(), Math.max(0, Math.min(2, mode)));
         currentWeatherMode = Math.max(0, Math.min(2, mode));
+        // 2026-09-14「谁最后激活谁生效」：记录最后切换者，并告知被顶掉的人
+        UUID prevWeather = lastWeatherActivator;
+        lastWeatherActivator = player.getUUID();
+        notifyGlobalOverridden(player, prevWeather, Skills.AURA_WEATHER);
         // 事件驱动：标记全局状态变化 → tick 末合并推送（2026-08-28 架构升级，避免每次发包）
         org.zifeng.skilltree.GlobalStateSync.markDirty();
     }
@@ -69,6 +131,17 @@ public class AuraEvents {
     /** 服务器当前晴空环天气模式码（GlobalStateSync 推送用，2026-08-28） */
     public static int getCurrentWeatherMode() {
         return currentWeatherMode;
+    }
+
+    /**
+     * 该玩家当前是否持有全局锁定状态（★ 2026-09-20 新增）。
+     *
+     * <p>供 {@link org.zifeng.skilltree.system.GlobalRuleModule#activeCondition} 做兜底唤醒判断：
+     * 只要状态 map 里还有本玩家的条目，就必须让它继续 tick，否则锁定计数永远归不了零，
+     * {@code doDaylightCycle}/{@code doWeatherCycle} 会全服永久卡死。
+     */
+    public static boolean hasGlobalLockFor(UUID id) {
+        return id != null && (timeLockState.containsKey(id) || weatherLockState.containsKey(id));
     }
 
     /** 玩家登出/切换存档时清理锁定计数（防跨会话残留计数，导致 gamerule 永远锁死） */
@@ -83,6 +156,9 @@ public class AuraEvents {
             if (timeLockCount == 0) {
                 restoreTimeLock(player);
             }
+            if (uuid.equals(lastTimeActivator)) {
+                lastTimeActivator = null; // 最后激活者离线 → 清空（下次有人激活时重新记录）
+            }
         }
         Boolean prevW = weatherLockState.remove(uuid);
         if (prevW != null && prevW) {
@@ -92,6 +168,10 @@ public class AuraEvents {
             }
         }
         weatherModeByPlayer.remove(uuid);
+        // 2026-09-14「谁最后激活谁生效」：最后激活的晴空环玩家离线 → 清空记录
+        if (uuid.equals(lastWeatherActivator)) {
+            lastWeatherActivator = null;
+        }
         // 清理光环攻击间隔 per-player 缓存（2026-08-24 多人修复：防 UUID 残留）
         cachedIntervalByPlayer.remove(uuid);
         cachedSpeedByPlayer.remove(uuid);
@@ -133,11 +213,16 @@ public class AuraEvents {
         }
         timeLockState.put(player.getUUID(), on);
         if (on) {
-            if (timeLockCount == 0 && player.serverLevel() != null) {
-                // 第一个开启：记录当前世界时间（锁定开启时的时间，之后保持不变）
+            // 2026-09-14「谁最后激活谁生效」：不再只在"第一个开启"时记录 ——
+            // 每次有玩家 off→on 都重新记录锁定时间点 = 最后激活者开启时的世界时间。
+            if (player.serverLevel() != null) {
                 lockedDayTime = Math.floorMod(player.serverLevel().getDayTime(), 24000L);
             }
+            UUID prevActivator = lastTimeActivator;
+            lastTimeActivator = player.getUUID();
             timeLockCount++;
+            notifyGlobalActivated(player, Skills.AURA_TIME);
+            notifyGlobalOverridden(player, prevActivator, Skills.AURA_TIME);
         } else {
             timeLockCount = Math.max(0, timeLockCount - 1);
             if (timeLockCount == 0) {
@@ -255,7 +340,13 @@ public class AuraEvents {
         // ⚠️ 性能优化（2026-08-15）：间隔判断提到最前——大部分 tick 在此直接返回，
         //    后续所有开销（getLearnedPoints/isEnabled/扫描/伤害）只在触发 tick 执行。
         int interval = auraAttackInterval(player, record);
-        if (player.level().getGameTime() % interval != 0) {
+        // ⚠️ 2026-09-20 多人优化：原写法 `gameTime % interval` 中 interval 只由速度光环等级决定，
+        //   而 gameTime 是维度级共享 —— **同等级的所有光环玩家会在完全相同的 tick 齐发**，
+        //   造成周期性尖峰（每 interval tick 集体做 55 格球扫描 + 对最多 64 个目标逐个 hurt），
+        //   其余 tick 全空。加实体 id 做错峰（本文件 auraHeal 早已用同一手法 `(gameTime + player.getId()) % 200`）。
+        //   等价性：每个玩家的触发频率与间隔完全不变，只是相位不同；
+        //   Java 负数取模的**整除性**不受影响（-10 % 10 == 0），玩家实体 id 为负也正确。
+        if ((player.level().getGameTime() + player.getId()) % interval != 0) {
             return;
         }
         // —— 以下仅在触发 tick 执行 ——
@@ -668,14 +759,31 @@ public class AuraEvents {
                         default -> !hostile;     // 敌对模式（默认）：非敌对（治愈默认奶友好）
                     };
                 });
-        // 生命回复效果：amplifier = level - 1（1 级 = 生命回复I，50 级 = 生命回复50）；时长 2400 tick = 2 分钟
+        // 生命回复效果：时长 2400 tick = 2 分钟
+        //
+        // ⚠️ amplifier 封顶 6（★ 2026-09-20 修复用户报的「几十级以后再升就无效」）：
+        //   原版生命回复的触发间隔是 `50 >> amplifier`：
+        //     amp 0→50t / amp 1→25t / amp 2→12t / amp 3→6t / amp 4→3t / amp 5→1t
+        //     **amp 6→0 → 变成「每 tick 回 1 血」（= 20 血/秒，已是原版最快）**
+        //   即 amp 7~49 与 amp 6 效果完全相同。
+        //   而本技能上限 50 级、amplifier 原本取 level-1 → **7 级之后 44 级全白学**，
+        //   但面板/行内显示照常从 +6 涨到 +49 → 「看着在涨、实际不变」。
+        //   现改为：1~7 级走原版药水；7 级以上的成长由「额外直接治疗」承担（线性）。
+        final int REGEN_AMP_CAP = 6;
+        final int amp = Math.min(REGEN_AMP_CAP, level - 1);
+        // 7 级起每级额外 +1 血（直接治疗，绕过原版药水等级上限）：50 级 = +44 血/周期
+        final float extraHeal = Math.max(0, level - 6);
         var regen = new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.REGENERATION, 2400, level - 1, false, false, true);
+                net.minecraft.world.effect.MobEffects.REGENERATION, 2400, amp, false, false, true);
         for (LivingEntity ally : allies) {
             // 只在效果缺失或等级不够/剩余不足 2 分钟时补（避免每 10 秒覆盖刷新造成粒子闪烁）
             var cur = ally.getEffect(net.minecraft.world.effect.MobEffects.REGENERATION);
-            if (cur == null || cur.getAmplifier() < level - 1 || cur.getDuration() < 2400) {
+            if (cur == null || cur.getAmplifier() < amp || cur.getDuration() < 2400) {
                 ally.addEffect(regen);
+            }
+            // 额外直接治疗：与药水效果的每 tick 回血叠加（7 级起才有）
+            if (extraHeal > 0) {
+                ally.heal(extraHeal);
             }
         }
     }

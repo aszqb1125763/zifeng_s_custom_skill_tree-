@@ -55,9 +55,11 @@ public abstract class SkillSubScreen {
             if (saved != null) {
                 panelX = saved[0];
                 panelY = saved[1];
-                clampPos(); // 旧保存值可能出界，恢复时钳制
             }
         }
+        // 每次打开都钳制：窗口尺寸、界面缩放或面板尺寸变化后，旧坐标也必须重新落回可见范围。
+        // 没有保存位置时，这也会保护子类设置的默认位置。
+        clampPos();
     }
 
     /** 渲染子界面（背景 + 标题 + 内容）。每帧调用。 */
@@ -151,6 +153,17 @@ public abstract class SkillSubScreen {
         return false;
     }
 
+    /**
+     * 字符输入（★ 2026-09-21 新增基类默认实现）：
+     * 子界面若含原版 {@code EditBox}（如设置面板的数值输入框），在 {@code keyPressed} 之外
+     * 还需要接收字符事件，否则只能收退格/回车而打不进内容。
+     *
+     * <p>默认返回 {@code false}（不处理）→ 主界面继续按原逻辑分发，对现有子界面无影响。
+     */
+    public boolean charTyped(char codePoint, int modifiers) {
+        return false;
+    }
+
     /** 鼠标是否在面板矩形内 */
     public boolean isMouseOver(double mouseX, double mouseY) {
         return mouseX >= panelX && mouseX <= panelX + panelW && mouseY >= panelY && mouseY <= panelY + panelH;
@@ -171,9 +184,9 @@ public abstract class SkillSubScreen {
         fillRounded(gui, panelX - 1, panelY - 1, panelX + panelW + 1, panelY + panelH + 1, PANEL_RADIUS + 1, 0xFF87CEEB);
         // 再画一层背景盖住边框内侧（边框仅保留外圈）
         fillRounded(gui, panelX, panelY, panelX + panelW, panelY + panelH, PANEL_RADIUS, 0xFF151A20);
-        // 标题（金色，左上角）
+        // 标题（金色，左上角）★ 2026-09-21：去掉投影
         Font font = parent.font();
-        gui.drawString(font, title, panelX + 6, panelY + 5, 0xFFFFD700);
+        gui.drawString(font, title, panelX + 6, panelY + 5, 0xFFFFD700, false);
         // 标题分隔线（标题栏底部，淡蓝 1px）
         gui.fill(net.minecraft.client.renderer.RenderType.guiOverlay(), panelX + 4, panelY + TITLE_BAR_H - 1, panelX + panelW - 4, panelY + TITLE_BAR_H, 0xFF87CEEB);
         // 右上角 ✕ 关闭按钮

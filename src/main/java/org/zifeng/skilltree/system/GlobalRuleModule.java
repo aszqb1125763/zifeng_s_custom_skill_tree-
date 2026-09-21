@@ -35,7 +35,14 @@ public final class GlobalRuleModule implements ZModule {
             return false;
         }
         return record.getLearnedPoints(Skills.AURA_TIME) > 0
-                || record.getLearnedPoints(Skills.AURA_WEATHER) > 0;
+                || record.getLearnedPoints(Skills.AURA_WEATHER) > 0
+                // ⚠️ 2026-09-20 兜底：只要该玩家还持有**全局锁定状态**（timeLockState / weatherLockState 里还有他的条目），
+                //    就必须保持本模块唤醒。否则一旦出现「已学点数为 0 但锁定未释放」的状态
+                //    （重置技能、存档回滚、旧版本遗留…），模块会冬眠 →
+                //    updateTimeLock(player,false) 永不执行 → timeLockCount 永远归不了零 →
+                //    doDaylightCycle / doWeatherCycle **全服永久锁死**。
+                //    有这个兜底，即使某条路径忘了显式释放，下一 tick 也能自行收敛。
+                || AuraEvents.hasGlobalLockFor(player.getUUID());
     }
 
     @Override
