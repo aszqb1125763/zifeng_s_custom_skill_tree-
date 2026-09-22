@@ -65,7 +65,7 @@ public class HudAdjustSubScreen extends SkillSubScreen {
         // 行4：真实血量数字开关（2026-09-11）
         boolean hpNum = org.zifeng.skilltree.client.SkillKeyBinds.isHudHealthNumber();
         drawRow(gui, 3,
-                t("hud_health_number") + ": " + (hpNum ? t("hud_on") : t("hud_off")),
+                t("hud_health_number") + ": " + (hpNum ? t("hud_state_on") : t("hud_state_off")),
                 hpNum ? 0xFF55FF55 : 0xFFFF5555,
                 hpNum ? 0xFF2A4A2A : 0xFF4A2A2A,
                 hpNum ? 0xFF55FF55 : 0xFFFF5555,
@@ -73,7 +73,7 @@ public class HudAdjustSubScreen extends SkillSubScreen {
         // 行5：伤害吸收数字开关（2026-09-11）
         boolean absNum = org.zifeng.skilltree.client.SkillKeyBinds.isHudAbsorptionNumber();
         drawRow(gui, 4,
-                t("hud_absorption_number") + ": " + (absNum ? t("hud_on") : t("hud_off")),
+                t("hud_absorption_number") + ": " + (absNum ? t("hud_state_on") : t("hud_state_off")),
                 absNum ? 0xFF55FF55 : 0xFFFF5555,
                 absNum ? 0xFF2A4A2A : 0xFF4A2A2A,
                 absNum ? 0xFF55FF55 : 0xFFFF5555,
@@ -81,7 +81,7 @@ public class HudAdjustSubScreen extends SkillSubScreen {
         // 行6：护甲数字开关（2026-09-11）
         boolean armorNum = org.zifeng.skilltree.client.SkillKeyBinds.isHudArmorNumber();
         drawRow(gui, 5,
-                t("hud_armor_number") + ": " + (armorNum ? t("hud_on") : t("hud_off")),
+                t("hud_armor_number") + ": " + (armorNum ? t("hud_state_on") : t("hud_state_off")),
                 armorNum ? 0xFF55FF55 : 0xFFFF5555,
                 armorNum ? 0xFF2A4A2A : 0xFF4A2A2A,
                 armorNum ? 0xFF55FF55 : 0xFFFF5555,
@@ -89,7 +89,7 @@ public class HudAdjustSubScreen extends SkillSubScreen {
         // 行7：满值数字开关（三数字共用，默认关）
         boolean showMax = org.zifeng.skilltree.client.SkillKeyBinds.isHudShowMaxValue();
         drawRow(gui, 6,
-                t("hud_show_max") + ": " + (showMax ? t("hud_on") : t("hud_off")),
+                t("hud_show_max") + ": " + (showMax ? t("hud_state_on") : t("hud_state_off")),
                 showMax ? 0xFF55FF55 : 0xFFFF5555,
                 showMax ? 0xFF2A4A2A : 0xFF4A2A2A,
                 showMax ? 0xFF55FF55 : 0xFFFF5555,

@@ -37,6 +37,8 @@ public class SkillKeyBinds {
     /** 技能点 HUD 位置偏移（2026-08-25：持久化，重启不重置；基准点 = 用户测试调好的位置，默认 0,0） */
     private static int hudOffsetX = 0;
     private static int hudOffsetY = 0;
+    /** 技能点 HUD 显示开关（★ 2026-09-22：从 SkillPointHudRenderer 移入以便持久化） */
+    private static boolean hudVisible = true;
     /** 真实血量数字显示开关（2026-09-11：HUD 设置里可关；在血条左侧显示真实生命值） */
     private static boolean hudHealthNumber = true;
     /** 伤害吸收数字显示开关（2026-09-11：HUD 设置里可关；吸收行在生命行上方） */
@@ -309,6 +311,27 @@ public class SkillKeyBinds {
         save();
     }
 
+    // ============ 技能点 HUD 显示开关（★ 2026-09-22 新增持久化） ============
+
+    /**
+     * 技能点 HUD 是否显示。
+     *
+     * <p>★ 2026-09-22 修复用户反馈「HUD 调整里关掉后重进游戏又出现了」：
+     * 此前这个开关只存在 {@code SkillPointHudRenderer} 的静态字段里 ——
+     * <b>既不写盘也不读盘</b>，重启后静态字段回到默认值 {@code true} → HUD 又显示。
+     * 现在挪到本类（与其它 HUD 开关同一套持久化机制）。
+     */
+    public static boolean isHudVisible() {
+        load();
+        return hudVisible;
+    }
+
+    /** 设置技能点 HUD 显示开关（立即落盘） */
+    public static void setHudVisible(boolean on) {
+        hudVisible = on;
+        save();
+    }
+
     // ============ 血条数字显示开关（2026-09-11：HUD 设置面板可关） ============
 
     /** 是否显示真实血量数字 */
@@ -488,8 +511,13 @@ public class SkillKeyBinds {
             lastPanY = data.panY;
             lastScale = data.scale > 0 ? data.scale : 0.4;
             // 2026-08-28：加载时 clamp 到新调整范围（X ±400 / Y ±200），防止旧配置残留超范围值
-            hudOffsetX = Math.max(-400, Math.min(400, data.hudOffsetX));
-            hudOffsetY = Math.max(-200, Math.min(200, data.hudOffsetY));
+            // ★ 2026-09-22 修复：读到 ±800/±400 —— 与界面允许的调整范围
+            //   （SkillPointHudRenderer.adjustOffsetX/Y）保持一致。
+            //   旧代码读到 ±400/±200，导致超出 ±400/±200 的位置存进去也读不回来。
+            hudOffsetX = Math.max(-800, Math.min(800, data.hudOffsetX));
+            hudOffsetY = Math.max(-400, Math.min(400, data.hudOffsetY));
+            // 技能点 HUD 显示开关（★ 2026-09-22）：旧配置无此字段 → null → 默认显示
+            hudVisible = data.hudVisible == null || data.hudVisible;
             // 血条数字显示开关（2026-09-11；旧配置无此字段 → Gson 给 null → 用包装类型兼容默认开）
             hudHealthNumber = data.hudHealthNumber == null || data.hudHealthNumber;
             hudAbsorptionNumber = data.hudAbsorptionNumber == null || data.hudAbsorptionNumber;
@@ -547,6 +575,7 @@ public class SkillKeyBinds {
             data.scale = lastScale;
             data.hudOffsetX = hudOffsetX;
             data.hudOffsetY = hudOffsetY;
+            data.hudVisible = hudVisible;
             data.hudHealthNumber = hudHealthNumber;
             data.hudAbsorptionNumber = hudAbsorptionNumber;
             data.hudArmorNumber = hudArmorNumber;
@@ -578,6 +607,7 @@ public class SkillKeyBinds {
         double scale = 1.0;
         int hudOffsetX = 0; // 基准点 = 用户测试调好的位置，显示从 0 开始
         int hudOffsetY = 0;
+        Boolean hudVisible;          // 技能点 HUD 显示开关（★ 2026-09-22；null=旧配置→显示）
         Boolean hudHealthNumber;     // 真实血量数字开关（2026-09-11；Boolean 可空以兼容旧配置）
         Boolean hudAbsorptionNumber; // 伤害吸收数字开关（2026-09-11）
         Boolean hudArmorNumber;      // 护甲数字开关（2026-09-11）

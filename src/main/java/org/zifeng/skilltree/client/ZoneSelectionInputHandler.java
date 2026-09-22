@@ -39,6 +39,8 @@ public final class ZoneSelectionInputHandler {
     static void resetSession() {
         blockUntilGameTime = -1;
         lastProcessedTime = -1;
+        attackHeld = false;
+        useHeld = false;
         ZoneExclusionClientState.setFirstCorner(null);
         resetPendingScroll(); // 待发的滚轮调整一并丢弃（防残留到新会话）
     }
@@ -79,6 +81,14 @@ public final class ZoneSelectionInputHandler {
         }
         // 滚轮累积的调整量：每 tick 最多发一个包（不受下面 firstCorner 早退影响）
         flushPendingScroll();
+        // ★ 2026-09-22：鼠标按键抬起 → 复位「按住」标志。
+        //   必须在下面 firstCorner 早退【之前】—— 否则松手后再按就不认新点击了。
+        if (!mc.options.keyAttack.isDown()) {
+            attackHeld = false;
+        }
+        if (!mc.options.keyUse.isDown()) {
+            useHeld = false;
+        }
         if (ZoneExclusionClientState.getFirstCorner() == null) {
             return;
         }
@@ -90,7 +100,7 @@ public final class ZoneSelectionInputHandler {
         // ===== Alt+右键 选角（与磁铁同款：按住 Alt 时角点=视线前方 1 格空气） =====
         if (canHandle() && !mc.player.isShiftKeyDown() && MagnetExclusionInputHandler.isAltDown()) {
             while (mc.options.keyUse.consumeClick()) {
-                if (edgeFire()) {
+                if (edgeFireUse()) {
                     clickCornerAt(mc, MagnetExclusionInputHandler.cornerInFront(mc));
                 }
             }
@@ -100,11 +110,17 @@ public final class ZoneSelectionInputHandler {
     /** 左键：第一角/第二角成区；潜行+左键=删除当前技能操作区 */
     @SubscribeEvent
     public static void onAttackKey(InputEvent.InteractionKeyMappingTriggered event) {
-        if (!event.isAttack() || !canHandle() || !edgeFire()) {
+        if (!event.isAttack() || !canHandle()) {
             return;
         }
+        // ★ 2026-09-22：激活期间【无条件取消】—— 长按左键时原版 continueAttack
+        //   每 tick 都触发本事件；旧版"未通过去重就提前 return"会让这些事件不被取消，
+        //   结果就是"一边选角一边把方块挖了"。
         event.setCanceled(true);
         event.setSwingHand(true);
+        if (!edgeFire()) {
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.player.isShiftKeyDown()) {
             removeZone(mc);
@@ -119,7 +135,7 @@ public final class ZoneSelectionInputHandler {
         if (!event.isUseItem() || !MagnetExclusionInputHandler.isAltDown()) {
             return;
         }
-        if (!canHandle() || !edgeFire()) {
+        if (!canHandle() || !edgeFireUse()) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -145,11 +161,65 @@ public final class ZoneSelectionInputHandler {
         return isZoneModuleActiveClient();
     }
 
-    /** 边沿防抖：同一世界时刻只处理一次（换服由 ClientSession.resetSession 重置兜底） */
+    /** 上一 tick 末左键是否仍按住（★ 2026-09-22：用于「上升沿」判定） */
+    private static boolean attackHeld = false;
+    /** 上一 tick 末右键是否仍按住 */
+    private static boolean useHeld = false;
+
+    /**
+     * 左键边沿判定：<b>同 tick 去重 + 按住期间的重复触发去重</b>（★ 2026-09-22 重写）。
+     * <p>逻辑与说明见 {@link #edgeFireInternal}。
+     */
     private static boolean edgeFire() {
+        return edgeFireInternal(true);
+    }
+
+    /**
+     * 右键边沿判定（★ 2026-09-22 新增）。
+     * <p>原版 {@code startUseItem()} 在<b>按住</b>右键时每 {@code rightClickDelay}（4）tick
+     * 触发一次 {@code onClickInput}，因此 Alt+右键 选角同样需要上升沿判定。
+     */
+    private static boolean edgeFireUse() {
+        return edgeFireInternal(false);
+    }
+
+    /**
+     * 边沿判定内部实现（左右键共用）。
+     *
+     * <h2>为什么旧的 edgeFire() 不够（本次 bug 的根因）</h2>
+     * 原版 {@code Minecraft.handleKeybinds()} 对左键会<b>两次</b>触发
+     * {@code InteractionKeyMappingTriggered}（已核对 1.20.1 字节码与 1.21.1 源码）：
+     * <ol>
+     *   <li>{@code startAttack()} —— 每次点击触发 <b>1 次</b>（{@code consumeClick()} 边沿）</li>
+     *   <li>{@code continueAttack(isDown)} —— <b>按住期间每 tick 都触发 1 次</b>，
+     *       其前置条件为「{@code hitResult} 是方块且该格非空气」
+     *       → 这正是用户反馈「<b>近距离</b>按一下容易触发两次选区」的原因</li>
+     * </ol>
+     * 旧实现只做「同一游戏时刻（tick）只处理一次」去重，<b>挡不住跨 tick 的持续触发</b>
+     * → 玩家按下左键选第一个角后，之后每一 tick 都会再选一次角，
+     * 选区被"自动"闭合（用户实测：「比较容易触发时玩家长按左键的时候」）。
+     *
+     * <p>现在额外要求<b>上升沿</b>：该键在上一 tick 末若已按住 → 直接忽略。
+     * 标志位由 {@link #onClientTick} 在按键抬起时复位（不依赖 tick 回调与
+     * {@code handleKeybinds} 的先后顺序）。
+     */
+    private static boolean edgeFireInternal(boolean attack) {
         long now = ClientSession.now();
         if (now == lastProcessedTime) {
+            return false; // 同一 tick 内已有事件被接受
+        }
+        Minecraft mc = Minecraft.getInstance();
+        boolean down = attack ? mc.options.keyAttack.isDown() : mc.options.keyUse.isDown();
+        boolean held = attack ? attackHeld : useHeld;
+        if (down && held) {
+            // 按住期间的重复触发（continueAttack 每 tick / startUseItem 每 4 tick）
+            // ⚠️ 这里【不】更新 lastProcessedTime —— 让同 tick 的后续事件继续被第一道判断挡住
             return false;
+        }
+        if (attack) {
+            attackHeld = down;
+        } else {
+            useHeld = down;
         }
         lastProcessedTime = now;
         return true;
