@@ -76,6 +76,55 @@ public class MagnetZoneGlobalData extends SavedData {
         return false;
     }
 
+    /**
+     * 按最小角点定位一个屏蔽区（★ 2026-09-22 新增，供滚轮微调定位用）。
+     *
+     * <p>为什么用「最小角点」而不是射线：滚轮是在客户端算出要改哪一块，
+     * 服务端只需按一个<b>无歧义的标识</b>找到它（归一化后的 min 角在同维度内唯一），
+     * 不像删除那样需要视线语义。
+     */
+    public MagnetExclusionZone findAt(String dim, int minX, int minY, int minZ) {
+        for (MagnetExclusionZone z : zones) {
+            if (z.dim().equals(dim) && z.minX() == minX && z.minY() == minY && z.minZ() == minZ) {
+                return z;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 按「面 + 带符号步进」微调一个屏蔽区（★ 2026-09-22 新增，木棍滚轮微调）。
+     *
+     * <p>与机械共鸣区块技能同款（用户要求「滚轮调整操作同步所有能选区的功能」）：
+     * 服务端权威计算，不直接信任客户端传来的整块区。
+     * <p>越界（会翻转 / 单边超 {@code MAX_SIDE}）→ 返回 {@code null} 不修改。
+     *
+     * @param locatorX/Y/Z 命中区的最小角（定位用）
+     * @param face         要调整的面
+     * @param steps        带符号步进（正 = 向外扩）
+     * @return 被调整的区（未找到 / 非法 → null）
+     */
+    public MagnetExclusionZone adjustZoneAt(String dim,
+                                            int locatorX, int locatorY, int locatorZ,
+                                            net.minecraft.core.Direction face, int steps) {
+        MagnetExclusionZone old = findAt(dim, locatorX, locatorY, locatorZ);
+        if (old == null) {
+            return null;
+        }
+        MagnetExclusionZone updated = old.adjust(face, steps);
+        if (updated == null) {
+            return null; // 非法（翻转 / 超单边上限）
+        }
+        // 原位替换（保持列表顺序与显示稳定；避免删+加导致顺序变化）
+        int i = zones.indexOf(old);
+        if (i < 0) {
+            return null;
+        }
+        zones.set(i, updated);
+        afterChange();
+        return updated;
+    }
+
     /** 增删后：持久化 + 向全服在线玩家广播最新列表（事件驱动，全量小包，无轮询） */
     private void afterChange() {
         setDirty();

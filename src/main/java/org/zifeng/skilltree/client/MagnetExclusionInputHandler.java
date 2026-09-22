@@ -35,7 +35,10 @@ public final class MagnetExclusionInputHandler {
     static void resetSession() {
         blockUntilGameTime = -1;
         lastProcessedTime = -1;
+        attackHeld = false;
+        useHeld = false;
         MagnetExclusionClientState.setFirstCorner(null);
+        resetPendingScroll(); // 待发的滚轮调整一并丢弃（防残留到新会话）
     }
 
     /**
@@ -59,6 +62,17 @@ public final class MagnetExclusionInputHandler {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) {
             return;
+        }
+        // ★ 2026-09-22：滚轮累积的调整量每 tick 最多发一个包
+        //   （必须放在 firstCorner 早退【之前】—— 滚轮微调与「是否在选第一角」无关）
+        flushPendingScroll();
+        // ★ 2026-09-22：鼠标按键抬起 → 复位「按住」标志。
+        //   必须在下面 firstCorner 早退【之前】—— 否则松手后再按就不认新点击了。
+        if (!mc.options.keyAttack.isDown()) {
+            attackHeld = false;
+        }
+        if (!mc.options.keyUse.isDown()) {
+            useHeld = false;
         }
         if (MagnetExclusionClientState.getFirstCorner() == null) {
             return;
@@ -117,11 +131,14 @@ public final class MagnetExclusionInputHandler {
         if (!canHandle()) {
             return;
         }
+        // ★ 2026-09-22：激活期间【无条件取消】—— 长按左键时原版 continueAttack
+        //   每 tick 都触发本事件；旧版"未通过去重就提前 return"会让这些事件不被取消，
+        //   结果就是"一边选角一边把方块挖了"。
+        event.setCanceled(true);
+        event.setSwingHand(true);
         if (!edgeFire()) {
             return;
         }
-        event.setCanceled(true);
-        event.setSwingHand(true);
         Minecraft mc = Minecraft.getInstance();
         if (mc.player.isShiftKeyDown()) {
             removeZone(mc);
@@ -146,7 +163,7 @@ public final class MagnetExclusionInputHandler {
         if (!canHandle()) {
             return;
         }
-        if (!edgeFire()) {
+        if (!edgeFireUse()) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -181,14 +198,191 @@ public final class MagnetExclusionInputHandler {
         return isRangeModuleActiveClient();
     }
 
-    /** 边沿防抖：同一世界时刻只处理一次（换服由 ClientSession.resetSession 重置兜底） */
+    /** 上一 tick 末左键是否仍按住（★ 2026-09-22：用于「上升沿」判定） */
+    private static boolean attackHeld = false;
+    /** 上一 tick 末右键是否仍按住 */
+    private static boolean useHeld = false;
+
+    /**
+     * 左键边沿判定：<b>同 tick 去重 + 按住期间的重复触发去重</b>（★ 2026-09-22 重写）。
+     * <p>逻辑与说明见 {@link #edgeFireInternal}。
+     */
     private static boolean edgeFire() {
+        return edgeFireInternal(true);
+    }
+
+    /**
+     * 右键边沿判定（★ 2026-09-22 新增）。
+     * <p>原版 {@code startUseItem()} 在<b>按住</b>右键时每 {@code rightClickDelay}（4）tick
+     * 触发一次 {@code onClickInput}，因此 Alt+右键 选角同样需要上升沿判定。
+     */
+    private static boolean edgeFireUse() {
+        return edgeFireInternal(false);
+    }
+
+    /**
+     * 边沿判定内部实现（左右键共用）。
+     *
+     * <h2>为什么旧的 edgeFire() 不够（本次 bug 的根因）</h2>
+     * 原版 {@code Minecraft.handleKeybinds()} 对左键会<b>两次</b>触发
+     * {@code InteractionKeyMappingTriggered}（已核对 1.20.1 字节码与 1.21.1 源码）：
+     * <ol>
+     *   <li>{@code startAttack()} —— 每次点击触发 <b>1 次</b>（{@code consumeClick()} 边沿）</li>
+     *   <li>{@code continueAttack(isDown)} —— <b>按住期间每 tick 都触发 1 次</b>，
+     *       其前置条件为「{@code hitResult} 是方块且该格非空气」
+     *       → 这正是用户反馈「<b>近距离</b>按一下容易触发两次选区」的原因</li>
+     * </ol>
+     * 旧实现只做「同一游戏时刻（tick）只处理一次」去重，<b>挡不住跨 tick 的持续触发</b>
+     * → 玩家按下左键选第一个角后，之后每一 tick 都会再选一次角，
+     * 选区被"自动"闭合（用户实测：「比较容易触发时玩家长按左键的时候」）。
+     *
+     * <p>现在额外要求<b>上升沿</b>：该键在上一 tick 末若已按住 → 直接忽略。
+     * 标志位由 {@link #onClientTick} 在按键抬起时复位（不依赖 tick 回调与
+     * {@code handleKeybinds} 的先后顺序）。
+     */
+    private static boolean edgeFireInternal(boolean attack) {
         long now = ClientSession.now();
         if (now == lastProcessedTime) {
+            return false; // 同一 tick 内已有事件被接受
+        }
+        Minecraft mc = Minecraft.getInstance();
+        boolean down = attack ? mc.options.keyAttack.isDown() : mc.options.keyUse.isDown();
+        boolean held = attack ? attackHeld : useHeld;
+        if (down && held) {
+            // 按住期间的重复触发（continueAttack 每 tick / startUseItem 每 4 tick）
+            // ⚠️ 这里【不】更新 lastProcessedTime —— 让同 tick 的后续事件继续被第一道判断挡住
             return false;
+        }
+        if (attack) {
+            attackHeld = down;
+        } else {
+            useHeld = down;
         }
         lastProcessedTime = now;
         return true;
+    }
+
+    // ============ 滚轮微调屏蔽区（★ 2026-09-22 新增：与区块技能同步）============
+
+    /**
+     * <b>背景</b>：滚轮微调原本只做在机械共鸣区块技能上，磁铁屏蔽区没有 ——
+     * 用户反馈「区块拆解的选区各种滚轮操作，没有同步到各种选区操作，比如磁铁这些」。
+     * 现在两种区共用同一套行为（面语义、步进、累积发包、快捷栏保护）。
+     *
+     * <p>⚠️ 与 {@link ZoneSelectionInputHandler} 保持<b>逐项对齐</b>：
+     * 改动其中一处必须同步另一处，否则两处手感会不一致。
+     */
+    private static final int SCROLL_STEP = 1;
+    private static final int SCROLL_STEP_SHIFT = 10;
+
+    /**
+     * 待发送的累积滚轮步进（带符号；0 = 无待发）。
+     *
+     * <p><b>为什么要累积：</b>原版 {@code MouseHandler.onScroll} 里
+     * {@code accumulatedScroll} 会把滚动量累加到整格才触发事件 → 快速滚动一 tick 内可产生
+     * <b>多个</b>事件。若每个事件都立即发包，服务端会连续回发整份技能数据/全服广播（大包）；
+     * 若只处理第一个、后续直接 return，那些事件<b>就没被取消</b>
+     * → 穿透到 {@code Inventory.swapPaint} → <b>快捷栏被切换</b>。
+     * <p>所以：<b>每个事件都无条件取消</b>（不切快捷栏）+ 累积步进，
+     * 由 {@link #flushPendingScroll} 每 tick 最多发一个包（调整量不丢）。
+     */
+    private static int pendingScroll = 0;
+    /** 累积期间最后一次瞄准的区 + 面（取最后一次；视线基本不会一 tick 内大幅变化） */
+    private static ScrollHit pendingScrollHit = null;
+
+    /** 滚轮命中结果：屏蔽区 + 正对玩家的近面 */
+    private record ScrollHit(org.zifeng.skilltree.data.MagnetExclusionZone zone,
+                             net.minecraft.core.Direction face) {
+    }
+
+    /**
+     * 滚轮微调屏蔽区：<b>对准已框选的屏蔽区 → 滚轮调整「正对玩家的那个面」</b>（近面）。
+     * <ul>
+     *   <li>上滚 = 该面朝【外】移动（区域变大）；下滚 = 向内缩；Shift 步进 10 格</li>
+     *   <li>未对准任何区时不拦截 → 保留原版快捷栏滚轮</li>
+     *   <li>实际计算与合法性校验在服务端（客户端只陈述"调整哪个区、哪个面、多少格"）</li>
+     * </ul>
+     * <p>⚠️ 平台差异：1.20.1 用 {@code getScrollDelta()}；1.21.1 拆成 X/Y 分量，取 {@code getScrollDeltaY()}。
+     */
+    @SubscribeEvent
+    public static void onScroll(InputEvent.MouseScrollingEvent event) {
+        if (!canHandle()) {
+            return;
+        }
+        double delta = event.getScrollDeltaY();
+        if (delta == 0.0D) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        ScrollHit hit = pickZoneForScroll(mc);
+        if (hit == null) {
+            return; // 没对准任何区：不拦截（保留原版行为）
+        }
+        // ⚠️ 关键：无条件取消（只要对准了区）。绝不能因为"同一 tick 已处理过"就跳过取消，
+        //    否则事件会穿透到 MouseHandler 末尾的 Inventory.swapPaint → 快捷栏乱切。
+        event.setCanceled(true);
+        int step = mc.player.isShiftKeyDown() ? SCROLL_STEP_SHIFT : SCROLL_STEP;
+        pendingScroll += (delta > 0 ? step : -step); // 正 = 该面向外扩
+        pendingScrollHit = hit;
+    }
+
+    /** 每 tick 发包一次（累积步进）；由 {@link #onClientTick} 调用 */
+    private static void flushPendingScroll() {
+        if (pendingScroll == 0 || pendingScrollHit == null) {
+            return;
+        }
+        int steps = pendingScroll;
+        ScrollHit hit = pendingScrollHit;
+        pendingScroll = 0;
+        pendingScrollHit = null;
+        // action=2 ADJUST：ax/ay/az = 区的最小角（无歧义标识），
+        //                 bx = 面序号，by = 带符号步进
+        org.zifeng.skilltree.network.ModNetwork.sendToServer(
+                new org.zifeng.skilltree.network.MagnetExclusionC2SPacket(
+                        2, hit.zone().dim(),
+                        hit.zone().minX(), hit.zone().minY(), hit.zone().minZ(),
+                        hit.face().ordinal(), steps, 0));
+    }
+
+    /** 会话重置时丢弃待发滚轮（避免残留到下一会话） */
+    private static void resetPendingScroll() {
+        pendingScroll = 0;
+        pendingScrollHit = null;
+    }
+
+    /** 射线找最近的屏蔽区（返回区 + 正对玩家的近面）；几何计算与区块技能共用 {@link ZoneRayUtil} */
+    private static ScrollHit pickZoneForScroll(Minecraft mc) {
+        if (mc.level == null) {
+            return null;
+        }
+        String dim = mc.level.dimension().location().toString();
+        java.util.List<org.zifeng.skilltree.data.MagnetExclusionZone> zones =
+                MagnetExclusionClientState.getZones();
+        if (zones.isEmpty()) {
+            return null;
+        }
+        net.minecraft.world.phys.Vec3 eye = mc.player.getEyePosition();
+        net.minecraft.world.phys.Vec3 end = eye.add(mc.player.getLookAngle().scale(200.0D));
+        ScrollHit best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (org.zifeng.skilltree.data.MagnetExclusionZone zone : zones) {
+            if (!zone.dim().equals(dim)) {
+                continue;
+            }
+            net.minecraft.world.phys.AABB box = ZoneRayUtil.boxOf(
+                    zone.minX(), zone.minY(), zone.minZ(),
+                    zone.maxX(), zone.maxY(), zone.maxZ());
+            net.minecraft.core.Direction face = ZoneRayUtil.rayFace(box, eye, end);
+            if (face == null) {
+                continue;
+            }
+            double d = box.getCenter().distanceToSqr(eye);
+            if (d < bestDist) {
+                bestDist = d;
+                best = new ScrollHit(zone, face);
+            }
+        }
+        return best;
     }
 
     /** 选角（左键用）：角点由 pickCorner 决定 */

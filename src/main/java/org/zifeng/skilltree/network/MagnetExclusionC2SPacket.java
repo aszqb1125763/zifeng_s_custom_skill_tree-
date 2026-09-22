@@ -13,6 +13,8 @@ import org.zifeng.skilltree.SkillTreeMod;
  * <ul>
  *   <li>action=0 ADD：客户端已选两角 → 服务端写入【全服全局】屏蔽区（任何磁铁玩家都吸不了区内）</li>
  *   <li>action=1 REMOVE：客户端潜行+左键对着一屏蔽区 → 服务端按玩家视线射线从全局删除命中区</li>
+ *   <li>action=2 ADJUST（★ 2026-09-22 新增）：木棍滚轮微调一个屏蔽区的单个面，
+ *       与机械共鸣区块技能同款；客户端只陈述「改哪个区、哪个面、多少格」，服务端权威计算</li>
  * </ul>
  * 校验：磁铁已学 + 工具开 + RANGE 模块；增删后 MagnetZoneGlobalData 自动持久化 + 全服广播。
  */
@@ -87,6 +89,42 @@ public record MagnetExclusionC2SPacket(int action, String dim,
                     net.minecraft.world.phys.Vec3 eye = player.getEyePosition();
                     net.minecraft.world.phys.Vec3 look = player.getLookAngle();
                     global.removeZoneAt(currentDim, eye, look); // 内部处理持久化+全服广播
+                } else if (packet.action() == 2) {
+                    // ★ 2026-09-22 ADJUST（木棍滚轮微调单个面）：
+                    //   ax,ay,az = 要调整的区的最小角（客户端命中判定后定位用）
+                    //   bx = 面序号（Direction ordinal，即“正对你的近面”）
+                    //   by = 带符号步进（正 = 该面向外扩，负 = 向内缩）
+                    if (!currentDim.equals(packet.dim())) {
+                        return; // 只能改当前维度的区
+                    }
+                    int faceOrd = packet.bx();
+                    if (faceOrd < 0 || faceOrd >= net.minecraft.core.Direction.values().length) {
+                        return;
+                    }
+                    net.minecraft.core.Direction face = net.minecraft.core.Direction.values()[faceOrd];
+                    int steps = packet.by();
+                    if (steps == 0) {
+                        return;
+                    }
+                    org.zifeng.skilltree.data.MagnetExclusionZone updated = global.adjustZoneAt(
+                            currentDim, packet.ax(), packet.ay(), packet.az(), face, steps);
+                    if (updated == null) {
+                        // 失败分支：区分「越扩越大到上限」与「越缩越小到最小」
+                        //   向外扩失败只可能是超单边上限；向内缩失败只可能是到最小（会翻转）
+                        player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                                steps > 0
+                                        ? "chat.zifeng_s_custom_skill_tree.zone_adjust_limit"
+                                        : "chat.zifeng_s_custom_skill_tree.zone_adjust_min",
+                                String.valueOf(org.zifeng.skilltree.data.OperZone.MAX_SIDE)), true);
+                        return;
+                    }
+                    // 成功：动作栏反馈新尺寸（与区块技能同款文案）
+                    //   注：adjustZoneAt 内部已持久化 + 全服广播，此处无需额外同步
+                    player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                            "chat.zifeng_s_custom_skill_tree.zone_adjust_size",
+                            String.valueOf(updated.maxX() - updated.minX() + 1),
+                            String.valueOf(updated.maxY() - updated.minY() + 1),
+                            String.valueOf(updated.maxZ() - updated.minZ() + 1)), true);
                 }
             }
         });

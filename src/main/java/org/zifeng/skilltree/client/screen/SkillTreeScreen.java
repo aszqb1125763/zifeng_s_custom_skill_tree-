@@ -754,6 +754,30 @@ public class SkillTreeScreen extends Screen {
                 && !isOverUI(mouseX, mouseY);
     }
 
+    /**
+     * 屏幕逻辑尺寸（Screen 尺寸，<b>未</b>做「设计空间」换算）。
+     *
+     * <p>⚠️ 本类的鼠标/键盘回调都在 {@link #runInLayoutSpace} 内执行，
+     * 期间 {@code width/height} 已被除以 r（变成设计空间尺寸）。
+     * 但 {@link #openSubScreen} 需要的是<b>换算前</b>的屏幕尺寸 —— 两者不能混。
+     */
+    private int screenLogicalW() {
+        final var win = this.minecraft != null ? this.minecraft.getWindow() : null;
+        if (win != null) {
+            return win.getGuiScaledWidth();
+        }
+        return inLayoutSpace ? Math.max(1, (int) Math.round(width * uiScale())) : width;
+    }
+
+    /** 屏幕逻辑高（见 {@link #screenLogicalW()}） */
+    private int screenLogicalH() {
+        final var win = this.minecraft != null ? this.minecraft.getWindow() : null;
+        if (win != null) {
+            return win.getGuiScaledHeight();
+        }
+        return inLayoutSpace ? Math.max(1, (int) Math.round(height * uiScale())) : height;
+    }
+
     /** 打开子界面（同类型已打开则关闭切换） */
     void openSubScreen(SkillSubScreen sub) {
         if (activeSubScreen != null) {
@@ -763,12 +787,23 @@ public class SkillTreeScreen extends Screen {
         if (activeSubScreen != null) {
             // ★ 2026-09-21：子界面按「设计空间」初始化（与其渲染坐标系一致，见 uiScale）
             //   例外：设置子界面脱离缩放 → 用屏幕逻辑尺寸
+            //
+            // ★★ 2026-09-22 修正（用户反馈「可移动范围不对 / 只允许 25% 出屏」）：
+            //   本方法由 mouseClickedInner 调用，而那里【已在设计空间内】——
+            //   width/height 早已被除以 r。原代码再除一次 r 属【双重换算】：
+            //     · 非设置子界面：screenW = (W/r)/r = W/r² → 比真实设计空间大 1/r 倍
+            //     · 设置子界面：screenW = W/r（设计宽）→ 它 1:1 渲染，本应为 W
+            //   两者都偏大 1/r 倍 → r<1（窗口模式 + 自适应）时可把面板拖出屏幕远超 25%
+            //   （r=0.833 实测可拖到 ~83% 出屏，r=0.667 时能整块拖出屏幕）。
+            //   改为显式取「屏幕逻辑尺寸」，与调用点是否在 layout space 无关。
+            final double r = uiScale();
             if (sub instanceof SettingsSubScreen) {
-                sub.init(width, height);
+                // 脱离缩放、1:1 渲染 → 用屏幕逻辑尺寸
+                sub.init(screenLogicalW(), screenLogicalH());
             } else {
-                final double r = uiScale();
-                sub.init(Math.max(1, (int) Math.round(width / r)),
-                        Math.max(1, (int) Math.round(height / r)));
+                // 按设计空间初始化（与其渲染坐标系一致）
+                sub.init(Math.max(1, (int) Math.round(screenLogicalW() / r)),
+                        Math.max(1, (int) Math.round(screenLogicalH() / r)));
             }
         }
     }
@@ -1064,7 +1099,7 @@ public class SkillTreeScreen extends Screen {
         }
         headerCacheFrame = frameStamp;
         cachedHeaderText = t("status_skill_point") + String.format("%.1f", Math.max(0, skillPoints));
-        cachedHeaderMaxWidth = font.width(cachedHeaderText);
+        cachedHeaderMaxWidth = lw(cachedHeaderText);
         // ★ 2026-09-19：标题行现在是「分区框 1」内的一行普通文字（去掉原先那圈独立圆角小框）
         int x = frameLeft() + FRAME_LINE + FRAME_PAD_X + 2;
         int y = titleFrameTop() + FRAME_LINE + (titleFrameH() - FRAME_LINE * 2 - font.lineHeight) / 2;
@@ -1091,19 +1126,134 @@ public class SkillTreeScreen extends Screen {
     }
 
     /**
+     * 布局空间里的文字宽度（★ 2026-09-22）。
+     *
+     * <p>⚠️ 本界面的文字用 {@link #drawCrispString}/{@link #drawCrispScaledString}
+     * 在<b>屏幕像素</b>上绘制（不跟外层 {@code pose.scale(r)} 走，为的是字号清晰），
+     * 而容器/背景走 fill <b>会</b>乘 r —— 于是「用 {@code font.width} 量宽、又拿去排
+     * 设计空间几何」的地方全部差了 r 倍：{@code r < 1}（窗口模式 + 自适应）时
+     * 文字比容器<b>宽 1/r 倍</b> → 溢出。
+     *
+     * <p>用户报的「悬浮描述会超出悬浮框」就是这一条：描述越长溢出越多，
+     * 所以只有长描述的技能（Goety 流派精通、搬运术、选区挖掘…）看得出。
+     *
+     * <p>换算回设计空间即 {@code font.width × scale ÷ r}，容器从此刚好装下文字。
+     * 原来只有 {@code r == 1}（全屏、或非自适应且 offset=0）时两者才恰好相等。
+     */
+    private int lw(String text, float scale) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        final double r = uiScale();
+        final double w = font.width(text) * scale;
+        return r <= 0 ? (int) Math.ceil(w) : (int) Math.ceil(w / r);
+    }
+
+    /** 布局空间里的文字宽度（相对字号 1.0，见 {@link #lw(String, float)}） */
+    private int lw(String text) {
+        return lw(text, 1.0F);
+    }
+
+    /** tooltip 行间距（设计空间；屏幕实际间距由 {@link #lh(float)} 换算） */
+    private static final int TOOLTIP_LINE_GAP = 2;
+
+    /**
+     * 布局空间里的行高（字号 + 行间距）——与 {@link #lw(String, float)} 同理。
+     * <p>不换算的话，屏幕行推进只有 {@code (lineHeight+gap) × s × r} 像素，
+     * 而文字实际高 {@code lineHeight × s} —— {@code r < 0.818} 时行与行开始重叠。
+     */
+    private int lh(float scale) {
+        final double r = uiScale();
+        final double h = (font.lineHeight + TOOLTIP_LINE_GAP) * scale;
+        return r <= 0 ? (int) Math.ceil(h) : (int) Math.ceil(h / r);
+    }
+
+    // ══════════ ★ 2026-09-22 方案 B：「容器 + 文字」整体绘制单元 ══════════
+    //
+    // 【为什么需要】本界面文字走 drawCrispString（屏幕像素绘制，不乘 r），
+    //   而容器（fill/fillRound）走设计空间坐标（会乘 r）—— 两者不在同一空间。
+    //   所以任何「用 font.width() 定容器宽」的地方都必须先 ÷r（即 lw()），
+    //   漏一处就文字溢出容器。已两次踩坑：tooltip 描述溢出、右下角三按钮文字溢出。
+    //
+    // 【本单元解决什么】把「算宽 → 画框 → 画字 → 命中判定」绑在同一个 w 上：
+    //   宽度只在 autoBoxW() 里算一次（内部走 lw()），
+    //   框、字、命中全部读 AutoBox.w() —— 结构上不可能出现「框字不同宽」。
+    //
+    // 【新增界面照抄这个配方】
+    //   AutoBox box = new AutoBox(x, y, autoBoxW(PAD_X, MIN_W, text), H, text);
+    //   drawAutoBoxCapsule(g, box, bg, border, color);   // 或 drawAutoBoxRect
+    //   if (box.contains(mx, my)) { ... }                // 命中与视觉必定一致
+    //   ★ 按钮代码里不该再出现 font.width() —— 宽度一律走 autoBoxW()。
+    //
+    // ⚠️ 只能用于【设计空间】（本 Screen 的缩放 pose 内）。
+    //   脱离缩放的部分（如 SettingsSubScreen，它在 popPose 后 1:1 渲染）
+    //   要直接用 font.width() —— 那些地方再套 lw() 会反除一次 r。
+    //
+    // ★ 新增按钮/胶囊类界面一律用它，不要再自己调 font.width() 排几何。
+
+    /** 设计空间里的矩形 + 文字：宽度由文字推导，框 / 字 / 命中判定共用 */
+    private record AutoBox(int x, int y, int w, int h, String text) {
+        boolean contains(double mx, double my) {
+            return mx >= x && mx < x + w && my >= y && my < y + h;
+        }
+
+        int right() {
+            return x + w;
+        }
+
+        int bottom() {
+            return y + h;
+        }
+    }
+
+    /** 并排多个单元共用的宽度（取最宽文字）——单个按钮直接传一个文本即可 */
+    private int autoBoxW(int padX, int minW, String... texts) {
+        int widest = 0;
+        for (String s : texts) {
+            widest = Math.max(widest, lw(s));
+        }
+        return Math.max(minW, widest + padX * 2);
+    }
+
+    /**
+     * 画直角方框按钮：底色 + 1px 四边框 + 水平居中文字。
+     *
+     * @param textDy 文字相对 y 的纵向偏移（各处的观感偏移不同，显式传入以免偷偷改版式）
+     */
+    private void drawAutoBoxRect(GuiGraphics g, AutoBox b, int fill, int border,
+                                 int textColor, int textDy) {
+        var overlay = net.minecraft.client.renderer.RenderType.guiOverlay();
+        g.fill(overlay, b.x(), b.y(), b.right(), b.bottom(), fill);
+        g.fill(overlay, b.x(), b.y(), b.right(), b.y() + 1, border);
+        g.fill(overlay, b.x(), b.bottom() - 1, b.right(), b.bottom(), border);
+        g.fill(overlay, b.x(), b.y(), b.x() + 1, b.bottom(), border);
+        g.fill(overlay, b.right() - 1, b.y(), b.right(), b.bottom(), border);
+        drawCrispString(g, b.text(), b.x() + b.w() / 2, b.y() + textDy, textColor, true);
+    }
+
+    /** 画圆角胶囊按钮：底色 + 描边 + 垂直/水平居中文字（半径 = 高/2） */
+    private void drawAutoBoxCapsule(GuiGraphics g, AutoBox b, int fill, int border, int textColor) {
+        final int r = b.h() / 2;
+        fillRound(g, b.x(), b.y(), b.right(), b.bottom(), r, fill);
+        strokeRound(g, b.x(), b.y(), b.right(), b.bottom(), r, border);
+        drawCrispString(g, b.text(), b.x() + b.w() / 2,
+                b.y() + (b.h() - font.lineHeight) / 2, textColor, true);
+    }
+
+    /**
      * 按像素宽度裁剪文本（超出部分截掉）。
      * ⚠️ 原实现是「逐字符 + 每次重新测宽」的 while 循环 → O(n²)（每帧 3 处 × 120 按钮，
      *    最坏上万次字形查询）；这里改为二分查找 O(n log n)，结果完全相同（最长可容纳前缀）。
      */
     private String clipToWidth(String text, int maxWidth) {
-        if (text == null || text.isEmpty() || font.width(text) <= maxWidth) {
+        if (text == null || text.isEmpty() || lw(text) <= maxWidth) {
             return text;
         }
         int lo = 0;
         int hi = text.length();
         while (lo < hi) {
             int mid = (lo + hi + 1) >>> 1;
-            if (font.width(text.substring(0, mid)) <= maxWidth) {
+            if (lw(text.substring(0, mid)) <= maxWidth) {
                 lo = mid;
             } else {
                 hi = mid - 1;
@@ -1213,7 +1363,7 @@ public class SkillTreeScreen extends Screen {
             String title = catTitles[i] != null ? catTitles[i]
                     : Component.translatable("ui.zifeng_s_custom_skill_tree." + CATEGORY_TITLE_KEYS[i]).getString();
             catTitles[i] = title; // 缓存（只在此处解析，每帧不再查语言表）
-            catButtonW[i] = font.width(title) + CAT_BTN_PAD * 2;
+            catButtonW[i] = autoBoxW(CAT_BTN_PAD, 0, title);
             total += catButtonW[i] + CAT_BTN_GAP;
         }
         catContentW = Math.max(0, total - CAT_BTN_GAP);
@@ -1781,19 +1931,17 @@ public class SkillTreeScreen extends Screen {
             if (x + w < frameLeft() || x > frameRight()) {
                 continue; // 横向滚动到框外的跳过
             }
+            String title = catTitles[i] != null ? catTitles[i] : "";
+            // ★ 2026-09-22 方案 B：框与字由同一个 AutoBox 决定宽度，不可能错位
+            AutoBox box = new AutoBox(x, y, w, CAT_BTN_H, title);
             boolean selected = (i == selectedCategory);
-            boolean hovered = isMouseOverCategories(lastMouseX, lastMouseY)
-                    && lastMouseX >= x && lastMouseX < x + w
-                    && lastMouseY >= y && lastMouseY < y + CAT_BTN_H;
+            boolean hovered = isMouseOverCategories(lastMouseX, lastMouseY) && box.contains(lastMouseX, lastMouseY);
             // ★ 2026-09-19：类别按钮改成【浅色圆角胶囊】（子贴片现在是浅色了，深色块会显重）
             int accent = CATEGORY_COLORS[i];
             int bg = selected ? darken(accent, 0.5f) : (hovered ? 0xFFFFFFFF : 0xFFF6F6FA);
             int border = selected ? accent : (hovered ? accent : ((accent & 0x00FFFFFF) | 0x70000000));
-            fillRound(guiGraphics, x, y, x + w, y + CAT_BTN_H, CAT_BTN_H / 2, bg);
-            strokeRound(guiGraphics, x, y, x + w, y + CAT_BTN_H, CAT_BTN_H / 2, border);
-            String title = catTitles[i] != null ? catTitles[i] : "";
             int color = selected ? 0xFFFFFFFF : (hovered ? 0xFF2A2A34 : 0xFF4A4A56);
-            drawCrispString(guiGraphics, title, x + w / 2, y + (CAT_BTN_H - font.lineHeight) / 2, color, true);
+            drawAutoBoxCapsule(guiGraphics, box, bg, border, color);
         }
         // 类别行横向滚动条（2px，仅放不下时出现；与右侧竖向滚动条同色，便于发现可左右滚）
         int catScrollMax = Math.max(0, catContentW - catViewW());
@@ -2045,15 +2193,37 @@ public class SkillTreeScreen extends Screen {
 
     // ============ 右下角功能按钮（2026-09-01 统一风格：HUD调整 左、属性面板 右，平行并排，固定文字） ============
 
-    /** 按钮宽：5 字符（约 30px）+ 左右留白 ≈ 58px；样式固定不随文字变化 */
-    private static final int BOTTOM_BTN_W = 58;
+    /**
+     * 按钮左右内边距（文字两侧留白）。
+     */
+    private static final int BOTTOM_BTN_PAD_X = 6;
+    /** 按钮最小宽（中文短文案时保持原本 58px 的观感） */
+    private static final int BOTTOM_BTN_MIN_W = 58;
     private static final int BOTTOM_BTN_H = 16;
     private static final int BOTTOM_BTN_GAP = 4;
     private static final int BOTTOM_BTN_MARGIN = 8;
 
+    /**
+     * 底部三个按钮的宽度（★ 2026-09-22 修正：改为按当前语言<b>实测</b>文字宽）。
+     *
+     * <p><b>为什么必须先修</b>：此前写死 {@code 58px}（按中文 5 字估算），
+     * 而英文文案宽得多 —— {@code ≡ Attribute Panel} 实测 <b>105px</b>、
+     * {@code ⚙` HUD Adjust} <b>75px</b> → 文字直接溢出按钮外（用户反馈「英文名字有点太长」）。
+     *
+     * <p>现在取三个文案中最宽的一个 + 两侧留白，<b>任何语言都不会溢出</b>；
+     * 三个按钮共用同一宽度以保持对齐；中文仍保持原本 58px 的观感。
+     */
+    private int bottomBtnW() {
+        // ★ 2026-09-22 方案 B：宽度走 autoBoxW（内部 lw() ÷r），
+        //   与 drawAutoBoxRect 的框、contains 的命中均出自这一个值。
+        //   用户曾报「窗口变小后右下角三按钮文字超出」——根因就是这里用了 font.width（屏幕基准）。
+        return autoBoxW(BOTTOM_BTN_PAD_X, BOTTOM_BTN_MIN_W,
+                t("settings_btn"), t("hud_adjust"), t("panel_btn_open"));
+    }
+
     /** 属性面板按钮（右下角，右侧） */
     private int panelToggleX() {
-        return width - BOTTOM_BTN_MARGIN - BOTTOM_BTN_W;
+        return width - BOTTOM_BTN_MARGIN - bottomBtnW();
     }
 
     private int panelToggleY() {
@@ -2062,7 +2232,7 @@ public class SkillTreeScreen extends Screen {
 
     /** HUD 调整按钮（属性面板按钮左边，平行同高） */
     private int hudBtnX() {
-        return panelToggleX() - BOTTOM_BTN_GAP - BOTTOM_BTN_W;
+        return panelToggleX() - BOTTOM_BTN_GAP - bottomBtnW();
     }
 
     private int hudBtnY() {
@@ -2075,7 +2245,7 @@ public class SkillTreeScreen extends Screen {
      * <p>布局：{@code [设置] [⚙ HUD调整] [≡ 属性面板]}（从右边缘往左依次排列）。
      */
     private int settingsBtnX() {
-        return hudBtnX() - BOTTOM_BTN_GAP - BOTTOM_BTN_W;
+        return hudBtnX() - BOTTOM_BTN_GAP - bottomBtnW();
     }
 
     private int settingsBtnY() {
@@ -2084,16 +2254,12 @@ public class SkillTreeScreen extends Screen {
 
     /** 统一按钮绘制：底色 + 边框 + 悬停 + 打开子界面高亮 + 居中固定文字 */
     private void drawBottomButton(GuiGraphics guiGraphics, int x, int y, String text, boolean active) {
-        boolean hovered = lastMouseX >= x && lastMouseX <= x + BOTTOM_BTN_W && lastMouseY >= y && lastMouseY <= y + BOTTOM_BTN_H;
+        // ★ 2026-09-22 方案 B：框 / 字 / 命中判定共用同一个 AutoBox
+        AutoBox box = new AutoBox(x, y, bottomBtnW(), BOTTOM_BTN_H, text);
+        boolean hovered = box.contains(lastMouseX, lastMouseY);
         int bg = active ? 0xFF2A6A8A : (hovered ? 0xFF3A6EA5 : 0xFF24476E);
         int border = active ? 0xFF66CCFF : (hovered ? 0xFFB0D8FF : 0xFF87CEEB);
-        var overlay = net.minecraft.client.renderer.RenderType.guiOverlay();
-        guiGraphics.fill(overlay, x, y, x + BOTTOM_BTN_W, y + BOTTOM_BTN_H, bg);
-        guiGraphics.fill(overlay, x, y, x + BOTTOM_BTN_W, y + 1, border);
-        guiGraphics.fill(overlay, x, y + BOTTOM_BTN_H - 1, x + BOTTOM_BTN_W, y + BOTTOM_BTN_H, border);
-        guiGraphics.fill(overlay, x, y, x + 1, y + BOTTOM_BTN_H, border);
-        guiGraphics.fill(overlay, x + BOTTOM_BTN_W - 1, y, x + BOTTOM_BTN_W, y + BOTTOM_BTN_H, border);
-        drawCrispString(guiGraphics, text, x + BOTTOM_BTN_W / 2, y + 4, active ? 0xFF66CCFF : 0xFF87CEEB, true);
+        drawAutoBoxRect(guiGraphics, box, bg, border, active ? 0xFF66CCFF : 0xFF87CEEB, 4);
     }
 
     /** 右下角功能按钮（★ 2026-09-21：设置 + HUD调整 + 属性面板，统一风格） */
@@ -2306,7 +2472,10 @@ public class SkillTreeScreen extends Screen {
                 long need = Skills.getGiftRequirementTicks(skillId);
                 lines.add(new TooltipLine(t("tip_require_time") + (need / 72000) + " " + t("unit_hour"), 0xFFAAFF55, 0.9F));
             } else if (Skills.isGiftDistanceBaptism(skillId)) {
-                String unit = Skills.GIFT_MINE_BAPTISM.equals(skillId) ? t("unit_blocks") : t("unit_meter");
+                // ★ 2026-09-22：击杀馈赠原本落到 unit_meter（米）——需求实际是【击杀数】，
+                //   与属性面板（unit_kill =「杀」）口径不一致（用户反馈「提示单位是米」）。补 KILL 分支。
+                String unit = Skills.GIFT_KILL_BAPTISM.equals(skillId) ? t("unit_kill")
+                        : (Skills.GIFT_MINE_BAPTISM.equals(skillId) ? t("unit_blocks") : t("unit_meter"));
                 // 2026-09-14：改为「当前等级需求 + 下一级需求」，不再写死 2/3 级（洗礼已扩到 9 级）
                 int curLv = Math.max(1, Math.min(Skills.getGiftMaxPoints(skillId), points));
                 lines.add(new TooltipLine(t("tip_req") + " " + Skills.getGiftDistanceRequirement(skillId, curLv) + unit + " / 1", 0xFFAAFF55, 0.9F));
@@ -2409,13 +2578,15 @@ public class SkillTreeScreen extends Screen {
      * w/h 为内容尺寸（不含 padding），x/y 为背景左上角（含 padding）。
      */
     private int[] computeTooltipLayout(java.util.List<TooltipLine> lines, int mouseX, int mouseY) {
-        int padX = 6, padY = 4, gap = 2;
+        int padX = 6, padY = 4;
         int maxWidth = 0;
         int totalHeight = 0;
         for (TooltipLine line : lines) {
-            int w = (int) Math.ceil(font.width(line.text()) * line.scale());
+            // ★ 2026-09-22：宽/高必须按【设计空间】量 —— 文字是不缩放的屏幕像素绘制，
+            //   容器却会乘 r，不换算则 r<1 时文字比框宽 1/r 倍（用户报的溢出）
+            int w = lw(line.text(), line.scale());
             maxWidth = Math.max(maxWidth, w);
-            totalHeight += (int) Math.ceil((font.lineHeight + gap) * line.scale());
+            totalHeight += lh(line.scale());
         }
         int x = mouseX + 12;
         int y = mouseY - 12;
@@ -2441,7 +2612,7 @@ public class SkillTreeScreen extends Screen {
         if (lines.isEmpty()) {
             return;
         }
-        int padX = 6, padY = 4, gap = 2;
+        int padX = 6, padY = 4;
         int[] layout = computeTooltipLayout(lines, mouseX, mouseY);
         int x = layout[0], y = layout[1], maxWidth = layout[2], totalHeight = layout[3];
         // 半透明背景 + 边框（guiOverlay：盖住第四图层按钮，但先于边框/面板提交 → 被它们盖住）
@@ -2460,7 +2631,7 @@ public class SkillTreeScreen extends Screen {
             guiGraphics.pose().translate(x + padX, curY, 0);
             drawCrispScaledString(guiGraphics, line.text(), 0, 0, line.color(), s);
             guiGraphics.pose().popPose();
-            curY += (int) Math.ceil((font.lineHeight + gap) * s);
+            curY += lh(s);
         }
     }
 
@@ -2492,7 +2663,7 @@ public class SkillTreeScreen extends Screen {
             return true; // ★ 2026-09-20：搜索框也是 UI（点击/悬停不透传到技能列表）
         }
         // 右下角功能按钮（设置 + HUD调整 + 属性面板，2026-09-01 统一风格；设置按钮 2026-09-21 新增）
-        if (mouseX >= panelToggleX() && mouseX <= panelToggleX() + BOTTOM_BTN_W
+        if (mouseX >= panelToggleX() && mouseX <= panelToggleX() + bottomBtnW()
                 && mouseY >= panelToggleY() && mouseY <= panelToggleY() + BOTTOM_BTN_H) {
             return true;
         }
@@ -2507,13 +2678,13 @@ public class SkillTreeScreen extends Screen {
 
     /** 设置按钮区域命中（HUD调整按钮左边，平行同高；★ 2026-09-21） */
     private boolean isSettingsPanelHit(double mouseX, double mouseY) {
-        return mouseX >= settingsBtnX() && mouseX <= settingsBtnX() + BOTTOM_BTN_W
+        return mouseX >= settingsBtnX() && mouseX <= settingsBtnX() + bottomBtnW()
                 && mouseY >= settingsBtnY() && mouseY <= settingsBtnY() + BOTTOM_BTN_H;
     }
 
     /** HUD 调整按钮区域命中（属性面板按钮左边，平行同高） */
     private boolean isHudPanelHit(double mouseX, double mouseY) {
-        return mouseX >= hudBtnX() && mouseX <= hudBtnX() + BOTTOM_BTN_W
+        return mouseX >= hudBtnX() && mouseX <= hudBtnX() + bottomBtnW()
                 && mouseY >= hudBtnY() && mouseY <= hudBtnY() + BOTTOM_BTN_H;
     }
 
@@ -2604,9 +2775,10 @@ public class SkillTreeScreen extends Screen {
         // 3. 顶部标题区
         int[] hb = headerBounds();
         if (overlapRatio(ix1, iy1, ix2, iy2, hb[0], hb[1], hb[2], hb[3]) >= ICON_OVERLAP_SKIP_RATIO) return true;
-        // 4. 右下角两个功能按钮（属性面板 + HUD调整，2026-09-01）
-        if (overlapRatio(ix1, iy1, ix2, iy2, panelToggleX(), panelToggleY(), panelToggleX() + BOTTOM_BTN_W, panelToggleY() + BOTTOM_BTN_H) >= ICON_OVERLAP_SKIP_RATIO) return true;
-        if (overlapRatio(ix1, iy1, ix2, iy2, hudBtnX(), hudBtnY(), hudBtnX() + BOTTOM_BTN_W, hudBtnY() + BOTTOM_BTN_H) >= ICON_OVERLAP_SKIP_RATIO) return true;
+        // 4. 右下角三个功能按钮（设置 + 属性面板 + HUD调整，2026-09-01 / 设置 2026-09-21）
+        if (overlapRatio(ix1, iy1, ix2, iy2, panelToggleX(), panelToggleY(), panelToggleX() + bottomBtnW(), panelToggleY() + BOTTOM_BTN_H) >= ICON_OVERLAP_SKIP_RATIO) return true;
+        if (overlapRatio(ix1, iy1, ix2, iy2, hudBtnX(), hudBtnY(), hudBtnX() + bottomBtnW(), hudBtnY() + BOTTOM_BTN_H) >= ICON_OVERLAP_SKIP_RATIO) return true;
+        if (overlapRatio(ix1, iy1, ix2, iy2, settingsBtnX(), settingsBtnY(), settingsBtnX() + bottomBtnW(), settingsBtnY() + BOTTOM_BTN_H) >= ICON_OVERLAP_SKIP_RATIO) return true;
         // 5. 当前 tooltip（背景半透明，被覆盖图标必须跳过）
         if (activeTooltipBounds != null) {
             int[] t = activeTooltipBounds;
@@ -2885,7 +3057,7 @@ public class SkillTreeScreen extends Screen {
             //   小窗口上属性区会溢出到消耗列上）
             attrText = clipToWidth(attrText, attrAreaW());
         }
-        int attrW = attrText.isEmpty() ? 0 : font.width(attrText);
+        int attrW = attrText.isEmpty() ? 0 : lw(attrText);
         // ★ 2026-09-20：技能关闭角标的占位宽（贴图，显示在名称左边）
         int markW = enabled ? 0 : MARK_SIZE + MARK_GAP;
         // ★ 2026-09-20：属性已改为「独立右对齐区」，不再占用名称区宽度
@@ -2897,7 +3069,7 @@ public class SkillTreeScreen extends Screen {
         return new RowVisual(fp, type, isTool, enabled, learned, bg, bgHover, border, borderHover,
                 nameColor, costColor, lvColor, barFillR, barTickR, barColor,
                 isLevelBindable(skillId), Skills.isTriggerBindable(skillId), iconStack, iconTex,
-                texts.name(), font.width(texts.name()), texts.effect(), font.width(texts.effect()), costText, font.width(costText),
+                texts.name(), lw(texts.name()), texts.effect(), lw(texts.effect()), costText, lw(costText),
                 attrText, attrW, markW, accent, attrNoMod);
     }
 
@@ -3607,7 +3779,7 @@ public class SkillTreeScreen extends Screen {
                 drawCrispString(guiGraphics, label, x + 4, line, 0xFFAAAAAA, false);
                 // 数值右对齐到滚动条左侧（滚动条在 x+PANEL_WIDTH-6，留 4px 间隔 → 数值起点 = x+PANEL_WIDTH-10-字体宽度）
                 String value = row[1];
-                drawCrispString(guiGraphics, value, x + PANEL_WIDTH - 10 - font.width(value), line, c, false);
+                drawCrispString(guiGraphics, value, x + PANEL_WIDTH - 10 - lw(value), line, c, false);
             }
             line += 12;
         }
@@ -4358,7 +4530,7 @@ public class SkillTreeScreen extends Screen {
         if (isSearching()) {
             String cnt = String.format(t("search_count"), buttons.size());
             final int ty = y + (SEARCH_H - font.lineHeight) / 2;
-            drawCrispString(guiGraphics, cnt, x - font.width(cnt) - 6, ty, 0xFF66666E, false);
+            drawCrispString(guiGraphics, cnt, x - lw(cnt) - 6, ty, 0xFF66666E, false);
         }
     }
 
@@ -4378,7 +4550,7 @@ public class SkillTreeScreen extends Screen {
                     3, 0x33FF5555);
         }
         final String glyph = t("search_clear");
-        final int gx = x + (SEARCH_CLEAR_W - font.width(glyph)) / 2;
+        final int gx = x + (SEARCH_CLEAR_W - lw(glyph)) / 2;
         final int gy = y + (SEARCH_H - font.lineHeight) / 2;
         drawCrispString(guiGraphics, glyph, gx, gy, hovered ? 0xFFD02B2B : 0xFF8A8A96, false);
     }
@@ -4428,7 +4600,13 @@ public class SkillTreeScreen extends Screen {
             if (Math.abs(amount) < 1e-6) {
                 continue;
             }
-            parts.add("+" + fmtAttr(amount, pct) + (d == null ? "•" : d.symbol()));
+            // ★ 2026-09-22：同一技能登记的多个属性若算出【完全相同的显示文本】，只保留一项。
+            //   长臂善舞 = 实体交互距离 + 方块交互距离，两者每级数值相同 →
+            //   原本显示 `+0.5↔ +0.5↔`，看着像重复/看不清（用户反馈）。其余技能无重名项，不受影响。
+            String item = "+" + fmtAttr(amount, pct) + (d == null ? "•" : d.symbol());
+            if (!parts.contains(item)) {
+                parts.add(item);
+            }
         }
 
         // ---- ② 改原版属性、但走 applyAll 特殊路径的技能（★ 2026-09-20 补全）----
@@ -4478,7 +4656,7 @@ public class SkillTreeScreen extends Screen {
         // ---- ⑥ 溢出保护（★ 2026-09-20）：多项拼起来超过属性区宽度时，只保留第 1 项。
         //   不能靠 buildRowVisual 里的 clipToWidth —— 它是【字符级】硬截断，
         //   会把 `+100%⊞` 切成 `+10`，看起来像数值算错了；整项丢弃至少每项都完整可读。
-        if (parts.size() > 1 && font.width(String.join(" ", parts)) > ATTR_AREA_W) {
+        if (parts.size() > 1 && lw(String.join(" ", parts)) > ATTR_AREA_W) {
             return parts.get(0);
         }
         return String.join(" ", parts);
@@ -4595,6 +4773,9 @@ public class SkillTreeScreen extends Screen {
                 addModPct(parts, with - without, "⊛");
             }
             case Skills.ULT_ARCANE_BODY -> addModPct(parts, Config.ARCANE_ULT_REDUCTION.get(), "⊛");
+            // ★ 2026-09-22：破法之刃原本【贴片完全空白】（全表唯一），但描述写着「按目标增益数量增伤
+            //   （每个 +15%，上限 +60%）」→ 补显示增伤上限（用户指定显示上限值）。
+            case Skills.SPELLBREAK_BLADE -> addModPct(parts, Config.SPELLBREAK_MAX.get(), "⚔");
             case Skills.SPELL_DAMPEN -> addModPct(parts, SkillEffects.defenseToReduction(
                     lv * Config.SPELL_DAMPEN_PER_LEVEL.get(), Config.SPELL_DAMPEN_K.get()), "⊜");
             case Skills.SPELL_REFLECT -> addModPct(parts, Config.SPELL_REFLECT_CHANCE.get(), "⇄");
@@ -4616,8 +4797,16 @@ public class SkillTreeScreen extends Screen {
             // ── 特殊 / 光环 ──
             case Skills.VILLAGE_HERO -> addModFlat(parts, lv, "☺");
             case Skills.GLOW -> addModFlat(parts, Config.GLOW_RADIUS.get(), "◎");
-            case Skills.AURA_SPEED -> addModPct(parts,
-                    1.0 - Math.pow(1.0 - Config.AURA_SPEED_INTERVAL_REDUCTION.get(), Math.max(0.0, lv)), "↻");
+            // ★ 2026-09-22（用户要求）：原显示「攻击间隔缩减 X%↻」——玩家看不懂那是什么。
+            //   改为【每秒攻击次数】，公式与 AuraEvents.auraAttackInterval 完全一致：
+            //   interval = max(10, round(base × (1-reduction)^lv))，次数 = 20 ÷ interval。
+            case Skills.AURA_SPEED -> {
+                int baseInterval = Config.AURA_BASE_INTERVAL_TICKS.get();
+                double reduction = Config.AURA_SPEED_INTERVAL_REDUCTION.get();
+                int interval = Math.max(10, (int) Math.round(
+                        baseInterval * Math.pow(1.0 - reduction, Math.max(0.0, lv))));
+                addModFlat(parts, 20.0 / interval, t("unit_per_sec"));
+            }
             case Skills.AURA_HEAL -> {
                 addModFlat(parts, Config.AURA_HEAL_RADIUS.get(), "◎");
                 // ★ 2026-09-20：7 级起额外直接治疗量（与 AuraEvents 的 amp 封顶 6 配套，
@@ -4771,7 +4960,7 @@ public class SkillTreeScreen extends Screen {
     /** mouseClicked 的实际实现（在「设计空间」内执行，见 {@link #mouseClicked}） */
     private boolean mouseClickedInner(double mouseX, double mouseY, int button) {
         // 属性面板按钮（右下角右侧）：优先响应（即使子界面打开，再点可关闭）Shift+点击切换位置
-        if (button == 0 && mouseX >= panelToggleX() && mouseX <= panelToggleX() + BOTTOM_BTN_W
+        if (button == 0 && mouseX >= panelToggleX() && mouseX <= panelToggleX() + bottomBtnW()
                 && mouseY >= panelToggleY() && mouseY <= panelToggleY() + BOTTOM_BTN_H) {
             if (isShiftHeld()) {
                 Config.PANEL_POSITION.set(1 - Config.PANEL_POSITION.get());

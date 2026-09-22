@@ -37,8 +37,6 @@ public class SkillPointHudRenderer {
 
     /** 总技能点（绿色常驻） */
     private static double totalSkillPoints = 0;
-    /** HUD 显示开关 */
-    private static boolean hudVisible = true;
 
     /** 位置偏移（持久化） */
     private static int hudOffsetX = 0;
@@ -142,12 +140,18 @@ public class SkillPointHudRenderer {
         lines.clear();
     }
 
+    /**
+     * 技能点 HUD 显示开关（★ 2026-09-22 改为读 {@link SkillKeyBinds} —— 唯一数据源）。
+     *
+     * <p>⚠️ 此前这里自有的静态字段既不写盘也不读盘，重启后回到默认 {@code true}
+     * → 用户报的「HUD 关掉后重进游戏又出现了」。
+     */
     public static void setVisible(boolean visible) {
-        hudVisible = visible;
+        org.zifeng.skilltree.client.SkillKeyBinds.setHudVisible(visible);
     }
 
     public static boolean isVisible() {
-        return hudVisible;
+        return org.zifeng.skilltree.client.SkillKeyBinds.isHudVisible();
     }
 
     public static int getHudOffsetX() {
@@ -192,7 +196,7 @@ public class SkillPointHudRenderer {
     }
 
     public static void renderHud(GuiGraphics gui) {
-        if (!hudVisible) {
+        if (!isVisible()) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();

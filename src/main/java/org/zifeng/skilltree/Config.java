@@ -429,7 +429,7 @@ public class Config {
                 .comment("Aura base attack interval (ticks, 200 = once per 10s, without Speed aura).\n光环基础攻击间隔")
                 .defineInRange("auraBaseIntervalTicks", 200, 10, 12000);
         AURA_SPEED_INTERVAL_REDUCTION = builder
-                .comment("Aura Speed: interval reduction per level (multiplicative; 0.1 = ×0.9 per level;\nfirst 10 levels: 200->70 ticks, level 20 ~ 24 ticks = ~1.2 attacks/s).\n光环速度：每级攻击间隔缩减比例")
+                .comment("Aura Speed: interval reduction per level (multiplicative; 0.1 = \u00d70.9 per level;\nfirst 10 levels: 200->70 ticks, level 20 = 24 ticks = 0.83 attacks/s).\n光环速度：每级攻击间隔缩减比例")
                 .defineInRange("auraSpeedIntervalReduction", 0.1, 0.0, 0.5);
         AURA_DAMAGE_MULTIPLIER_PER_LEVEL = builder
                 .comment("Aura Damage: multiplier per level (0.10 = +10%/lvl, stacks multiplicatively on attack damage).\n杀戮光环·伤害每级倍率")

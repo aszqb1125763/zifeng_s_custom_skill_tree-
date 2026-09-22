@@ -60,6 +60,14 @@ public final class ZoneSkillRenderer {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
             return;
         }
+        // ★★ 2026-09-22 修复用户反馈「开光影时，有方块挡着也能看到选区颜色」：
+        //    光影激活后 AFTER_BLOCK_ENTITIES <b>在阴影 pass 也会触发</b>，
+        //    此时绑定的深度缓冲是【阴影贴图】而不是相机深度 —— 下面的 enableDepthTest()
+        //    就挡不住方块 → 选区颜色（含线框）会透过地形显示。
+        //    与 BindTargetRenderer / ClientTreasureEvents 采用同一策略（主 pass 才画）。
+        if (IrisCompat.isShadowPass()) {
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) {
             return;
