@@ -45,7 +45,7 @@ public class SkillTreeMod {
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.RegisterCommandsEvent event) ->
                 org.zifeng.skilltree.command.ModCommands.register(event.getDispatcher()));
 
-        // 玩家技能数据管理指令（/skilltree reset | points set | points add，2026-09-04 1.3.7）
+        // 玩家技能数据管理指令（/zifengskilltree reset | points set | points add，2026-09-04 1.3.7）
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.RegisterCommandsEvent event) ->
                 org.zifeng.skilltree.command.SkillTreeAdminCommands.register(event.getDispatcher()));
 

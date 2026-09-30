@@ -896,69 +896,69 @@ public class UltimateEvents {
         if (SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_MOB_HEAD)) {
             dropMobHead(sp, event, record);
         }
-        // ============ 战利品爆炸（终极节点，参考神化 FestiveAffix）============
-        // 对所有生物（含 Boss、含其他模组怪物）击杀时 100% 触发：掉落物翻倍爆炸散射
-        // 1 级 = 掉落 1 倍（即 2 份），100 级 = 100 倍（线性：倍率 = 1 + 等级）
-        // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 战利品爆炸·共鸣 才继承
-        // v1.3.8：子枫挪移术可直传容器不卡顿 → 取消装备类 20 份上限，全部物品全量复制
+        // ============ 战利品大爆发（2026-09-30：由「战利品爆炸」+「猎魂丰收」合并）============
+        // 倍率 = 1 + 生效等级（不缩小），封顶 Config.LOOT_BOMB_MAX_MULTIPLIER（默认 1001 → 1000 级 = 1001×）
+        // 触发：100% 必触发（沿用原「战利品爆炸」语义；已按用户要求去掉原「猎魂丰收」的「仅受抢夺影响生物」限制）
+        // 4 模式（auraTargetModes[loot_bomb]）：
+        //   0 全模式（所有掉落）/ 1 仅堆叠（maxStackSize>1）/ 2 仅不堆叠（==1，装备工具类）/
+        //   3 自定义黑名单（命中物品 id 或其标签则排除，见 /zifengskilltree lootblacklist）
+        // 机制：按【数量】放大 + 按 maxStackSize 拆堆 —— 掉 1 个东西 1001 倍会变成 16 个满堆，
+        //       而不是 1000 个 count=1 的实体（原版就允许堆到上限，用户要求「堆叠成一个」）。
+        // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 战利品大爆发·共鸣 才继承
+        final int lootMode = record.getAuraTargetMode(Skills.LOOT_BOMB);
         int bombLevel = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_LOOT_BOMB)
                 && record.isEnabled(Skills.LOOT_BOMB) ? record.getActiveLevel(Skills.LOOT_BOMB) : 0;
         if (bombLevel > 0 && !event.getDrops().isEmpty()) {
-            // 倍率 = 1 + 等级（1级=2倍，100级=101倍，线性增长）
+            // 倍率 = 1 + 等级（1级=2倍，1000级=1001倍，线性增长，不缩小）
             int maxMult = org.zifeng.skilltree.Config.LOOT_BOMB_MAX_MULTIPLIER.get();
             int bombMult = Math.min(maxMult, 1 + bombLevel);
-            if (bombMult > 1) {
-                // v1.3.8：掉落物可直传容器（子枫挪移术）→ 不再卡顿，装备类上限删除，全量按倍率复制
-                // 快照掉落物列表，避免遍历中修改
-                List<ItemEntity> snapshot = new java.util.ArrayList<>(event.getDrops());
-                for (ItemEntity item : snapshot) {
-                    if (item == null || !item.isAlive()) {
+            // ★ 2026-09-30 修正：模式 3（黑名单）= 【命中者完全不掉落】。
+            //   原先只是「不参与放大」，原版那一份仍然会掉（用户实测反馈「还会保留最低一个」）——
+            //   现改为直接从事件掉落列表里移除，不会再生成任何该物品的掉落物
+            //   （后续的子枫挪移术自然也传不到容器里，语义一致）。
+            if (lootMode == Skills.LOOT_MODE_BLACKLIST) {
+                for (ItemEntity item : new java.util.ArrayList<>(event.getDrops())) {
+                    if (item == null || item.getItem().isEmpty()) {
+                        continue;
+                    }
+                    if (record.isLootBlacklisted(item.getItem())) {
+                        event.getDrops().remove(item);
+                    }
+                }
+            }
+            if (bombMult > 1 && !event.getDrops().isEmpty()) {
+                // 第一步：过滤 —— 防刷装备 → 模式过滤
+                java.util.List<ItemEntity> targets = new java.util.ArrayList<>();
+                for (ItemEntity item : new java.util.ArrayList<>(event.getDrops())) {
+                    if (item == null || !item.isAlive() || item.getItem().isEmpty()) {
                         continue;
                     }
                     // ⚠️ 防刷物品（2026-08-26 初版 / 2026-09-06 v1.3.8 放宽）：跳过玩家注入的生物装备；
-                    //    世界自然产出的装备（非持久怪的装备 + 神化词条装）可翻倍
+                    //    世界自然产出的装备（非持久怪的装备 + 神化词条装）可放大
                     if (isPlayerInjectedEquipment(equippedSnapshot, item.getItem(), event.getEntity())) {
                         continue;
                     }
-                    // 复制 (bombMult-1) 份（item.copy() 独立栈）——装备/不可堆叠也全量复制
-                    int copies = bombMult - 1;
-                    for (int i = 0; i < copies; i++) {
-                        ItemEntity copy = new ItemEntity(sp.level(),
-                                item.getX(), item.getY(), item.getZ(),
-                                item.getItem().copy());
-                        copy.setPickUpDelay(0);
-                        event.getDrops().add(copy);
+                    // ★ 2026-09-30：4 模式过滤（全 / 仅堆叠 / 仅不堆叠；黑名单已在上方直接移除）
+                    if (!lootModeAllows(record, lootMode, item.getItem())) {
+                        continue;
                     }
+                    targets.add(item);
                 }
-                // 纯掉落翻倍：无音效、无粒子、无散射，掉落物像原版一样自然落地
+                // 第二步：按数量放大 + 拆堆
+                // ⚠️ applyDropMultiplier 把额外掉落【追加到传入集合末尾】，必须写回事件列表，
+                //    否则倍率完全无效（2026-08-26 ~ 2026-09-16 猎魂丰收失效就是这个原因）
+                int before = targets.size();
+                applyDropMultiplier(targets, sp, bombMult);
+                for (int i = before; i < targets.size(); i++) {
+                    event.getDrops().add(targets.get(i));
+                }
+                // 纯掉落放大：无音效、无粒子、无散射，掉落物像原版一样自然落地
                 // 不发送聊天提示（每杀必触发会刷屏）
             }
         }
-        // ⚠️ 机械共鸣：假玩家（机器）需学习并开启 生物掉落·共鸣 才继承生物掉落倍率
-        double mult = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_MOB_DROP)
-                ? SkillEffects.getMobDropMultiplier(record) : 1.0;
-        if (mult > 1.0) {
-            // 只对掉落表含"抢夺"条件的生物生效（如骷髅的骨头、僵尸的腐肉；猪肉/皮革不受抢夺影响不放大）
-            net.minecraft.resources.ResourceKey<LootTable> lootKey = event.getEntity().getLootTable();
-            if (lootKey != null && supportsLooting(lootKey, sp.serverLevel())) {
-                // ⚠️ 防刷物品（2026-08-26 初版 / 2026-09-06 v1.3.8 放宽）：掉落倍率跳过玩家注入的生物装备
-                java.util.List<ItemEntity> filterable = new java.util.ArrayList<>();
-                for (ItemEntity drop : event.getDrops()) {
-                    if (!isPlayerInjectedEquipment(equippedSnapshot, drop.getItem(), event.getEntity())) {
-                        filterable.add(drop);
-                    }
-                }
-                // ⚠️ 2026-09-16 修复（猎魂丰收一直不翻倍）：filterable 是【局部过滤副本】，
-                //    不是 event.getDrops() 本身 —— applyDropMultiplier 把额外掉落追加在它的末尾，
-                //    必须把新增部分写回事件列表，否则倍率完全无效（等于白算）。
-                //    历史 bug：2026-08-26 引入防刷物品过滤副本时漏了写回。
-                int before = filterable.size();
-                applyDropMultiplier(filterable, sp, mult);
-                for (int i = before; i < filterable.size(); i++) {
-                    event.getDrops().add(filterable.get(i));
-                }
-            }
-        }
+        // ⚠️ 2026-09-30：「猎魂丰收」(mob_drop) 已合并进「战利品大爆发」，此处不再单独处理。
+        //    其原有限制「仅对受抢夺影响的生物生效」按用户要求已去掉（战利品大爆发对所有生物生效）；
+        //    旧 helper supportsLooting / SkillEffects.getMobDropMultiplier 保留但已无调用方。
         // ============ 凋落物挪移（光环技能，2026-08-24）：掉落物直传绑定容器，不生成实体（防卡顿）============
         // ⚠️ 必须放在所有掉落技能【最后】执行：等战利品爆炸/刷怪蛋/头颅/生物掉落倍率全部结算完，
         //    再把所有掉落物一起传送进容器——否则提前 return 会吞掉其他技能的掉落
@@ -970,28 +970,147 @@ public class UltimateEvents {
 
     /**
      * 刷怪蛋掉落（节点技能）：击杀生物时按概率掉对应刷怪蛋。
-     * 每级 +10% 概率（满 10 级 = 100% 必掉）；v1.3.8 起掉落参与财源滚滚/猎魂丰收增幅
-     * （提前到战利品爆炸前生成 → 随普通掉落一起被复制/放大；子枫挪移术可直传容器不卡顿）。
-     * 用 {@link SpawnEggItem#byId} 取对应刷怪蛋（所有原版+模组生物通用；无刷怪蛋的生物不掉）。
+     * 每级 +20% 概率（满 5 级 = 100% 必掉，★ 2026-09-30 由每级 10%/满级 50% 上调）；
+     * v1.3.8 起掉落参与战利品大爆发增幅
+     * （提前到战利品大爆发前生成 → 随普通掉落一起被复制/放大；子枫挪移术可直传容器不卡顿）。
+     * 拿蛋用 {@link #findSpawnEggItem}（所有原版+模组生物的蛋通用；无刷怪蛋的生物不掉）。
      */
     private static void dropSpawnEgg(ServerPlayer sp, LivingDropsEvent event, PlayerSkillRecord record) {
         int level = record.isEnabled(Skills.MOB_SPAWN_EGG) ? record.getActiveLevel(Skills.MOB_SPAWN_EGG) : 0;
         if (level <= 0) {
             return;
         }
-        double chance = level * 0.10; // 每级 10%
+        double chance = level * 0.20; // 每级 20%（满 5 级 = 100%）
         if (sp.level().random.nextDouble() >= chance) {
             return;
         }
-        net.minecraft.world.item.SpawnEggItem eggItem = net.minecraft.world.item.SpawnEggItem.byId(event.getEntity().getType());
+        net.minecraft.world.entity.EntityType<?> type = event.getEntity().getType();
+        net.minecraft.world.item.SpawnEggItem eggItem = findSpawnEggItem(type);
         if (eggItem == null) {
             return;
         }
+        ItemStack egg = new ItemStack(eggItem);
+        // ★ 2026-09-30：给「通用实体 + NBT 品种」的模组蛋补回品种（资源蜜蜂：杀铁蜜蜂掉铁蜜蜂蛋）
+        applyEntityVariantTag(egg, event.getEntity(), type);
         ItemEntity drop = new ItemEntity(sp.level(),
                 event.getEntity().getX(), event.getEntity().getY(), event.getEntity().getZ(),
-                new ItemStack(eggItem));
+                egg);
         drop.setPickUpDelay(10);
         event.getDrops().add(drop);
+    }
+
+    // ══════════ 刷怪蛋查找（★ 2026-09-30 重写）══════════
+    //   旧实现：SpawnEggItem.byId(实体类型) —— 只查原版内部静态表 BY_ID。
+    //   问题：Forge/NeoForge 的 ForgeSpawnEggItem / DeferredSpawnEggItem 在构造时把 EntityType
+    //        传成了 null（注册顺序所限，只能用 Supplier 延迟取），于是 BY_ID 里存进去的键是 null，
+    //        byId(真实类型) 永远返回 null → 这类模组的刷怪蛋一个都掉不出来。
+    //        实测：资源蜜蜂 Productive Bees（SpawnEgg extends DeferredSpawnEggItem，用 Supplier 注册）。
+    //   现在：先走 byId 快路径，失败则遍历物品注册表用 getType(null) 比对，并缓存成表（刷怪塔不卡）。
+
+    /** EntityType → 刷怪蛋 缓存（首次用到时构建一次；注册完成后不会变） */
+    private static volatile Map<net.minecraft.world.entity.EntityType<?>, net.minecraft.world.item.SpawnEggItem> SPAWN_EGG_TABLE;
+
+    /** 取某实体类型对应的刷怪蛋物品；没有则 null */
+    private static net.minecraft.world.item.SpawnEggItem findSpawnEggItem(net.minecraft.world.entity.EntityType<?> type) {
+        if (type == null) {
+            return null;
+        }
+        // ① 原版静态表（原版生物 + 构造时传了真实类型的蛋）
+        net.minecraft.world.item.SpawnEggItem direct = net.minecraft.world.item.SpawnEggItem.byId(type);
+        if (direct != null) {
+            return direct;
+        }
+        // ② 全量扫表（一次性构建后走缓存）
+        Map<net.minecraft.world.entity.EntityType<?>, net.minecraft.world.item.SpawnEggItem> table = SPAWN_EGG_TABLE;
+        if (table == null) {
+            table = new java.util.IdentityHashMap<>();
+            for (Item item : net.minecraft.core.registries.BuiltInRegistries.ITEM) {
+                if (item instanceof net.minecraft.world.item.SpawnEggItem egg) {
+                    // getType(null) = 蛋自身的默认实体类型（不读 EntityTag）
+                    net.minecraft.world.entity.EntityType<?> t = egg.getType(null);
+                    if (t != null) {
+                        table.putIfAbsent(t, egg);
+                    }
+                }
+            }
+            SPAWN_EGG_TABLE = table;
+        }
+        return table.get(type);
+    }
+
+    // ══════════ 模组「通用实体 + NBT 品种」刷怪蛋的品种补写（★ 2026-09-30）══════════
+    //   资源蜜蜂（Productive Bees）的「配置蜂」是【一个实体类型 + 品种存在 NBT】的结构，
+    //   只给默认蛋的话，杀铁蜜蜂会掉出通用配置蜂蛋（品种丢失）。
+    //   这里按模组自己的数据格式把品种补回蛋里，未装该模组时反射字段为 null，自动跳过。
+
+    /** 资源蜜蜂「配置蜂」实体类（延迟解析；未装模组 = null） */
+    private static Class<?> configurableBeeClass;
+    /** {@code ConfigurableBee#getBeeType()}（返回品种 id） */
+    private static java.lang.reflect.Method beeTypeMethod;
+    /** 是否已得确定结论（装/未装都置位；仅“可重试失败”不置位） */
+    private static boolean beeReflectResolved;
+
+    /**
+     * 解析资源蜜蜂反射句柄（★ 2026-09-30 改为延迟 + 可重试）。
+     *
+     * <p>为何不用 static final 在类初始化时解析：本类可能在模组构造期就被加载，
+     * 那一刻类路径未必就绪 —— 若 {@code Class.forName} 抛 NoClassDefFoundError 被吞掉，
+     * 句柄会永久为 null → 玩家明明装了资源蜜蜂，品种功能却【静默永久失效】。
+     * 现在区分两种失败：类不存在（确定未装 → 永久跳过）与暂时不可用（下次再试）。
+     */
+    private static boolean ensureBeeReflect() {
+        if (beeReflectResolved) {
+            return configurableBeeClass != null;
+        }
+        Class<?> c;
+        try {
+            c = Class.forName("cy.jdkdigital.productivebees.common.entity.bee.ConfigurableBee");
+        } catch (ClassNotFoundException absent) {
+            beeReflectResolved = true; // 未装该模组 → 永久跳过，不再重复尝试
+            return false;
+        } catch (Throwable retryable) {
+            return false;              // 类路径暂未就绪（NoClassDefFoundError 等）→ 不置位，下次击杀再试
+        }
+        java.lang.reflect.Method m;
+        try {
+            // public 方法 → 不调 setAccessible（少一个模块访问风险，也避免失败把方法置 null）
+            m = c.getMethod("getBeeType");
+        } catch (Throwable ignored) {
+            beeReflectResolved = true; // 模组改了签名 → 永久跳过
+            return false;
+        }
+        configurableBeeClass = c;
+        beeTypeMethod = m;
+        beeReflectResolved = true;
+        return true;
+    }
+
+    /**
+     * 给蛋写入实体品种（★ 2026-09-30）。
+     *
+     * <p>目前只针对资源蜜蜂的配置蜂（其数据格式为 {@code {id: 实体类型, type: 品种}}）。
+     * 其他模组/生物不加任何数据 → 行为与原来完全一致。
+     */
+    private static void applyEntityVariantTag(ItemStack egg, LivingEntity dead, net.minecraft.world.entity.EntityType<?> type) {
+        if (!ensureBeeReflect() || !configurableBeeClass.isInstance(dead)) {
+            return;
+        }
+        String variant;
+        try {
+            Object v = beeTypeMethod.invoke(dead);
+            variant = v == null ? null : v.toString();
+        } catch (Throwable ignored) {
+            return;
+        }
+        if (variant == null || variant.isEmpty()) {
+            return;
+        }
+        String typeId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(type).toString();
+        net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
+        tag.putString("id", typeId);
+        tag.putString("type", variant);
+        egg.set(net.minecraft.core.component.DataComponents.ENTITY_DATA,
+                net.minecraft.world.item.component.CustomData.of(tag));
     }
 
     /**
@@ -1408,6 +1527,32 @@ public class UltimateEvents {
             }
         }
         return false;
+    }
+
+    /**
+     * 战利品大爆发·模式过滤（★ 2026-09-30）。
+     *
+     * <p>模式语义（存于 {@code auraTargetModes[loot_bomb]}，技能树第二键循环）：
+     * <ul>
+     *   <li>0 全模式 → 全放行（旧行为）</li>
+     *   <li>1 仅堆叠 → 只放行可堆叠物品（{@code getMaxStackSize() > 1}）</li>
+     *   <li>2 仅不堆叠 → 只放行不可堆叠物品（{@code == 1}，即装备/工具类）</li>
+     *   <li>3 黑名单 → 只放行未命中黑名单的（命中者在调用方已被【直接移除】不掉落）</li>
+     * </ul>
+     * 未知模式按「全」处理（旧存档/异常值兜底）。
+     * <p>⚠️ 堆叠判定用 {@code getMaxStackSize()}：它对物品自身属性敏感
+     * （如已损耐久的工具/带组件的装备仍是 1），正好符合「装备不堆叠」的直觉。
+     */
+    private static boolean lootModeAllows(PlayerSkillRecord record, int mode,
+                                          net.minecraft.world.item.ItemStack stack) {
+        if (mode == Skills.LOOT_MODE_STACKABLE) {
+            return stack.getMaxStackSize() > 1;
+        }
+        if (mode == Skills.LOOT_MODE_UNSTACKABLE) {
+            return stack.getMaxStackSize() == 1;
+        }
+        // 模式 3（黑名单）：命中者已在调用方被【直接移除】不掉落，此处无需再判
+        return true; // 全模式 / 黑名单
     }
 
     /**

@@ -70,7 +70,7 @@ public record ResetSkillC2SPacket(String skillId) implements CustomPacketPayload
                 //    timeLockCount 卡在 1（状态 map 里的条目也留着）→
                 //    而**唯一**能把 RULE_DAYLIGHT 设回 true 的 restoreTimeLock 只在 count 归零时被调
                 //    → doDaylightCycle / doWeatherCycle **全服永久锁死**，只能靠该玩家登出恢复。
-                //    /skilltree reset 命令己有同样的调用（SkillTreeAdminCommands），此处是遗漏。
+                //    /zifengskilltree reset 命令己有同样的调用（SkillTreeAdminCommands），此处是遗漏。
                 //    只在重置寰宇法则时调用：重置普通技能时调用会瞬时放锁再重锁，造成时间/天气闪动。
                 if (Skills.isGlobalSkill(skillId)) {
                     AuraEvents.onPlayerLogout(player);

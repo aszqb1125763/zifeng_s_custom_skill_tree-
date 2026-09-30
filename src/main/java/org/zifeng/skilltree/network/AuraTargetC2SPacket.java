@@ -38,7 +38,10 @@ public record AuraTargetC2SPacket(String skillId, int mode) implements CustomPac
                 // 仅两类技能有模式：杀戮光环敌我目标三兄弟 / 搬运术（自动⇄手动）
                 boolean haul = Skills.isContainerHaul(skillId);
                 boolean creatureTarget = Skills.isAuraTargetSkill(skillId);
-                if (!haul && !creatureTarget) {
+                // ★ 2026-09-30：战利品大爆发也是模式技能（4 态），原白名单漏了它 →
+                //    服务端直接忽略：切了没反应也没提示，玩家以为模式没生效。
+                boolean lootMode = Skills.LOOT_BOMB.equals(skillId);
+                if (!haul && !creatureTarget && !lootMode) {
                     return; // 其他技能无模式概念，忽略（不发提示不存档）
                 }
                 PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
@@ -50,6 +53,20 @@ public record AuraTargetC2SPacket(String skillId, int mode) implements CustomPac
                     String modeKey = packet.mode() == 1 ? "haul_mode_manual" : "haul_mode_auto";
                     player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
                             "chat.zifeng_s_custom_skill_tree.haul_mode_switch", "📦",
+                            Skills.getDisplayNameComponent(skillId),
+                            net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree." + modeKey)));
+                } else if (lootMode) {
+                    // 战利品大爆发：4 态（图标区分：🌍全掉落 / 📦仅堆叠 / ⚔仅不堆叠 / 🚫黑名单）
+                    String[] icons = {"🌍", "📦", "⚔", "🚫"};
+                    String modeKey = switch (packet.mode()) {
+                        case 1 -> "loot_mode_stackable";
+                        case 2 -> "loot_mode_unstackable";
+                        case 3 -> "loot_mode_blacklist";
+                        default -> "loot_mode_all";
+                    };
+                    String icon = icons[Math.max(0, Math.min(3, packet.mode()))];
+                    player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                            "chat.zifeng_s_custom_skill_tree.loot_mode_switch", icon,
                             Skills.getDisplayNameComponent(skillId),
                             net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree." + modeKey)));
                 } else {

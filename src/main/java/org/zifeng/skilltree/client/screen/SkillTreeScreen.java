@@ -830,11 +830,30 @@ public class SkillTreeScreen extends Screen {
 
     /** 指定光环技能的目标模式文字（0 敌对 / 1 友好 / 2 所有） */
     private String modeTextOf(String skillId) {
+        // ★ 2026-09-30：战利品大爆发是 4 态模式，语义与光环敌我完全不同 → 单独分派
+        if (Skills.LOOT_BOMB.equals(skillId)) {
+            return lootModeTextOf(skillId);
+        }
         return switch (auraTargetModes.getOrDefault(skillId, 0)) {
             case 1 -> t("mode_friendly");
             case 2 -> t("mode_all");
             default -> t("mode_hostile");
         };
+    }
+
+    /** 战利品大爆发模式 → 语言 key（★ 2026-09-30；静态，贴片属性区与 tooltip 共用） */
+    private static String lootModeKey(int mode) {
+        return switch (mode) {
+            case 1 -> "loot_mode_stackable";
+            case 2 -> "loot_mode_unstackable";
+            case 3 -> "loot_mode_blacklist";
+            default -> "loot_mode_all";
+        };
+    }
+
+    /** 战利品大爆发模式文字（★ 2026-09-30：0 全 / 1 仅堆叠 / 2 仅不堆叠 / 3 黑名单） */
+    private String lootModeTextOf(String skillId) {
+        return t(lootModeKey(auraTargetModes.getOrDefault(skillId, 0)));
     }
 
     /** 子2 能力类型（2026-09-07 规范 v1.0：第二框配色/文案分派）：0=等级循环 1=敌我目标 2=天气 3=搬运 */
@@ -2121,6 +2140,16 @@ public class SkillTreeScreen extends Screen {
                                 Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
                                 Component.literal(t("tip_haul_mode") + "【" + haulMode + "】"),
                                 Component.literal(t("tip_haul_mode_desc")),
+                                Component.literal(boundText),
+                                Component.literal(t("tip_bind_hint")),
+                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                    } else if (Skills.LOOT_BOMB.equals(skillId)) {
+                        // ★ 2026-09-30：战利品大爆发：第二键 = 4 态模式循环（全 / 仅堆叠 / 仅不堆叠 / 黑名单）
+                        String lootMode = lootModeTextOf(skillId);
+                        lines = java.util.List.of(
+                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
+                                Component.literal(t("tip_loot_mode") + "【" + lootMode + "】"),
+                                Component.literal(t("tip_loot_mode_desc")),
                                 Component.literal(boundText),
                                 Component.literal(t("tip_bind_hint")),
                                 Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
@@ -3554,12 +3583,12 @@ public class SkillTreeScreen extends Screen {
         addRow(rows, t("panel_mining"), attrVal(player, net.minecraft.world.entity.ai.attributes.Attributes.MINING_EFFICIENCY, rec), "%.1f");
         addRow(rows, t("panel_luck"), attrVal(player, Attributes.LUCK, rec), "%.1f");
         addRow(rows, t("panel_regen"), SkillEffects.getRegenPerSecond(rec), "%.1f");
-        addRow(rows, t("panel_mob_drop"), SkillEffects.getMobDropMultiplier(rec), "%.2f" + t("unit_x"));
+        // ★ 2026-09-30：原「猎魂丰收」行已删除（合并进战利品大爆发，其行见下方 loot_bomb）
         addRow(rows, t("panel_block_drop"), SkillEffects.getBlockDropMultiplier(rec), "%.2f" + t("unit_x"));
         addRow(rows, t("panel_xp"), SkillEffects.getExperienceMultiplier(rec), "%.2f" + t("unit_x"));
         // 掉落节点类终极：刷怪蛋/头颅概率 + 战利品爆炸倍率（没学不显示）
         int spawnEgg = rec.isEnabled(Skills.MOB_SPAWN_EGG) ? rec.getActiveLevel(Skills.MOB_SPAWN_EGG) : 0;
-        if (spawnEgg > 0) addRow(rows, t("panel_spawn_egg"), spawnEgg * 10, "%.0f%%");
+        if (spawnEgg > 0) addRow(rows, t("panel_spawn_egg"), spawnEgg * 20, "%.0f%%");
         int mobHead = rec.isEnabled(Skills.MOB_HEAD) ? rec.getActiveLevel(Skills.MOB_HEAD) : 0;
         if (mobHead > 0) addRow(rows, t("panel_mob_head"), mobHead * 10, "%.0f%%");
         int lootBomb = rec.isEnabled(Skills.LOOT_BOMB) ? rec.getActiveLevel(Skills.LOOT_BOMB) : 0;
@@ -4787,12 +4816,15 @@ public class SkillTreeScreen extends Screen {
             // ── 生产 / 掉落 ──
             case Skills.REGEN -> addModFlat(parts, lv * 0.2, "✚");
             case Skills.AMP_REGEN -> addModPct(parts, lv * 0.1, "✚");
-            case Skills.MOB_DROP -> addModFlat(parts, lv, "❖");
             case Skills.BLOCK_DROP -> addModFlat(parts, lv, "❖");
             case Skills.XP_GAIN -> addModFlat(parts, lv * 2, "✳");
-            case Skills.MOB_SPAWN_EGG -> addModPct(parts, lv * 0.1, "❖");
+            case Skills.MOB_SPAWN_EGG -> addModPct(parts, lv * 0.2, "❖");
             case Skills.MOB_HEAD -> addModPct(parts, lv * 0.1, "❖");
-            case Skills.LOOT_BOMB -> addModFlat(parts, lv, "❖");
+            // ★ 2026-09-30：战利品大爆发 = 倍率(1+等级) + 当前模式短标签（4 模式必须一眼可见）
+            case Skills.LOOT_BOMB -> {
+                addModFlat(parts, 1.0 + lv, "❖");
+                parts.add(t(lootModeKey(record.getAuraTargetMode(Skills.LOOT_BOMB))));
+            }
 
             // ── 特殊 / 光环 ──
             case Skills.VILLAGE_HERO -> addModFlat(parts, lv, "☺");
@@ -4859,7 +4891,7 @@ public class SkillTreeScreen extends Screen {
             Skills.AURA_TIME, Skills.AURA_WEATHER, Skills.AE_INFINITE_CHANNEL,
             // 机械共鸣
             Skills.MACHINE_STAR, Skills.MACHINE_LOOT_BOMB, Skills.MACHINE_UNBREAKABLE,
-            Skills.MACHINE_MOB_DROP, Skills.MACHINE_BLOCK_DROP, Skills.MACHINE_XP_GAIN,
+            Skills.MACHINE_BLOCK_DROP, Skills.MACHINE_XP_GAIN,
             Skills.MACHINE_SPAWN_EGG, Skills.MACHINE_MOB_HEAD, Skills.MACHINE_AUTO_SMELT,
             Skills.MACHINE_ZONE_PLACE, Skills.MACHINE_ZONE_EXCAVATE,
             Skills.MACHINE_ZONE_ATTACK, Skills.MACHINE_ZONE_PROTECT,

@@ -66,7 +66,7 @@ public class Config {
      * 当前配置迁移版本：**每当我们修改了某键的默认值、且需要强制覆盖老整合包时 +1**。
      * <p>迁移表见 {@link #migrateConfig()}。
      */
-    public static final int CONFIG_MIGRATION_VERSION = 3;
+    public static final int CONFIG_MIGRATION_VERSION = 4;
 
     // ============ Economy values (hot-reloadable) / 技能树经济数值（可热重载） ============
 
@@ -188,7 +188,7 @@ public class Config {
     /** Node-type multi-level ultimate: cost step-up ratio per level (0.1 = +10%). 终极阶梯比率 */
     public static final ModConfigSpec.DoubleValue ULTIMATE_STEP_RATE;
 
-    /** Loot Bomb: drop multiplier cap (level 1 = 1x, linear 1+level; default cap 101). 战利品爆炸封顶 */
+    /** Loot Bomb (=战利品大爆发): drop multiplier cap (level 1 = 1x, linear 1+level; 1000 levels = 1001x; default 1001). 战利品大爆发封顶 */
     public static final ModConfigSpec.IntValue LOOT_BOMB_MAX_MULTIPLIER;
 
     /** Magnet aura: max items+XP orbs processed per tick (perf guard). 磁力每 tick 上限 */
@@ -500,8 +500,8 @@ public class Config {
                 .comment("Node-type multi-level ultimate: cost increase ratio per level (0.1 = +10%).\n终极节点阶梯比率")
                 .defineInRange("ultimateStepRate", 0.1, 0.0, 1.0);
         LOOT_BOMB_MAX_MULTIPLIER = builder
-                .comment("Loot Bomb: drop multiplier cap (level 1 = 1x, linear 1+level, 100 levels = 101x; default 101).\n战利品爆炸封顶")
-                .defineInRange("lootBombMaxMultiplier", 101, 2, 1000000);
+                .comment("Loot Bomb: drop multiplier cap (level 1 = 1x, linear 1+level, 1000 levels = 1001x; default 1001).\n战利品大爆发封顶")
+                .defineInRange("lootBombMaxMultiplier", 1001, 2, 1000000);
         MAGNET_MAX_PER_TICK = builder
                 .comment("Magnet aura: max items+XP orbs processed per tick (default 64; prevents lag from mass teleport).\n磁力每 tick 上限")
                 .defineInRange("magnetMaxPerTick", 64, 1, 1000000);
@@ -690,6 +690,11 @@ public class Config {
             BLADE_DAMAGE_PER_POINT.set(1.0);       // 旧 0.4 ：显示 +4 → +10
             ATTACK_SPEED_PER_POINT.set(0.2);       // 旧 0.02：显示 +0.2 → +2
             AMP_ATTACK_SPEED_PER_POINT.set(0.1);   // 旧 0.08：显示 +80% → +100%
+        }
+        if (from < 4) {
+            // v4（2026-09-30 战利品大爆发）：上限 100 → 1000 级，倍率仍为 1+等级，
+            // 封顶必须从 101 顶到 1001，否则 1000 级会被夹到 101×（改动"看不到效果"）。
+            LOOT_BOMB_MAX_MULTIPLIER.set(1001);
         }
         CONFIG_VERSION.set(CONFIG_MIGRATION_VERSION);
         return true;

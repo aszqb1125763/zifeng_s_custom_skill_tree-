@@ -43,6 +43,17 @@ public class PlayerSkillRecord {
     private long totalConvertedPoints;
     /** 自动熔炼黑名单（2026-08-13 恢复）：黑名单中的掉落物不参与熔炼判定，当正常方块处理（Item 注册名集合） */
     private final Set<Item> autoSmeltBlacklist = new HashSet<>();
+    /**
+     * 战利品大爆发·自定义黑名单（★ 2026-09-30，模式 3 用）。
+     * <p>条目两种形式（用字符串存，才能同时支持物品与标签）：
+     * <ul>
+     *   <li>物品 id：{@code minecraft:diamond_sword}</li>
+     *   <li>标签：{@code #minecraft:swords} / {@code #forge:armors}（以 {@code #} 开头）</li>
+     * </ul>
+     * 命中任一即排除该掉落（见 {@link #isLootBlacklisted(net.minecraft.world.item.ItemStack)}）。
+     * <p>⚠️ 与自动熔炼黑名单一样属「玩家配置」，硬重置/重洗技能【不】清空。
+     */
+    private final Set<String> lootBlacklist = new java.util.LinkedHashSet<>();
     /** 凋落物挪移绑定（2026-08-24）：绑定信息存玩家存档（木棍只是绑定媒介，绑定后无需手持木棍）
      *  null = 未绑定；维度字符串 + 坐标 + 朝向 + 容器显示名 */
     private String lootVacuumDim;
@@ -214,6 +225,61 @@ public class PlayerSkillRecord {
         return autoSmeltBlacklist.remove(item);
     }
 
+    // ============ 战利品大爆发·自定义黑名单（★ 2026-09-30，模式 3）============
+
+    /** 全部黑名单条目（只读；条目 = 物品 id 或 #标签） */
+    public Set<String> getLootBlacklist() {
+        return Collections.unmodifiableSet(lootBlacklist);
+    }
+
+    /** 新增黑名单条目（返回是否新增；空串忽略） */
+    public boolean addLootBlacklist(String entry) {
+        return entry != null && !entry.isBlank() && lootBlacklist.add(entry.trim());
+    }
+
+    /** 移除黑名单条目（返回是否移除） */
+    public boolean removeLootBlacklist(String entry) {
+        return entry != null && lootBlacklist.remove(entry.trim());
+    }
+
+    /**
+     * 该掉落是否被战利品黑名单命中（★ 2026-09-30）。
+     *
+     * <p>匹配规则：
+     * <ol>
+     *   <li>条目为普通 id（{@code ns:path}）→ 与物品注册名相等即命中；</li>
+     *   <li>条目以 {@code #} 开头（标签）→ 物品注册名相等即命中
+     *       （直接用字符串比较，**不需要 RegistryAccess**，服务端/客户端都能用）。</li>
+     * </ol>
+     * 两种条目都做「字符串相等」判定 → 逻辑统一、无反射、无版本差异。
+     */
+    public boolean isLootBlacklisted(net.minecraft.world.item.ItemStack stack) {
+        if (lootBlacklist.isEmpty() || stack == null || stack.isEmpty()) {
+            return false;
+        }
+        // ① 物品注册名
+        String itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        // ② 该物品的全部标签（含 forge: 等通用标签）
+        java.util.Set<String> tagIds = null;
+        java.util.Iterator<net.minecraft.tags.TagKey<Item>> it = stack.getTags().iterator();
+        while (it.hasNext()) {
+            if (tagIds == null) {
+                tagIds = new java.util.HashSet<>();
+            }
+            net.minecraft.tags.TagKey<Item> tk = it.next();
+            tagIds.add("#" + tk.location());
+        }
+        for (String entry : lootBlacklist) {
+            if (entry.equals(itemId)) {
+                return true;
+            }
+            if (tagIds != null && tagIds.contains(entry)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ============ 凋落物挪移绑定（2026-08-24） ============
 
     /** 是否已绑定容器 */
@@ -370,7 +436,10 @@ public class PlayerSkillRecord {
      * 0=自动（开箱即搬） 1=手动（按键搬运）——clamp 上限按技能区分（光环 0-2，搬运术 0-1）。
      */
     public void setAuraTargetMode(String skillId, int mode) {
-        int max = Skills.isContainerHaul(skillId) ? 1 : 2;
+        // ★ 2026-09-30：上限改为按 getModeCount 推导（战利品大爆发 4 态 → 上限 3；
+        //   光环敌我 3 态 → 2；搬运术 2 态 → 1）——不要再写死 1/2。
+        final int count = Skills.getModeCount(skillId);
+        final int max = count > 0 ? count - 1 : 2;
         auraTargetModes.put(skillId, Math.max(0, Math.min(max, mode)));
     }
 
@@ -539,7 +608,7 @@ public class PlayerSkillRecord {
     }
 
     /**
-     * 管理指令硬清空（2026-09-04，/skilltree reset）：与游戏内重洗 {@link #resetAll()} 相反——
+     * 管理指令硬清空（2026-09-04，/zifengskilltree reset）：与游戏内重洗 {@link #resetAll()} 相反——
      * <b>不返还任何技能点</b>，清空全部已学/开关/生效等级/光环目标模式并把剩余技能点归零。
      * 保留非技能类数据：自动熔炼黑名单、凋落物挪移绑定、累计转换技能点数（totalConvertedPoints）。
      */
@@ -698,6 +767,12 @@ public class PlayerSkillRecord {
                     .ifPresent(key -> blacklist.add(StringTag.valueOf(key.location().toString())));
         }
         tag.put("AutoSmeltBlacklist", blacklist);
+        // 战利品大爆发·黑名单（★ 2026-09-30；条目 = 物品 id 或 #标签）
+        ListTag lootBl = new ListTag();
+        for (String e : lootBlacklist) {
+            lootBl.add(StringTag.valueOf(e));
+        }
+        tag.put("LootBlacklist", lootBl);
         // 木棍工具层（2026-09-08）：总开关 + 模式
         tag.putBoolean("StickToolOn", stickToolOn);
         tag.putInt("StickToolMode", stickToolMode);
@@ -755,7 +830,7 @@ public class PlayerSkillRecord {
         // ⚠️ 2026-09-20 加固：反序列化侧原本「零校验」，任何数值照单全收。
         //    危险链路：learnedSkills 里的 Points 只出现在 totalSpent() 的
         //    `for (int i = 0; i < points; i++)` 循环里 —— 存档被改坏（手工改 NBT、
-        //    其他工具写坏、旧版本 bug）写成 20 亿 → 点一次重置/`/skilltree reset`
+        //    其他工具写坏、旧版本 bug）写成 20 亿 → 点一次重置/`/zifengskilltree reset`
         //    就能把**服务端主线程**卡死几分钟到几小时（客户端同样有该循环）。
         //    totalConvertedPoints 为负则会推导出 ≤ 0 的转换阈值 → 转换机除零。
         // 已学点数的防崩上限：正常玩法下最大只有 BASE 100 / AMPLIFY 50 / 光环与节点更少；
@@ -836,6 +911,16 @@ public class PlayerSkillRecord {
                 }
             }
         }
+        // 战利品大爆发·黑名单（★ 2026-09-30；旧存档无此字段默认空）
+        if (tag.contains("LootBlacklist", Tag.TAG_LIST)) {
+            ListTag lootBl = tag.getList("LootBlacklist", Tag.TAG_STRING);
+            for (int i = 0; i < lootBl.size(); i++) {
+                String e = lootBl.getString(i);
+                if (!e.isBlank()) {
+                    record.lootBlacklist.add(e.trim());
+                }
+            }
+        }
         // 凋落物挪移绑定（旧存档无此字段默认未绑定）
         if (tag.contains("LootVacuumDim", Tag.TAG_STRING)) {
             record.lootVacuumDim = tag.getString("LootVacuumDim");
@@ -898,6 +983,29 @@ public class PlayerSkillRecord {
                             Math.max(1, (int) Math.round(old / (double) Skills.LEVEL_COMPRESSION)));
                 }
             }
+        }
+        // ══════════ 技能合并退点迁移（★ 2026-09-30）══════════
+        // 「猎魂丰收」(mob_drop) 与「生物掉落·共鸣」(machine_mob_drop) 已合并进「战利品大爆发」(loot_bomb)。
+        // 旧存档里这两个技能的点数按【100% 原额】退还到技能点池
+        // （不是 RESET_REFUND_RATE —— 这不是玩家主动重洗，是我们单方面删了技能，必须全额退）。
+        // 移除后条件永假 → 天然幂等，无需标记位。
+        for (String removedId : new java.util.ArrayList<>(record.learnedSkills.keySet())) {
+            if (!Skills.isRemovedSkill(removedId)) {
+                continue;
+            }
+            final int pts = record.learnedSkills.getOrDefault(removedId, 0);
+            // 依赖 Skills 里保留的 LEGACY 消耗规则 + TYPE_MAP 映射，否则会算成 0 / 算错
+            final double back = totalSpent(removedId, pts);
+            if (back > 0) {
+                record.skillPoints += back;
+                org.zifeng.skilltree.SkillTreeMod.LOGGER.info(
+                        "[技能合并] 已为 {} 退还已合并技能 {}（{} 级）的 {} 点技能点",
+                        record.owner, removedId, pts, back);
+            }
+            record.learnedSkills.remove(removedId);
+            record.toggles.remove(removedId);
+            record.activeLevels.remove(removedId);
+            record.auraTargetModes.remove(removedId);
         }
         return record;
     }
