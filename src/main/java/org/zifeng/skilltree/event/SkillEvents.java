@@ -135,6 +135,9 @@ public class SkillEvents {
                 "chat.zifeng_s_custom_skill_tree.welcome_author"));
         player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
                 "chat.zifeng_s_custom_skill_tree.welcome_modern_ui"));
+        // ★ 2026-09-30：告诉玩家去哪里看本模组的全部指令（文本走语言文件，自动跟随游戏语言）
+        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                "chat.zifeng_s_custom_skill_tree.welcome_help"));
     }
 
     /**

@@ -250,12 +250,19 @@ public final class Skills {
     public static final String VILLAGE_HERO = "village_hero"; // 村庄英雄（每级1级效果，上限10级）
     public static final String REACH = "reach";               // 接触距离（触摸/攻击距离，每级+1格，上限50级）
     public static final String GLOW = "glow";                 // 发光（35格生物发光，上限1级）
-    public static final String LOOT_BOMB = "loot_bomb";       // 战利品爆炸（掉落翻倍，1级翻一倍，上限100级）
+    // ★ 2026-09-30：战利品大爆发（LOOT_BOMB）= 旧「战利品爆炸」+「猎魂丰收」合并；1000 级、4 模式
+    public static final String LOOT_BOMB = "loot_bomb";       // 战利品大爆发（掉落爆发，倍率=1+等级，上限1000级，4模式）
     public static final String UNBREAKABLE = "unbreakable";   // 工具不毁（耐久减免，上限5级，拆自采掘熟稔）
-    public static final String MOB_DROP = "mob_drop";         // 生物掉落倍率（上限10级，拆自掉落增幅）
+    /**
+     * ⚠️ LEGACY（2026-09-30 已合并进 {@link #LOOT_BOMB}，技能树中不再出现）：
+     * 保留常量与「上限/消耗」规则，<b>仅为旧存档退点迁移</b>能算出真实投入量
+     * （{@code PlayerSkillRecord.totalSpentOf} 依赖 {@link #getUltimateLevelCost}）——
+     * 千万不要顺手删掉这两个方法里的对应 case，否则退点会算成 0。
+     */
+    public static final String MOB_DROP = "mob_drop";         // [LEGACY] 原「猎魂丰收」，已合并进战利品大爆发
     public static final String BLOCK_DROP = "block_drop";     // 方块掉落倍率（上限10级，拆自掉落增幅）
     public static final String XP_GAIN = "xp_gain";           // 经验获取倍率（上限10级，拆自掉落增幅）
-    public static final String MOB_SPAWN_EGG = "mob_spawn_egg"; // 刷怪蛋掉落（上限10级，每级10%，独立不吃增幅）
+    public static final String MOB_SPAWN_EGG = "mob_spawn_egg"; // 刷怪蛋掉落（上限5级，每级20%，满级100%，独立不吃增幅）
     public static final String MOB_HEAD = "mob_head";           // 头颅掉落（上限5级，每级20%，独立不吃增幅）
     public static final String AUTO_SMELT = "auto_smelt";   // 自动熔炼（挖掘自动熔炼矿物，1级，消耗30）
     public static final String ULT_BREAK_ALL = "ult_break_all"; // 万物挖掘（可挖任何方块含基岩，1级，消耗100）
@@ -446,8 +453,9 @@ public final class Skills {
             ULT_MASTER,      // 全能精通（前置：以上 5 个终极 → 必须排在其下方）
             ULT_VOID_BODY,   // 虚空神体（前置：全能精通 → 必须排在其下方）
             ULT_FAVOR,       // 宇宙的青睐（无前置）
-            // 掉落/生产成长系（自特殊列上移）：财源滚滚/万载不磨/猎魂丰收/点石成金/经验飞涨/妖魂凝卵/斩首夺颅/自动熔炼/万物挖掘/不毁词条/横扫千军/稳如泰山
-            LOOT_BOMB, UNBREAKABLE, MOB_DROP, BLOCK_DROP, XP_GAIN,
+            // 掉落/生产成长系（自特殊列上移）：战利品大爆发/万载不磨/点石成金/经验飞涨/妖魂凝卵/斩首夺颅/自动熔炼/万物挖掘/不毁词条/横扫千军/稳如泰山
+            // ⚠️ 2026-09-30：MOB_DROP（猎魂丰收）已合并进 LOOT_BOMB，从列表移除（常量保留供退点）
+            LOOT_BOMB, UNBREAKABLE, BLOCK_DROP, XP_GAIN,
             MOB_SPAWN_EGG, MOB_HEAD, AUTO_SMELT, ULT_BREAK_ALL, ULT_UNBREAK_TAG,
             ULT_SWEEP, ULT_KB_RESIST);
     /** 所有特殊被动（纵列4，2026-09-06 重新划分）：【一次性奇技】——点一次给固定能力的玩法/工具/生存便利 */
@@ -486,9 +494,10 @@ public final class Skills {
     /** 所有机械共鸣（纵列6）：机械之星在最上，其余共鸣技能在前置原技能下方 */
     public static final List<String> MACHINE_SKILLS = List.of(
             MACHINE_STAR,
-            MACHINE_LOOT_BOMB, MACHINE_UNBREAKABLE, MACHINE_MOB_DROP, MACHINE_BLOCK_DROP,
+            MACHINE_LOOT_BOMB, MACHINE_UNBREAKABLE, MACHINE_BLOCK_DROP,
             MACHINE_XP_GAIN, MACHINE_SPAWN_EGG, MACHINE_MOB_HEAD, MACHINE_AUTO_SMELT,
             MACHINE_ZONE_PLACE, MACHINE_ZONE_EXCAVATE, MACHINE_ZONE_ATTACK, MACHINE_ZONE_PROTECT);
+            // ⚠️ 2026-09-30：MACHINE_MOB_DROP 已合并进 MACHINE_LOOT_BOMB，从列表移除（常量保留供退点）
     /** 所有子枫的馈赠（纵列7，2026-08-25 新增）：时间/移动/飞行/挖掘/击杀洗礼 + 增幅 */
     public static final List<String> GIFT_SKILLS = List.of(
             GIFT_TIME_BAPTISM, GIFT_TIME_STORM, GIFT_TIME_FLOOD,
@@ -580,6 +589,10 @@ public final class Skills {
         for (String s : ULTIMATE_SKILLS) map.put(s, SkillType.ULTIMATE);
         for (String s : SPECIAL_SKILLS) map.put(s, SkillType.SPECIAL);
         for (String s : AURA_SKILLS) map.put(s, SkillType.AURA);
+        // ⚠️ LEGACY（2026-09-30 已合并进战利品大爆发）：必须保留类型映射，
+        //    否则 getType 回退到 BASE → 退点按"基础线性消耗"算，金额完全错。
+        map.put(MOB_DROP, SkillType.ULTIMATE);
+        map.put(MACHINE_MOB_DROP, SkillType.MACHINE);
         return map;
     }
 
@@ -636,25 +649,50 @@ public final class Skills {
     //   ③ 功能触发键（hasTrigger 才显示）
     // UI 显隐、按键处理、模式循环全部读下面这组统一方法 —— 禁止散落特判。
 
+    // ============ 战利品大爆发：模式常量（★ 2026-09-30）============
+    //   复用 auraTargetModes 存模式（与光环/搬运术同一机制，clamp 上限见 PlayerSkillRecord.setAuraTargetMode）
+    /** 模式 0：全模式 —— 所有掉落都参与爆发（旧行为） */
+    public static final int LOOT_MODE_ALL = 0;
+    /** 模式 1：仅堆叠物品（maxStackSize > 1） */
+    public static final int LOOT_MODE_STACKABLE = 1;
+    /** 模式 2：仅不堆叠物品（maxStackSize == 1，即装备/工具类） */
+    public static final int LOOT_MODE_UNSTACKABLE = 2;
+    /** 模式 3：自定义黑名单 —— 命中黑名单（物品 id 或其标签）的掉落不参与 */
+    public static final int LOOT_MODE_BLACKLIST = 3;
+
+    /**
+     * 是否为「已移除/已合并」的历史技能（★ 2026-09-30）。
+     * <p>这些技能不再出现在技能树里，但旧存档可能仍有点数 —— 由
+     * {@code PlayerSkillRecord} 的一次性迁移按 100% 退还。
+     */
+    public static boolean isRemovedSkill(String skillId) {
+        return MOB_DROP.equals(skillId) || MACHINE_MOB_DROP.equals(skillId);
+    }
+
     /**
      * 是否有「子2 模式循环」（2026-09-07 规范）：
-     * 敌我目标（杀戮三兄弟 3 态）/ 天气（晴空环 3 态）/ 搬运（搬运术 2 态）。
+     * 敌我目标（杀戮三兄弟 3 态）/ 天气（晴空环 3 态）/ 搬运（搬运术 2 态）/
+     * 工具（木棍 BIND/RANGE 2 态，2026-09-08）/ 战利品大爆发（4 态，2026-09-30）。
      * 纯可调等级技能（无模式语义）返回 false —— 它们的子2是等级循环，见 {@link #hasLevelCycle}。
      */
     public static boolean hasModeCycle(String skillId) {
         return isAuraTargetSkill(skillId)        // 敌我目标 3 态
                 || AURA_WEATHER.equals(skillId)  // 晴空环天气 3 态
                 || isContainerHaul(skillId)      // 搬运术自动/手动 2 态
-                || isStickTool(skillId);         // 木棍工具 BIND/RANGE 2 态（2026-09-08）
+                || isStickTool(skillId)          // 木棍工具 BIND/RANGE 2 态（2026-09-08）
+                || LOOT_BOMB.equals(skillId);    // 战利品大爆发 4 态（2026-09-30）
     }
 
-    /** 子2 模式循环的态数（敌我/天气=3，搬运=2，工具=2）；无模式返回 0 */
+    /** 子2 模式循环的态数（敌我/天气=3，搬运=2，工具=stickModeCount，战利品大爆发=4）；无模式返回 0 */
     public static int getModeCount(String skillId) {
         if (isAuraTargetSkill(skillId) || AURA_WEATHER.equals(skillId)) {
             return 3;
         }
         if (isContainerHaul(skillId)) {
             return 2;
+        }
+        if (LOOT_BOMB.equals(skillId)) {
+            return 4; // ★ 2026-09-30：全 / 仅堆叠 / 仅不堆叠 / 黑名单
         }
         if (isStickTool(skillId)) {
             return stickModeCount();
@@ -934,7 +972,8 @@ public final class Skills {
 
     /**
      * 终极节点等级上限：默认单次解锁（1）；多级终极节点（节点类）各自上限：
-     * 村庄英雄 10 / 接触距离 50 / 发光 1 / 战利品爆炸 100 / 工具不毁 1（点亮即 100%，故一次性）/ 生物掉落 10 / 方块掉落 10 / 经验 10 / 刷怪蛋 10 / 头颅 5
+     * 村庄英雄 10 / 接触距离 50 / 发光 1 / 战利品大爆发 1000 / 工具不毁 1（点亮即 100%，故一次性）/ 方块掉落 10 / 经验 50 / 刷怪蛋 5 / 头颅 5
+     * <p>⚠️ MOB_DROP 为 LEGACY（已合并），保留其 10 级仅为旧存档退点计算。
      */
     public static int getUltimateMaxPoints(String skillId) {
         return switch (skillId) {
@@ -943,7 +982,7 @@ public final class Skills {
             case REACH -> 50;
             case ULT_SWEEP, ULT_KB_RESIST -> 10; // 横扫范围/击退抗性：上限 10 级
             case GLOW -> 1;
-            case LOOT_BOMB -> 100;
+            case LOOT_BOMB -> 1000; // ★ 2026-09-30：合并「猎魂丰收」后由 100 升到 1000 级（倍率=1+等级）
             case UNBREAKABLE -> 1; // 万载不磨（2026-09-14）：点亮即 100% 耐久减免，2~5 级无额外效果，故降为一次性点亮
             case XP_GAIN -> 50; // 经验飞涨：上限 50 级（2026-09-06，原 10 级）
             case MOB_DROP, BLOCK_DROP -> 10;
@@ -962,6 +1001,13 @@ public final class Skills {
         // 横扫范围/击退抗性/金身真解：线性消耗（每级 2 点，下一级 +2：2,4,6,8...）
         if (ULT_SWEEP.equals(skillId) || ULT_KB_RESIST.equals(skillId) || AMP_ARMOR.equals(skillId)) {
             return (double) (currentLevel + 1) * 2.0;
+        }
+        // ★ 2026-09-30：战利品大爆发（1000 级）单独用 **1.01^等级**
+        //    —— 全局的 1.1^等级 在 1000 级会变成天文数字（1.1^1000）。
+        //    base 10 → 100 级≈27、500 级≈1436、1000 级≈208,600（累计约 2100 万）
+        //    ⚠️ 倍率=1+等级不缩小（用户明确）：代价靠消耗曲线拉高。
+        if (LOOT_BOMB.equals(skillId)) {
+            return 10.0 * Math.pow(1.01, currentLevel);
         }
         double base = switch (skillId) {
             case VILLAGE_HERO, LOOT_BOMB -> 10.0;

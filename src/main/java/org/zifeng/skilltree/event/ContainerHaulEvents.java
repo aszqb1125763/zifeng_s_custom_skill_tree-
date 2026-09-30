@@ -124,15 +124,43 @@ public final class ContainerHaulEvents {
 
     /**
      * 遍历打开的菜单槽位：跳过玩家背包槽（container == player 背包）与 AE2 设备槽位，
-     * 其余视为外部容器槽，把物品逐格 insertIntoBoundRaw 塞进绑定容器。塞完的空槽 set 回空。
+     * 其余视为外部容器槽，把物品逐格 insertIntoBoundRaw 塞进绑定容器。
+     *
+     * <p>★★ 2026-09-30 重写（修「搬运精妙容器会随机销毁物品」，双版本）：
+     * <b>不再拿 slot.getItem() 的活引用去插入，也不再用 slot.set() 清源槽。</b>
+     *
+     * <p><b>根因（Forge/NeoForge 源码实证，非推测）：</b>
+     * <ol>
+     *   <li>{@code SlotItemHandler.getItem()} = {@code itemHandler.getStackInSlot(index)} ——
+     *       返回的是容器内部列表里的<b>那个对象本身</b>，不是副本；</li>
+     *   <li>{@code ItemStackHandler.insertItem()} 在目标槽为空时执行
+     *       {@code stacks.set(slot, stack)} —— <b>把传进来的那个对象原样存下</b>
+     *       （只有被 limit 截断时才 copyWithCount）。</li>
+     * </ol>
+     * 两者相加 → 源容器与目标容器<b>共享同一个 ItemStack 对象</b>：目标容器后续任何
+     * 数量/内容改动都会连带改到源容器，我们再 set 写回源槽时数量已经错乱 → 随机丢物。
+     * <p>只有「活引用读取 + 回写源槽」的搬运术会踩到；掉落直传与选区拆解只往目标里插、
+     * 从不回写源槽，所以哪怕是巨量物品也一直正常（与实测一致）。
+     *
+     * <p><b>修法：</b>
+     * <ol>
+     *   <li>读出来立刻 {@code copy()}，用副本去插入 → 源、目标永不共享对象；</li>
+     *   <li>清源槽改用<b>官方移除管线</b> {@code slot.remove(n)}
+     *       （容器自己的 extractItem / removeItem，不绕过其过滤与升级响应），
+     *       且只按<b>实际搬走的数量</b>精确扣除。</li>
+     * </ol>
+     * 因为「插进去多少才取多少」，即便源与目标恰好是同一个容器（自搬），
+     * 净效果也是 0（取 N → 放回 N → 再取 N，总量不变），
+     * 不会再有旧实现「先 set(EMPTY) 把刚合并进去的物品一起抹掉」的破坏。
      */
     private static void transferFromMenu(ServerPlayer player, PlayerSkillRecord record, AbstractContainerMenu menu) {
         if (menu == null || player == null) {
             return;
         }
         boolean anyMoved = false;
-        for (int i = 0; i < menu.slots.size(); i++) {
-            Slot slot = menu.slots.get(i);
+        // 快照槽位列表：取出物品时源容器可能改结构，不再直接遍历 menu.slots 视图
+        final java.util.List<Slot> slots = new java.util.ArrayList<>(menu.slots);
+        for (Slot slot : slots) {
             if (slot == null) {
                 continue;
             }
@@ -150,17 +178,42 @@ public final class ContainerHaulEvents {
             if (stack == null || stack.isEmpty()) {
                 continue;
             }
-            ItemStack leftover = LootVacuumEvents.insertIntoBoundRaw(player, record, stack);
-            if (leftover.isEmpty()) {
-                slot.set(ItemStack.EMPTY); // 全部搬走 → 清空源格
-                anyMoved = true;
-            } else if (leftover.getCount() != stack.getCount()) {
-                slot.set(leftover); // 部分搬走 → 剩余放回源格
+            // ★ 2026-09-30：必须用副本 —— 目标容器空槽时会直接把传入对象存下，
+            //   把源容器内部对象交出去会造成两个容器共享同一对象（见方法说明）
+            ItemStack work = stack.copy();
+            ItemStack leftover = LootVacuumEvents.insertIntoBoundRaw(player, record, work);
+            int moved = work.getCount() - leftover.getCount();
+            if (moved > 0) {
+                takeFromSourceSlot(slot, moved);
                 anyMoved = true;
             }
         }
         if (anyMoved) {
             player.containerMenu.broadcastChanges();
+        }
+    }
+
+    /**
+     * 从源槽按「实际搬走的数量」精确取出（★ 2026-09-30 新增）。
+     *
+     * <p><b>为何不用 {@code slot.set(...)}：</b>{@code set} 是「整格覆盖写」，
+     * 对精妙这类 {@code SlotItemHandler} 会直接 {@code setStackInSlot} 并触发完整槽变更管线，
+     * 但覆盖写要由我们自己算数量 —— 一旦数量算错（对象共享、大栈、合成数量）就会写坏槽。
+     * 用官方取出 API 则由容器自己决定扣多少，天然正确。
+     *
+     * <p><b>为何要循环：</b>单次取出可能被容器接口的 maxStackSize 截断
+     * （精妙 {@code extractItemInternal} 是 {@code min(amount, existing.getMaxStackSize())}，
+     * 超大栈一次只出 64）。循环取到取够为止；某次取不出东西（返回 0）立即停止，防死循环。
+     */
+    private static void takeFromSourceSlot(Slot slot, int amount) {
+        int remaining = amount;
+        while (remaining > 0) {
+            ItemStack taken = slot.remove(remaining);
+            int takenCount = taken == null ? 0 : taken.getCount();
+            if (takenCount <= 0) {
+                return; // 取不动了（已空 / 容器拒绝）→ 停止，避免死循环
+            }
+            remaining -= takenCount;
         }
     }
 
