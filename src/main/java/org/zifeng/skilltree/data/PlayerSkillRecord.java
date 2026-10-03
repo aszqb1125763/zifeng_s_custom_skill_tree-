@@ -521,6 +521,9 @@ public class PlayerSkillRecord {
         if (type == Skills.SkillType.GIFT) {
             return current < Skills.getGiftMaxPoints(skillId); // 子枫的馈赠：单级解锁
         }
+        if (type == Skills.SkillType.FISHING) {
+            return current < Skills.getFishingMaxPoints(skillId); // 垂钓（2026-10-03）
+        }
         return true;
     }
 
@@ -562,6 +565,9 @@ public class PlayerSkillRecord {
         }
         if (type == Skills.SkillType.GIFT) {
             return Skills.getGiftCost(skillId, getLearnedPoints(skillId)); // 子枫的馈赠：时间系列 0 / 洗礼 10-10000 / 增幅指数
+        }
+        if (type == Skills.SkillType.FISHING) {
+            return Skills.getFishingCost(skillId, getLearnedPoints(skillId)); // 垂钓：二次曲线 / 一次性（2026-10-03）
         }
         return Skills.getUltimateLevelCost(skillId, getLearnedPoints(skillId)); // 终极节点（单次或节点类阶梯递增）
     }
@@ -709,6 +715,13 @@ public class PlayerSkillRecord {
                 double total = 0;
                 for (int i = 0; i < points; i++) {
                     total += Skills.getGiftCost(skillId, i);
+                }
+                yield total;
+            }
+            case FISHING -> { // 垂钓（2026-10-03）：逐级累加（二次曲线 / 一次性）
+                double total = 0;
+                for (int i = 0; i < points; i++) {
+                    total += Skills.getFishingCost(skillId, i);
                 }
                 yield total;
             }

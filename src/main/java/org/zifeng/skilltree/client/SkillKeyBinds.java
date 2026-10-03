@@ -76,7 +76,7 @@ public class SkillKeyBinds {
     private static int skillTreeScrollY = 0;
     /** 技能树上次的类别栏横向滚动位置（客户端本地视图状态）。 */
     private static int skillTreeCatScrollX = 0;
-    private static final int SKILL_TREE_CATEGORY_COUNT = 10;
+    private static final int SKILL_TREE_CATEGORY_COUNT = 11;
 
     private static boolean loaded = false;
 

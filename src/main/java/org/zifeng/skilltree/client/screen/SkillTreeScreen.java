@@ -384,7 +384,7 @@ public class SkillTreeScreen extends Screen {
     private SkillSubScreen activeSubScreen = null;
 
     // ============ 列表式布局状态（2026-09-19） ============
-    /** 当前选中的技能类别索引（0~9，对应 10 列；默认 0） */
+    /** 当前选中的技能类别索引（0~10，对应 11 列；默认 0，见 {@link #CATEGORY_COUNT}） */
     private int selectedCategory = 0;
     /** 构造阶段先缓存配置，等 init() 算出真实列表视口后再恢复滚动位置。 */
     private int pendingScrollY = 0;
@@ -470,11 +470,11 @@ public class SkillTreeScreen extends Screen {
     /** 类别栏上次采用的可用宽；避免不同事件路径用不同坐标系重算造成左右跳动。 */
     private int catLayoutAvailW = -1;
     /** 分类按钮行的按钮左边界（与 {@link #catContentW} 配合做横向滚动，屏幕坐标） */
-    private final int[] catButtonX = new int[10];
+    private final int[] catButtonX = new int[CATEGORY_COUNT];
     /** 分类按钮行的按钮宽度（各按钮宽度不同，随文字长短） */
-    private final int[] catButtonW = new int[10];
+    private final int[] catButtonW = new int[CATEGORY_COUNT];
     /** 分类按钮标题文本（重建时解析一次并缓存，避免每帧 10 次语言查询；2026-09-19 性能优化） */
-    private final String[] catTitles = new String[10];
+    private final String[] catTitles = new String[CATEGORY_COUNT];
 
     /**
      * 字体行高（安全取）。
@@ -1291,12 +1291,12 @@ public class SkillTreeScreen extends Screen {
      * <p>顺序 = 原列顺序（0 魔法 / 1 基础 / 2 增幅 / 3 终极 / 4 被动 / 5 光环 / 6 寰宇 / 7 机械 / 8 馈赠 / 9 工具）。
      */
     private static final String[] CATEGORY_TITLE_KEYS = {"col_magic", "col_base", "col_amplify", "col_ultimate",
-            "col_special", "col_aura", "col_global", "col_machine", "col_gift", "col_tool"};
-    /** 十个类别的强调色（沿用改版前各列标题配色，保持视觉延续） */
+            "col_special", "col_aura", "col_global", "col_machine", "col_gift", "col_tool", "col_fishing"};
+    /** 十一个类别的强调色（沿用改版前各列标题配色，保持视觉延续） */
     private static final int[] CATEGORY_COLORS = {0xFF55FFAA, 0xFF87CEEB, 0xFFFFAA55, 0xFFFF5555, 0xFFD7A55A,
-            0xFFAA55FF, 0xFF66CCFF, 0xFFD7D7D7, 0xFFE0B6C8, 0xFFC8A87C};
+            0xFFAA55FF, 0xFF66CCFF, 0xFFD7D7D7, 0xFFE0B6C8, 0xFFC8A87C, 0xFF40E0D0};
     /** 类别总数 */
-    private static final int CATEGORY_COUNT = 10;
+    private static final int CATEGORY_COUNT = 11;
 
     /** 取第 i 个类别的技能列表 */
     private static List<String> categorySkills(int i) {
@@ -1310,7 +1310,9 @@ public class SkillTreeScreen extends Screen {
             case 6 -> Skills.GLOBAL_SKILLS;
             case 7 -> Skills.MACHINE_SKILLS;
             case 8 -> Skills.GIFT_SKILLS;
-            default -> Skills.TOOL_SKILLS;
+            case 9 -> Skills.TOOL_SKILLS;
+            case 10 -> Skills.FISHING_SKILLS;
+            default -> List.of(); // 越界（理论上不会）→ 空列，避免静默落到错误列
         };
     }
 
@@ -2409,6 +2411,7 @@ public class SkillTreeScreen extends Screen {
             case MAGIC -> 0xFF55FFAA;
             case MACHINE -> 0xFFD7D7D7;
             case GIFT -> 0xFFE0B6C8; // 子枫的馈赠：柔和藕粉
+            case FISHING -> 0xFF40E0D0; // 垂钓：青蓝（水主题，2026-10-03）
         };
         String typeTag = switch (type) {
             case BASE -> "[" + Component.translatable("ui.zifeng_s_custom_skill_tree.type_base").getString() + "]";
@@ -2420,6 +2423,7 @@ public class SkillTreeScreen extends Screen {
             case MAGIC -> "[" + Component.translatable("ui.zifeng_s_custom_skill_tree.type_magic").getString() + "]";
             case MACHINE -> "[" + Component.translatable("ui.zifeng_s_custom_skill_tree.type_machine").getString() + "]";
             case GIFT -> "[" + Component.translatable("ui.zifeng_s_custom_skill_tree.type_gift").getString() + "]";
+            case FISHING -> "[" + Component.translatable("ui.zifeng_s_custom_skill_tree.type_fishing").getString() + "]";
         };
         // 1. 标题行（大字号 + 类型色）
         lines.add(new TooltipLine(typeTag + " " + Skills.getDisplayNameComponent(skillId).getString(), titleColor, 1.15F));
@@ -3024,6 +3028,7 @@ public class SkillTreeScreen extends Screen {
             case AURA -> { bg = 0xFF392D59; bgHover = 0xFF4A3A70; }
             case GLOBAL -> { bg = 0xFF203F52; bgHover = 0xFF2B526A; }
             case MACHINE -> { bg = 0xFF3E4248; bgHover = 0xFF515760; }
+            case FISHING -> { bg = 0xFF1E4A5A; bgHover = 0xFF2A6274; } // 垂钓：水蓝青系（2026-10-03）
             default -> { bg = 0xFF624955; bgHover = 0xFF795966; }
         }
         if (isTool) { // 木棍工具：木褐色系（2026-09-08）
@@ -3256,6 +3261,16 @@ public class SkillTreeScreen extends Screen {
             } else {
                 costText = t("btn_need") + fmtCost(Skills.getGiftCost(skillId, points)) + t("btn_pt");
             }
+        } else if (type == Skills.SkillType.FISHING) {
+            // 垂钓（2026-10-03）：多级（急流/海神/满仓）显示生效级 + 下一级；其余一次性显示需求点数
+            if (Skills.getFishingMaxPoints(skillId) > 1) {
+                double unitCost = Skills.getFishingCost(skillId, points);
+                costText = points > 0
+                        ? t("btn_active") + ":" + activeLevel + "/" + points + " " + t("btn_next") + ":" + fmtCost(unitCost) + t("btn_pt")
+                        : t("btn_need") + fmtCost(unitCost) + t("btn_pt");
+            } else {
+                costText = points > 0 ? t("btn_unlocked") : t("btn_need") + fmtCost(Skills.getFishingCost(skillId, 0)) + t("btn_pt");
+            }
         } else {
             costText = points + t("unit_lv");
         }
@@ -3428,6 +3443,7 @@ public class SkillTreeScreen extends Screen {
         }
         if (type == Skills.SkillType.MACHINE && current >= Skills.getMachineMaxPoints(skillId)) return false;
         if (type == Skills.SkillType.GIFT && current >= Skills.getGiftMaxPoints(skillId)) return false; // 子枫的馈赠：单级
+        if (type == Skills.SkillType.FISHING && current >= Skills.getFishingMaxPoints(skillId)) return false; // 垂钓（2026-10-03）
         // 前置需求（终极/光环通用：前置技能 → 所需等级）
         for (Map.Entry<String, Integer> entry : Skills.getPrerequisites(skillId)) {
             if (learnedSkills.getOrDefault(entry.getKey(), 0) < entry.getValue()) return false;
@@ -5451,6 +5467,7 @@ public class SkillTreeScreen extends Screen {
         if (type == Skills.SkillType.MAGIC) return Skills.getMagicCostAtLevel(skillId, learnedSkills.getOrDefault(skillId, 0)); // 线性（默认+2/级，吟唱缩减+5/级）
         if (type == Skills.SkillType.MACHINE) return Skills.getMachineCost(skillId); // 机械共鸣：一次性（机械之星 1000 / 其余 5000）
         if (type == Skills.SkillType.GIFT) return Skills.getGiftCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 子枫的馈赠：时间系列 0 / 洗礼阶梯 / 增幅指数
+        if (type == Skills.SkillType.FISHING) return Skills.getFishingCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 垂钓：二次曲线 / 一次性（2026-10-03）
         return Skills.getUltimateLevelCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 终极节点/特殊被动（单次或节点类阶梯递增）
     }
 
