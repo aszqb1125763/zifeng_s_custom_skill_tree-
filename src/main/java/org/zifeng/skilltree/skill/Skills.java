@@ -226,7 +226,9 @@ public final class Skills {
         /** 机械共鸣（模拟玩家机器继承开关，独立列，前置=机械之星+对应原技能） */
         MACHINE,
         /** 子枫的馈赠（2026-08-25 新增：最右列，按游戏时长激活，免费获得技能点的新途径） */
-        GIFT
+        GIFT,
+        /** 垂钓（2026-10-03 新增：第 11 列，钓鱼玩法 + 自动化 + 现有机制联动） */
+        FISHING
     }
 
     // ============ 基础属性技能 ============
@@ -433,6 +435,34 @@ public final class Skills {
     public static final String MACHINE_ZONE_ATTACK = "machine_zone_attack";     // 选区攻击
     public static final String MACHINE_ZONE_PROTECT = "machine_zone_protect";   // 防护选区
 
+    // ============ 垂钓列（纵列10，2026-10-03 新增）============
+    //   设计：手动抛竿是玩家唯一动作，其余全部自动化；产出与现有技能联动（熔炼/传送/爆发）。
+    //   平衡自检：钓鱼零风险 → 核心倍率上限压到 11×（对比战利品大爆发 1001×），
+    //   高收益通路（渔获爆发）必须已经买过战利品大爆发，不重复给高倍率。
+    /** 急流垂钓：每级 -4% 咬钩等待时间，上限 20 级（满级 -80%） */
+    public static final String FISH_HASTE = "fish_haste";
+    /** 海神眷顾：每级 宝藏率 ×1.06 / 垃圾率 ×0.96，上限 25 级 */
+    public static final String FISH_FORTUNE = "fish_fortune";
+    /** 渔获满仓：渔获份数 ×(1 + 0.2×等级)，上限 50 级（满级 11×；按堆叠上限拆满堆） */
+    public static final String FISH_BOUNTY = "fish_bounty";
+    /** 全自动垂钓：手动抛竿一次后自动收杆取物并立即重抛（浮标钉回原位），一次性 3000 点 */
+    public static final String FISH_AUTO = "fish_auto";
+    /** 无界垂钓：解除开放水域限制（小水池/瀑布也算宝藏区），一次性 1000 点 */
+    public static final String FISH_OPEN_WATER = "fish_open_water";
+    /** 渔获经验：每次钓获额外获得经验，上限 25 级（每级 +2 点/件） */
+    public static final String FISH_XP = "fish_xp";
+    /** 现钓现炼：钓到的可熔炼物自动熔炼，一次性 200 点；前置=自动熔炼术 */
+    public static final String FISH_SMELT = "fish_smelt";
+    /** 定点渔获：渔获直传凋落物挪移绑定容器（不生成掉落物实体），一次性 300 点；前置=子枫挪移术 */
+    public static final String FISH_VACUUM = "fish_vacuum";
+    /** 渔获爆发：渔获参与「战利品大爆发」倍率与 4 模式，一次性 500 点；前置=战利品大爆发 */
+    public static final String FISH_BOMB = "fish_bomb";
+    /** 所有垂钓技能（纵列10，2026-10-03） */
+    public static final List<String> FISHING_SKILLS = List.of(
+            FISH_HASTE, FISH_FORTUNE, FISH_BOUNTY, FISH_XP,
+            FISH_AUTO, FISH_OPEN_WATER,
+            FISH_SMELT, FISH_VACUUM, FISH_BOMB);
+
     /** 所有基础技能（纵列1） */
     /** 所有基础技能（纵列1）：2026-09-14 起移除「铁壁金身 BODY」（职责拆给磐石之躯 + 金身真解） */
     public static final List<String> BASE_SKILLS = List.of(BODY_HP, TOUGH, BLADE, ATTACK_SPEED, MINING, MOVE, REGEN, LUCK, JUMP, FLY, SWIM, CRIT, LIFESTEAL, THORNS, ARMOR_PEN);
@@ -570,6 +600,7 @@ public final class Skills {
         addAll(GLOBAL_SKILLS);
         addAll(MACHINE_SKILLS);
         addAll(GIFT_SKILLS);
+        addAll(FISHING_SKILLS);
     }};
 
     /**
@@ -589,6 +620,7 @@ public final class Skills {
         for (String s : ULTIMATE_SKILLS) map.put(s, SkillType.ULTIMATE);
         for (String s : SPECIAL_SKILLS) map.put(s, SkillType.SPECIAL);
         for (String s : AURA_SKILLS) map.put(s, SkillType.AURA);
+        for (String s : FISHING_SKILLS) map.put(s, SkillType.FISHING);
         // ⚠️ LEGACY（2026-09-30 已合并进战利品大爆发）：必须保留类型映射，
         //    否则 getType 回退到 BASE → 退点按"基础线性消耗"算，金额完全错。
         map.put(MOB_DROP, SkillType.ULTIMATE);
@@ -767,6 +799,49 @@ public final class Skills {
             case MAGIC -> getMagicMaxPoints(skillId);
             case MACHINE -> getMachineMaxPoints(skillId);
             case GIFT -> getGiftMaxPoints(skillId);
+            case FISHING -> getFishingMaxPoints(skillId);
+        };
+    }
+
+    /**
+     * 垂钓：等级上限（2026-10-03）。
+     * <p>急流垂钓 20（-80% 等待）/ 海神眷顾 25 / 渔获满仓 50；其余均一次性解锁。
+     */
+    public static int getFishingMaxPoints(String skillId) {
+        return switch (skillId) {
+            case FISH_HASTE -> 20;
+            case FISH_FORTUNE -> 20; // ★ 20 级 = +20 幸运 → 鱼 65 / 宝藏 45 / 垃圾 0（鱼 59%）；再高会把鱼权重压没
+            case FISH_BOUNTY -> 50;
+            case FISH_XP -> 25;
+            default -> 1; // 全自动垂钓/无界/现钓现炼/定点/渔获爆发：一次性
+        };
+    }
+
+    /**
+     * 垂钓：第 n 级消耗（2026-10-03）。
+     *
+     * <p>曲线对齐现有定价（基础列 0.6n²／增幅列 2.4n²）：
+     * <ul>
+     *   <li>急流垂钓（纯体感便利）→ 0.6n²，满级累计 ≈1,722</li>
+     *   <li>海神眷顾（提升产出质量）→ 1.2n²，满级累计 ≈6,630</li>
+     *   <li>渔获满仓（直接产出）→ 2.4n²（与增幅列同价），满级累计 ≈103,020</li>
+     * </ul>
+     * 一次性：全自动垂钓 3000（本包第一个真·全自动产出循环，定价高于其余便利项）。
+     *
+     * @param currentLevel 当前已学等级（第 0 级 = 学第 1 级的消耗）
+     */
+    public static long getFishingCost(String skillId, int currentLevel) {
+        final double n = currentLevel + 1.0;
+        return switch (skillId) {
+            case FISH_HASTE, FISH_XP -> Math.max(1L, Math.round(0.6 * n * n));
+            case FISH_FORTUNE -> Math.max(1L, Math.round(1.2 * n * n));
+            case FISH_BOUNTY -> Math.max(1L, Math.round(2.4 * n * n));
+            case FISH_AUTO -> 3000L;                  // 全自动垂钓
+            case FISH_OPEN_WATER -> 1000L;            // 无界垂钓
+            case FISH_VACUUM -> 300L;                 // 定点渔获
+            case FISH_SMELT -> 200L;                  // 现钓现炼
+            case FISH_BOMB -> 500L;                   // 渔获爆发
+            default -> 1L;
         };
     }
 
@@ -1439,6 +1514,10 @@ public final class Skills {
             case GIFT_FLY_AMP -> List.of(Map.entry(GIFT_FLY_BAPTISM, 1));
             case GIFT_MINE_AMP -> List.of(Map.entry(GIFT_MINE_BAPTISM, 1));
             case GIFT_KILL_AMP -> List.of(Map.entry(GIFT_KILL_BAPTISM, 1));
+            // 垂钓（2026-10-03）：高收益通路必须已有对应现成技能，不重复给高倍率
+            case FISH_SMELT -> List.of(Map.entry(AUTO_SMELT, 1));       // 现钓现炼 ← 自动熔炼术
+            case FISH_VACUUM -> List.of(Map.entry(AURA_LOOT_VACUUM, 1));// 定点渔获 ← 子枫挪移术
+            case FISH_BOMB -> List.of(Map.entry(LOOT_BOMB, 1));         // 渔获爆发 ← 战利品大爆发
             default -> List.of(); // 机械之星/宇宙的青睐/夜视/饱食/村庄英雄/接触距离/发光/战利品爆炸/工具不毁/掉落/经验/时间洗礼无前置
         };
     }
@@ -1622,6 +1701,16 @@ public final class Skills {
             case PURIFY_FIELD -> Items.CONDUIT;               // 净化领域：潮涌核心（领域）
             case SPELLBREAK_BLADE -> Items.NETHERITE_AXE;     // 破法之刃：下界合金斧（破防）
             case ULT_ARCANE_BODY -> Items.NETHERITE_CHESTPLATE; // 奥术神体：下界合金胸甲（终极防护）
+            // ===== 垂钓（2026-10-03）：图标全部用原版鱼类与钓具，语义强关联 =====
+            case FISH_HASTE -> Items.COD;                     // 急流垂钓：鳕鱼
+            case FISH_FORTUNE -> Items.TROPICAL_FISH;         // 海神眷顾：热带鱼
+            case FISH_BOUNTY -> Items.SALMON;                 // 渔获满仓：鲑鱼
+            case FISH_XP -> Items.EXPERIENCE_BOTTLE;          // 渔获经验：附魔之瓶
+            case FISH_AUTO -> Items.FISHING_ROD;              // 全自动垂钓：钓鱼竿
+            case FISH_OPEN_WATER -> Items.PUFFERFISH;         // 无界垂钓：河豚
+            case FISH_SMELT -> Items.FURNACE;                 // 现钓现炼：熔炉
+            case FISH_VACUUM -> Items.CHEST;                  // 定点渔获：箱子
+            case FISH_BOMB -> Items.HEART_OF_THE_SEA;         // 渔获爆发：海洋之心
             default -> Items.BARRIER;
         };
     }

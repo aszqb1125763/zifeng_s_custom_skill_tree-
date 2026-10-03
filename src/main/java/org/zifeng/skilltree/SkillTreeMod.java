@@ -71,6 +71,8 @@ public class SkillTreeMod {
         MinecraftForge.EVENT_BUS.register(LootVacuumEvents.class);
         MinecraftForge.EVENT_BUS.register(ContainerHaulEvents.class);
         MinecraftForge.EVENT_BUS.register(GiftEvents.class);
+        // 垂钓（2026-10-03）：手动收杆走 ItemFishedEvent（自动垂钓在 Z-Link 模块里）
+        MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.event.FishingEvents.class);
         // 主系统 Tick 末合并推送（2026-08-28 架构升级：一 tick 内多次 markDirty → 末尾合并成一次）
         MinecraftForge.EVENT_BUS.addListener((net.minecraftforge.event.TickEvent.ServerTickEvent event) -> {
             if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
@@ -98,7 +100,9 @@ public class SkillTreeMod {
                 org.zifeng.skilltree.system.ZoneAttackModule.INSTANCE,
                 org.zifeng.skilltree.system.GlobalRuleModule.INSTANCE,
                 // 机械共鸣·选区作业（分批跳 tick 处理）—— 2026-09-12 1.4.1 新增
-                org.zifeng.skilltree.system.ZoneWorkModule.INSTANCE);
+                org.zifeng.skilltree.system.ZoneWorkModule.INSTANCE,
+                // 垂钓·全自动垂钓（倒计时产鱼）—— 2026-10-03 新增
+                org.zifeng.skilltree.system.FishingAutoModule.INSTANCE);
         zlinkRegister.run(); // 首次登记（构造期）
         org.zifeng.skilltree.system.ZModules.setHealAction(zlinkRegister); // 注册表异常时的自愈动作
         // 双保险：服务器启动时再幂等登记一次（自愈任何意外清空）
