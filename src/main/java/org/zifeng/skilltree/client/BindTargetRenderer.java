@@ -62,7 +62,8 @@ public final class BindTargetRenderer {
         if (mc.player == null || mc.level == null) {
             return;
         }
-        if (!mc.player.getMainHandItem().is(net.minecraft.world.item.Items.STICK)) {
+        // ★ 2026-10-09：主手为木棍本体 或 已链接物品类型（与输入层保持一致）
+        if (!ModKeyBindingEvents.matchesStickGestureClient(mc.player.getMainHandItem())) {
             return;
         }
         if (!isBindModuleActiveClient()) {

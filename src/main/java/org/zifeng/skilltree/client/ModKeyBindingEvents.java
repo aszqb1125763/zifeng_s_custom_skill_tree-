@@ -54,6 +54,39 @@ public class ModKeyBindingEvents {
     /** 工具模式（0=BIND 潜行右键绑容器；1=RANGE 左键框选磁铁屏蔽区） */
     private static int stickToolModeClient = 0;
 
+    // ★ 2026-10-09 木棍手势链接（服务端回发校准；per-player，客户端只有本玩家一份）
+    /** 已链接的物品类型 id（空串=未链接） */
+    private static String stickLinkedItemClient = "";
+    /** 上面 id 解析出的 Item（null=未链接/解析失败）—— 用于引用比较，免去每 tick 字符串开销 */
+    private static net.minecraft.world.item.Item stickLinkedItemObjClient = null;
+
+    /** 服务端回发校准木棍手势链接（★ 2026-10-09；空/非法 id → 视为未链接） */
+    public static void setStickLinkedItemClient(String itemId) {
+        stickLinkedItemClient = itemId == null ? "" : itemId;
+        stickLinkedItemObjClient = org.zifeng.skilltree.skill.StickGesture.resolve(stickLinkedItemClient);
+    }
+
+    /** 当前链接的物品类型 id（信息栏/tooltip 显示用） */
+    public static String getStickLinkedItemClient() {
+        return stickLinkedItemClient;
+    }
+
+    /**
+     * 该物品是否可承载木棍手势（★ 2026-10-09 客户端判定）。
+     * <p>★ <b>完全替换语义</b>：未链接 → 木棍本体；已链接 → <b>只有</b>该类型（<b>木棍被顶替</b>）。
+     * <p>⚠️ 不含总开关判定 —— 调用方自行按需叠加（与框选保持一致）。
+     */
+    public static boolean matchesStickGestureClient(net.minecraft.world.item.ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        if (stickLinkedItemClient == null || stickLinkedItemClient.isEmpty()) {
+            return stack.is(net.minecraft.world.item.Items.STICK); // 未链接 → 木棍本体
+        }
+        // 已链接：解析失败（模组被移除等）时谁都不能用 —— 与服务端 StickGesture.matches 判定保持一致
+        return stickLinkedItemObjClient != null && stack.is(stickLinkedItemObjClient);
+    }
+
     /** 工具总开关是否开启（客户端缓存；供渲染/信息栏/手势路由） */
     public static boolean isStickToolOnClient() {
         return stickToolOnClient;
@@ -214,6 +247,9 @@ public class ModKeyBindingEvents {
         auraTargetModes.clear();
         stickToolOnClient = true;   // 断开重置：默认开 + BIND
         stickToolModeClient = 0;
+        // ★ 2026-10-09 链接一并清空（防换服后残留上个服务器的链接状态）
+        stickLinkedItemClient = "";
+        stickLinkedItemObjClient = null;
         operZonesClient.clear();
         protectZonesClient.clear();
         // ⚠️ 2026-09-20 修复：天气模式客户端缓存原先漏了重置 → 换服后
@@ -289,6 +325,10 @@ public class ModKeyBindingEvents {
      * （写 auraToggles）则优先读它，保证本次 tick 内操作即时生效。
      */
     private static boolean isToggleOnClient(String skillId) {
+        // ★ 2026-10-09 木棍工具：开关存在专用字段（不在 toggles 表）→ 直接读
+        if (Skills.isStickTool(skillId)) {
+            return stickToolOnClient;
+        }
         if (auraToggles.containsKey(skillId)) {
             return auraToggles.getOrDefault(skillId, Boolean.TRUE);
         }
@@ -412,6 +452,10 @@ public class ModKeyBindingEvents {
                 if (org.zifeng.skilltree.client.SkillKeyBinds.consumeTriggerClick(skillId)) {
                     boolean learned = auraLearnedCache.getOrDefault(skillId, Boolean.FALSE)
                             || allSkillsLearnedCache.getOrDefault(skillId, Boolean.FALSE);
+                    // ★ 2026-10-09 木棍工具是【占位卡】（不进技能缓存）→ 用「已学任一木棍模块」判定
+                    if (!learned && Skills.isStickTool(skillId)) {
+                        learned = hasAnyStickToolSkillClient();
+                    }
                     if (!learned) {
                         continue;
                     }
@@ -441,6 +485,25 @@ public class ModKeyBindingEvents {
                         // 机械共鸣·选区挖掘：按触发键瞬间挖空全区（2026-09-08）
                         org.zifeng.skilltree.network.ModNetwork.sendToServer(new org.zifeng.skilltree.network.ZoneC2SPacket(11, "",
                                 0, 0, 0, 0, 0, 0));
+                    } else if (Skills.isStickTool(skillId)) {
+                        // ★ 2026-10-09 木棍工具：按触发键把「木棍手势」链接到当前主手物品类型
+                        //   ⚠️ 不传物品 id —— 服务端自读主手（权威状态），客户端无法伪造
+                        net.minecraft.client.player.LocalPlayer lp = Minecraft.getInstance().player;
+                        if (lp == null) {
+                            continue; // 防御：无玩家则忽略本次按键
+                        }
+                        net.minecraft.world.item.ItemStack mainHand = lp.getMainHandItem();
+                        if (mainHand.isEmpty()) {
+                            // 空手：本地直接提示，不发包（服务端也会拒）
+                            lp.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                                    "ui.zifeng_s_custom_skill_tree.stick_tool_link_none"), true);
+                        } else {
+                            org.zifeng.skilltree.network.ModNetwork.sendToServer(new org.zifeng.skilltree.network.StickToolC2SPacket(2, 0));
+                            // 乐观反馈（服务端回发数据包会校准实际链接类型）
+                            lp.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                                    "ui.zifeng_s_custom_skill_tree.stick_tool_link_ok",
+                                    mainHand.getHoverName()), true);
+                        }
                     }
                 }
             }

@@ -1005,7 +1005,18 @@ public class UltimateEvents {
     //        传成了 null（注册顺序所限，只能用 Supplier 延迟取），于是 BY_ID 里存进去的键是 null，
     //        byId(真实类型) 永远返回 null → 这类模组的刷怪蛋一个都掉不出来。
     //        实测：资源蜜蜂 Productive Bees（SpawnEgg extends DeferredSpawnEggItem，用 Supplier 注册）。
-    //   现在：先走 byId 快路径，失败则遍历物品注册表用 getType(null) 比对，并缓存成表（刷怪塔不卡）。
+    //   现在：先走 byId 快路径，失败则遍历物品注册表用「蛋的默认实体类型」比对，并缓存成表（刷怪塔不卡）。
+    //
+    //   ⚠️⚠️ 2026-10-10 崩服修复（玩家实测，凶手链：无用之物杀戮光环 → LivingEntity.die →
+    //        NeoForge onLivingDrops → 我们的 onLivingDrops → 刷怪蛋表构建 → NPE → 服务器崩）：
+    //        旧代码写的是 {@code egg.getType(null)}。这个写法在 1.20.1 安全、在 <b>1.21.1 必崩</b>。
+    //        原因：同名方法<b>两版本签名完全不同</b>——
+    //          · 1.20.1：{@code getType(@Nullable CompoundTag)} → 有判空 → 传 null 返回 defaultType ✓
+    //          · 1.21.1：{@code getType(ItemStack)} → <b>无 @Nullable，内部直接
+    //            stack.getOrDefault(DataComponents.ENTITY_DATA, ...)</b> → 传 null 就 NPE ✗
+    //        Java 允许把 null 传给引用类型 → 1.21.1 能编译、运行时才炸。
+    //        现改为传「合法的空参数」（见 {@link #defaultTypeOfEgg}），并在每个蛋上 try-catch ——
+    //        因为一个坏蛋就会让整表构建中断、SPAWN_EGG_TABLE 保持 null → 每次击杀重扫 → <b>反复崩服</b>。
 
     /** EntityType → 刷怪蛋 缓存（首次用到时构建一次；注册完成后不会变） */
     private static volatile Map<net.minecraft.world.entity.EntityType<?>, net.minecraft.world.item.SpawnEggItem> SPAWN_EGG_TABLE;
@@ -1026,8 +1037,7 @@ public class UltimateEvents {
             table = new java.util.IdentityHashMap<>();
             for (Item item : net.minecraft.core.registries.BuiltInRegistries.ITEM) {
                 if (item instanceof net.minecraft.world.item.SpawnEggItem egg) {
-                    // getType(null) = 蛋自身的默认实体类型（不读 EntityTag）
-                    net.minecraft.world.entity.EntityType<?> t = egg.getType(null);
+                    net.minecraft.world.entity.EntityType<?> t = defaultTypeOfEgg(egg);
                     if (t != null) {
                         table.putIfAbsent(t, egg);
                     }
@@ -1036,6 +1046,33 @@ public class UltimateEvents {
             SPAWN_EGG_TABLE = table;
         }
         return table.get(type);
+    }
+
+    /**
+     * 取刷怪蛋的「默认实体类型」（不读 NBT 品种）。<b>版本敏感 ✓</b>
+     *
+     * <p>⚠️ 不能用 {@code egg.getType(null)}（2026-10-10 崩服修复）：
+     * <ul>
+     *   <li>本版（1.21.1）签名 = {@code getType(ItemStack)}，<b>无 @Nullable</b>，
+     *       内部直接 {@code stack.getOrDefault(DataComponents.ENTITY_DATA, ...)} → 传 null 必 NPE。</li>
+     *   <li>故传一个「新建的空蛋 ItemStack」：没有 ENTITY_DATA 组件 → 内部走
+     *       {@code customdata.isEmpty()} 分支 → 返回 {@code defaultType}（正是我们要的）。</li>
+     *   <li>（1.20.1 签名是 {@code getType(CompoundTag)}，对应写法是 {@code new CompoundTag()}。）</li>
+     * </ul>
+     *
+     * <p>⚠️ <b>必须 try-catch</b>：扫表会遍历所有模组的蛋，任何一个模组的蛋实现在
+     * {@code getType} 里抛异常，都会让整表构建中断 → {@code SPAWN_EGG_TABLE} 保持 null
+     * → <b>每次击杀都重扫并再次崩溃</b>。此处只把那个蛋当成「无蛋」跳过，不影响其他蛋。
+     *
+     * @return 该蛋的默认实体类型；拿不到（未注册/异常）→ null
+     */
+    private static net.minecraft.world.entity.EntityType<?> defaultTypeOfEgg(
+            net.minecraft.world.item.SpawnEggItem egg) {
+        try {
+            return egg.getType(new ItemStack(egg));
+        } catch (Throwable t) {
+            return null; // 单个模组蛋的问题不应拖垮全表（更不能反复崩服）
+        }
     }
 
     // ══════════ 模组「通用实体 + NBT 品种」刷怪蛋的品种补写（★ 2026-09-30）══════════

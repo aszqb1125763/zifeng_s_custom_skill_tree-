@@ -6,6 +6,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import org.zifeng.skilltree.Config;
+import org.zifeng.skilltree.client.SkillTreeTheme; // ★ 2026-10-09 黑暗模式配色
 import org.zifeng.skilltree.event.AuraEvents;
 import org.zifeng.skilltree.network.AuraTargetC2SPacket;
 import org.zifeng.skilltree.network.LearnSkillC2SPacket;
@@ -179,14 +180,8 @@ public class SkillTreeScreen extends Screen {
     private static final int R_SUB = 8;
     /** 技能贴片圆角 */
     private static final int R_ROW = 6;
-    /** 大贴片底色 */
-    private static final int C_BIG_BG = 0xFFF4F5F8;
-    /** 大贴片描边 */
-    private static final int C_BIG_EDGE = 0xFFB9BDC8;
-    /** 子贴片底色 */
-    private static final int C_SUB_BG = 0xFFE8EAF0;
-    /** 子贴片描边 */
-    private static final int C_SUB_EDGE = 0xFFC9CCD5;
+    // ⚠️ 2026-10-09：大/子贴片的底色与描边（C_BIG_BG / C_BIG_EDGE / C_SUB_BG / C_SUB_EDGE）
+    //    已移入 {@link org.zifeng.skilltree.client.SkillTreeTheme}（随黑暗模式切换）。
     /** 技能贴片内部格线（淡） */
     private static final int C_CELL_LINE = 0x40FFFFFF;
     /** 进度条轨道（半透明白 —— Miuix sliderBackground 的做法） */
@@ -415,6 +410,11 @@ public class SkillTreeScreen extends Screen {
      * <p>{@code null} = 尚未初始化（{@link #init()} 之前）。
      */
     private SkillSearchBox searchBox = null;
+    /**
+     * 建框时的主题（★ 2026-10-09）：搜索框的文字色在构造时写死（EditBox 的 setTextColor），
+     * 无法逐帧更新 → 主题一变就重建，保证黑暗模式下搜索文字是浅色。
+     */
+    private boolean searchBoxWasDark = false;
     /**
      * 「正在由程序回写关键词」标志（见 {@link #applySearchQuery}）。
      *
@@ -1400,7 +1400,16 @@ public class SkillTreeScreen extends Screen {
         catScrollX = Math.max(0, Math.min(catScrollX, overflow));
         // 初始布局永远以整组按钮的中心为基准；只有横向滚轮才改变 catScrollX。
         // 这样语言切换、搜索重建或缩放重算时不会在“居中/左起”两种布局间跳动。
-        baseX = frameLeft() + FRAME_LINE + (availW - catContentW) / 2 - catScrollX;
+        //
+        // ⚠️ 2026-10-09 修复（很久前就有的老 bug）：**居中偏移必须钳到 0 下限**。
+        //    旧代码直接写 (availW - catContentW) / 2 —— 当界面尺寸调大（设计空间变窄）
+        //    导致整组按钮放不下时，该式为【负数】 → 整组被推向左，
+        //    第一个按钮（col_magic 魔法增幅）越出左边框 → 被 renderCategoryRow 的
+        //    scissor 裁掉 → 用户看到“魔法增幅只能显示一部分”。
+        //    本方法 javadoc 早已写明预期行为：“宽到放不下 → 退化为从左边框起、可横向滚动”，
+        //    但实现漏了这一步。现在：装得下才居中，装不下贴左边框起（再由 catScrollX 横滚）。
+        int centeredOffset = Math.max(0, (availW - catContentW) / 2);
+        baseX = frameLeft() + FRAME_LINE + centeredOffset - catScrollX;
         int x = baseX;
         for (int i = 0; i < CATEGORY_COUNT; i++) {
             catButtonX[i] = x;
@@ -1866,8 +1875,8 @@ public class SkillTreeScreen extends Screen {
      * 这样 tooltip（L3）能干净地浮在贴片之上，不会被框线切边。
      */
     private void renderPatches(GuiGraphics guiGraphics) {
-        // ① 底层大贴片
-        fillRound(guiGraphics, bigLeft(), bigTop(), bigRight(), bigBottom(), R_BIG, C_BIG_BG);
+        // ① 底层大贴片（底色随主题：★ 2026-10-09 黑暗模式）
+        fillRound(guiGraphics, bigLeft(), bigTop(), bigRight(), bigBottom(), R_BIG, SkillTreeTheme.bigBg());
         // ② 三个子贴片
         subPatch(guiGraphics, titleFrameTop(), titleFrameH());
         subPatch(guiGraphics, catFrameTop(), catFrameH());
@@ -1882,9 +1891,9 @@ public class SkillTreeScreen extends Screen {
         final int l = frameLeft();
         final int r = frameRight();
         final int b = top + h;
-        fillRound(guiGraphics, l, top, r, b, R_SUB, C_SUB_EDGE);
+        fillRound(guiGraphics, l, top, r, b, R_SUB, SkillTreeTheme.subEdge());
         fillRound(guiGraphics, l + FRAME_LINE, top + FRAME_LINE, r - FRAME_LINE, b - FRAME_LINE,
-                Math.max(0, R_SUB - FRAME_LINE), C_SUB_BG);
+                Math.max(0, R_SUB - FRAME_LINE), SkillTreeTheme.subBg());
     }
 
     /**
@@ -1959,9 +1968,12 @@ public class SkillTreeScreen extends Screen {
             boolean hovered = isMouseOverCategories(lastMouseX, lastMouseY) && box.contains(lastMouseX, lastMouseY);
             // ★ 2026-09-19：类别按钮改成【浅色圆角胶囊】（子贴片现在是浅色了，深色块会显重）
             int accent = CATEGORY_COLORS[i];
-            int bg = selected ? darken(accent, 0.5f) : (hovered ? 0xFFFFFFFF : 0xFFF6F6FA);
+            // ★ 2026-10-09 黑暗模式：未选中态的底/字随主题（选中态用类别色，本来就醒目，保持不变）
+            int bg = selected ? darken(accent, 0.5f)
+                    : (hovered ? SkillTreeTheme.catBgHover() : SkillTreeTheme.catBg());
             int border = selected ? accent : (hovered ? accent : ((accent & 0x00FFFFFF) | 0x70000000));
-            int color = selected ? 0xFFFFFFFF : (hovered ? 0xFF2A2A34 : 0xFF4A4A56);
+            int color = selected ? 0xFFFFFFFF
+                    : (hovered ? SkillTreeTheme.catTextHover() : SkillTreeTheme.catText());
             drawAutoBoxCapsule(guiGraphics, box, bg, border, color);
         }
         // 类别行横向滚动条（2px，仅放不下时出现；与右侧竖向滚动条同色，便于发现可左右滚）
@@ -2394,8 +2406,24 @@ public class SkillTreeScreen extends Screen {
             lines.add(new TooltipLine(t("stick_tool_mode") + "："
                             + t(org.zifeng.skilltree.client.StickToolModes.modeLang(toolMode)),
                     org.zifeng.skilltree.client.StickToolModes.colorOfMode(toolMode), 0.9F));
+            // ★ 2026-10-09 手势链接：显示当前链接的物品类型（未链接则显示占位）
+            {
+                String linkedId = org.zifeng.skilltree.client.ModKeyBindingEvents.getStickLinkedItemClient();
+                boolean linked = linkedId != null && !linkedId.isEmpty();
+                String linkedName;
+                if (!linked) {
+                    linkedName = t("stick_tool_link_empty");
+                } else {
+                    net.minecraft.world.item.Item it = org.zifeng.skilltree.skill.StickGesture.resolve(linkedId);
+                    linkedName = it == null ? linkedId
+                            : new net.minecraft.world.item.ItemStack(it).getHoverName().getString();
+                }
+                lines.add(new TooltipLine(t("stick_tool_link_label") + "：" + linkedName,
+                        linked ? 0xFF55FF55 : 0xFFAAAAAA, 0.9F));
+            }
             lines.add(new TooltipLine(" ", 0xFF000000, 0.6F));
             lines.add(new TooltipLine(t("hint_tool_switch") + "   " + t("hint_tool_mode"), 0xFFD7A55A, 0.9F));
+            lines.add(new TooltipLine(t("stick_tool_hint_link"), 0xFFD7A55A, 0.9F));
             return lines;
         }
         boolean enabled = toggles.getOrDefault(skillId, Boolean.TRUE);
@@ -3035,6 +3063,9 @@ public class SkillTreeScreen extends Screen {
             bg = 0xFF5E4430;
             bgHover = 0xFF8A6A3E;
         }
+        // ★ 2026-10-09 黑暗模式：贴片底色朝白提亮 10%，避免与变深的贴片底融在一起（保证辨识度）
+        bg = SkillTreeTheme.tileBg(bg);
+        bgHover = SkillTreeTheme.tileBg(bgHover);
         // 边框：★ 2026-09-19 用户要求「边框也要有不一样」→ 改用【类别色】；
         //   已学 = 满不透明；未学 = 半透明（一眼看出学没学）；悬停 = 提亮。
         //   ★ 2026-09-20：改为按【本技能】取色（搜索结果是跨类别的，不能统一用当前类别色）。
@@ -4072,22 +4103,32 @@ public class SkillTreeScreen extends Screen {
             guiGraphics.fill(x1 - 1, y0, x1, y1, color);
             return;
         }
-        final double rr = r;
         // 四条直边
         guiGraphics.fill(x0 + r, y0, x1 - r, y0 + 1, color);
         guiGraphics.fill(x0 + r, y1 - 1, x1 - r, y1, color);
         guiGraphics.fill(x0, y0 + r, x0 + 1, y1 - r, color);
         guiGraphics.fill(x1 - 1, y0 + r, x1, y1 - r, color);
-        // 四角弧（逐行描两个像素）
+        // 四角弧（★ 2026-10-09 修复「转角边缘像素不链接」）
+        //
+        // ⚠️ 旧写法：每行只在 inset 处画【1 像素】。
+        //    问题：圆弧接近水平处（弧顶，θ≈0）dx/dy 很大 —— 类别按钮 r=9 时，
+        //          相邻两行的 inset 是 9 → 5，【一跳 4 像素】。
+        //          逐行各画 1 像素的话，两行的描边像素互不相邻，
+        //          转角出现横向断裂、看起来像「边框断开/缺口」（用户反馈的正是这个）。
+        //   修法：本行改为画【该行 y 区间内弧线横向扫过的跨度】= inset(i) .. inset(i+1)。
+        //          相邻行共享端点像素 → 天然相接；弧顶一行会占 5 列宽，
+        //          这正是「1px 粗曲线在近水平处占多列」的正确栅格化（不是变粗）。
         for (int i = 0; i < r; i++) {
-            int cy = r - i;
-            int inset = (int) Math.round(rr - Math.sqrt(Math.max(0.0, rr * rr - (double) cy * cy)));
-            int lx = x0 + inset;
-            int rx = x1 - inset - 1;
-            guiGraphics.fill(lx, y0 + i, lx + 1, y0 + i + 1, color);
-            guiGraphics.fill(rx, y0 + i, rx + 1, y0 + i + 1, color);
-            guiGraphics.fill(lx, y1 - i - 1, lx + 1, y1 - i, color);
-            guiGraphics.fill(rx, y1 - i - 1, rx + 1, y1 - i, color);
+            final int a = roundInset(r, r - i);        // 本行上沿处的内缩量
+            final int b = roundInset(r, r - (i + 1));  // 本行下沿处（= 下一行上沿）
+            final int lo = Math.min(a, b);
+            final int span = Math.abs(a - b) + 1;      // 本行弧线横向跨度（像素数）
+            final int lx = x0 + lo;
+            final int rx = x1 - lo - span;             // 右侧镜像（右端像素 = x1-1-hi）
+            guiGraphics.fill(lx, y0 + i, lx + span, y0 + i + 1, color);
+            guiGraphics.fill(rx, y0 + i, rx + span, y0 + i + 1, color);
+            guiGraphics.fill(lx, y1 - i - 1, lx + span, y1 - i, color);
+            guiGraphics.fill(rx, y1 - i - 1, rx + span, y1 - i, color);
         }
     }
 
@@ -4169,6 +4210,8 @@ public class SkillTreeScreen extends Screen {
         final int w = SEARCH_W;
         final int h = SEARCH_H;
         if (searchBox != null
+                // ★ 2026-10-09：主题变化时重建（文字色在构造时写死，见 searchBoxWasDark）
+                && searchBoxWasDark == SkillTreeTheme.isDark()
                 // ★ 2026-09-21：字体实例变化时必须重建。Font 在资源重载 / 字体类模组
                 //   异步初始化后会被整体替换，而原版 EditBox 的 font 字段是 final 无法更新；
                 //   不重建的话，控件内部仍用旧字体（点击定位光标会偏，且字形图集可能过期）。
@@ -4185,8 +4228,9 @@ public class SkillTreeScreen extends Screen {
         searchBox = new SkillSearchBox(font, x, y, w, h,
                 searchBoxRightReserve(),
                 t("search_hint"),
-                0xFF2A2A34,     // 正文色（与原自绘方案一致）
-                0xFF9A9AA6);    // 占位色（与原自绘方案一致）
+                SkillTreeTheme.searchValueText(),        // 正文色（★ 2026-10-09 随主题）
+                SkillTreeTheme.searchPlaceholderText()); // 占位色（★ 2026-10-09 随主题）
+        searchBoxWasDark = SkillTreeTheme.isDark();
         // ⚠️ 先 setValue 再 setResponder：否则建立时就触发一次 responder，
         //   而此时 LANG_CACHE 等可能还没清好，会白跑一轮搜索。
         syncingSearchBox = true;
@@ -4553,8 +4597,9 @@ public class SkillTreeScreen extends Screen {
         final int y = searchY();
         final boolean hovered = lastMouseX >= x && lastMouseX <= x + SEARCH_W
                 && lastMouseY >= y && lastMouseY <= y + SEARCH_H;
-        int bg = searchFocused ? 0xFFFFFFFF : (hovered ? 0xFFF6F6FA : 0xFFE8EAF0);
-        int edge = searchFocused ? 0xFF3482FF : 0xFFC9CCD5;
+        int bg = searchFocused ? SkillTreeTheme.searchBgFocused()
+                : (hovered ? SkillTreeTheme.searchBgHover() : SkillTreeTheme.searchBg());
+        int edge = searchFocused ? 0xFF3482FF : SkillTreeTheme.subEdge();
         fillRound(guiGraphics, x, y, x + SEARCH_W, y + SEARCH_H, SEARCH_RADIUS, bg);
         strokeRound(guiGraphics, x, y, x + SEARCH_W, y + SEARCH_H, SEARCH_RADIUS, edge);
 
@@ -4575,7 +4620,7 @@ public class SkillTreeScreen extends Screen {
         if (isSearching()) {
             String cnt = String.format(t("search_count"), buttons.size());
             final int ty = y + (SEARCH_H - font.lineHeight) / 2;
-            drawCrispString(guiGraphics, cnt, x - lw(cnt) - 6, ty, 0xFF66666E, false);
+            drawCrispString(guiGraphics, cnt, x - lw(cnt) - 6, ty, SkillTreeTheme.onFrameText(), false);
         }
     }
 
@@ -4597,7 +4642,7 @@ public class SkillTreeScreen extends Screen {
         final String glyph = t("search_clear");
         final int gx = x + (SEARCH_CLEAR_W - lw(glyph)) / 2;
         final int gy = y + (SEARCH_H - font.lineHeight) / 2;
-        drawCrispString(guiGraphics, glyph, gx, gy, hovered ? 0xFFD02B2B : 0xFF8A8A96, false);
+        drawCrispString(guiGraphics, glyph, gx, gy, hovered ? 0xFFD02B2B : SkillTreeTheme.onFrameTextDim(), false);
     }
 
 

@@ -42,8 +42,8 @@ public class SettingsSubScreen extends SkillSubScreen {
      * 与 HUD调整/属性面板保持一致，等自适应方案落地时一并改。
      */
     private static final int PANEL_W = 258;
-    /** 面板高：标题栏 + 行高 + 底部提示 + 内边距 */
-    private static final int PANEL_H = 96;
+    /** 面板高：标题栏 + 3 行 + 底部提示 + 内边距（★ 2026-10-09 新增黑暗模式行 → 96 → 120） */
+    private static final int PANEL_H = 120;
     /** 行高 */
     private static final int ROW_H = 18;
     /** 内容距面板左右的内边距 */
@@ -126,6 +126,7 @@ public class SettingsSubScreen extends SkillSubScreen {
         renderPanelBase(gui, t("settings_title"), mouseX, mouseY);
         renderModeRow(gui, mouseX, mouseY);
         renderGuiScaleRow(gui, mouseX, mouseY);
+        renderDarkModeRow(gui, mouseX, mouseY); // ★ 2026-10-09 黑暗模式行
         // 底部提示（★ 2026-09-21：去掉投影）
         gui.drawString(parent.font(), t("settings_gui_hint"),
                 panelX + PAD, panelY + panelH - 11, C_HINT, false);
@@ -169,6 +170,11 @@ public class SettingsSubScreen extends SkillSubScreen {
         return panelY + ROWS_TOP + ROW_H + ROW_GAP;
     }
 
+    /** 「黑暗模式」行顶部 y（★ 2026-10-09：第三行） */
+    private int darkRowTopY() {
+        return rowTopY() + ROW_H + ROW_GAP;
+    }
+
     private int modeTopY() {
         return panelY + ROWS_TOP;
     }
@@ -186,6 +192,27 @@ public class SettingsSubScreen extends SkillSubScreen {
         var modeFont = parent.font();
         String modeText = t(adaptive ? "settings_gui_adaptive" : "settings_gui_manual");
         gui.drawString(modeFont, modeText, bx + (bw - modeFont.width(modeText)) / 2, y + 4, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 绘制「黑暗模式」行（★ 2026-10-09 新增）。
+     *
+     * <p>背景：很多玩家反馈技能树界面太亮（浅色大贴片铺满全屏）。
+     * 本开关交给 {@code SkillTreeTheme} 一次性切换「结构面色」，
+     * 类别强调色与状态色保持不变 → 仍然有辨识度。
+     */
+    private void renderDarkModeRow(GuiGraphics gui, int mouseX, int mouseY) {
+        var overlay = net.minecraft.client.renderer.RenderType.guiOverlay();
+        final int y = darkRowTopY();
+        final boolean dark = org.zifeng.skilltree.client.SkillKeyBinds.isSkillTreeDarkMode();
+        gui.drawString(parent.font(), t("settings_dark_label"), panelX + PAD, y + 4, C_LABEL, false);
+        final int bx = panelX + SLIDER_X;
+        final int bw = PLUS_X + ARROW_W - SLIDER_X;
+        final boolean hovered = isIn(mouseX, mouseY, bx, y, bw, ROW_H);
+        gui.fill(overlay, bx, y, bx + bw, y + ROW_H, hovered ? 0xFF3A6EA5 : 0xFF24476E);
+        var f = parent.font();
+        final String txt = t(dark ? "settings_dark_on" : "settings_dark_off");
+        gui.drawString(f, txt, bx + (bw - f.width(txt)) / 2, y + 4, dark ? 0xFFFFD700 : 0xFFFFFFFF, false);
     }
 
     /** 绘制「界面尺寸」行 */
@@ -384,6 +411,12 @@ public class SettingsSubScreen extends SkillSubScreen {
             org.zifeng.skilltree.client.SkillKeyBinds.setSkillTreeGuiAdaptive(
                     !org.zifeng.skilltree.client.SkillKeyBinds.isSkillTreeGuiAdaptive());
             syncNumBoxText();
+            return true;
+        }
+        // ★ 2026-10-09 黑暗模式行：与缩放模式无关，故放在 adaptive 早退【之前】
+        if (button == 0 && isIn(mouseX, mouseY, panelX + PAD, darkRowTopY(), PANEL_W - PAD * 2, ROW_H)) {
+            org.zifeng.skilltree.client.SkillKeyBinds.setSkillTreeDarkMode(
+                    !org.zifeng.skilltree.client.SkillKeyBinds.isSkillTreeDarkMode());
             return true;
         }
         if (org.zifeng.skilltree.client.SkillKeyBinds.isSkillTreeGuiAdaptive()) {

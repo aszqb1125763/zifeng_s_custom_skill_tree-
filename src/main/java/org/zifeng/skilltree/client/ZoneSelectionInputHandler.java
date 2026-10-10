@@ -95,7 +95,8 @@ public final class ZoneSelectionInputHandler {
         if (ZoneExclusionClientState.getFirstCorner() == null) {
             return;
         }
-        boolean stillValid = mc.player.getMainHandItem().is(net.minecraft.world.item.Items.STICK)
+        // ★ 2026-10-09：主手为木棍本体 或 已链接物品类型（不再硬判木棍）
+        boolean stillValid = ModKeyBindingEvents.matchesStickGestureClient(mc.player.getMainHandItem())
                 && isZoneModuleActiveClient();
         if (!stillValid) {
             ZoneExclusionClientState.setFirstCorner(null);
@@ -158,7 +159,8 @@ public final class ZoneSelectionInputHandler {
         if (ClientSession.now() < blockUntilGameTime) {
             return false;
         }
-        if (!mc.player.getMainHandItem().is(net.minecraft.world.item.Items.STICK)) {
+        // ★ 2026-10-09：主手为木棍本体 或 已链接物品类型（不再硬判木棍）
+        if (!ModKeyBindingEvents.matchesStickGestureClient(mc.player.getMainHandItem())) {
             return false;
         }
         return isZoneModuleActiveClient();

@@ -19,11 +19,13 @@ import java.util.Map;
 public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> learnedSkills, Map<String, Boolean> toggles,
                                      Map<String, Integer> activeLevels, boolean auraEnabled, Map<String, Integer> auraTargetModes,
                                      String lootVacuumBind, int weatherMode, boolean stickToolOn, int stickToolMode,
+                                     String stickLinkedItem,
                                      Map<String, org.zifeng.skilltree.data.OperZone> operZones,
                                      java.util.List<org.zifeng.skilltree.data.OperZone> protectZones) implements CustomPacketPayload {
     public static final Type<SkillTreeDataS2CPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(SkillTreeMod.MOD_ID, "skill_tree_data"));
     // ⚠️ 2026-08-24：StreamCodec.composite 最多 8 字段 → 改 StreamCodec.of 手动编解码
     // ⚠️ 2026-09-08：追加 木棍工具层 stickToolOn/stickToolMode（10 字段）+ 操作区 operZones
+    // ⚠️ 2026-10-09：追加 木棍手势链接 stickLinkedItem（在 stickToolMode 之后、operZones 之前）
     public static final StreamCodec<FriendlyByteBuf, SkillTreeDataS2CPacket> STREAM_CODEC = new StreamCodec<>() {
         @Override
         public SkillTreeDataS2CPacket decode(FriendlyByteBuf buf) {
@@ -37,6 +39,7 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
             int weatherMode = buf.readVarInt();
             boolean stickToolOn = buf.readBoolean();
             int stickToolMode = buf.readVarInt();
+            String stickLinkedItem = buf.readUtf(); // ★ 2026-10-09
             int zoneCount = buf.readVarInt();
             Map<String, org.zifeng.skilltree.data.OperZone> operZones = new HashMap<>();
             for (int i = 0; i < zoneCount; i++) {
@@ -54,7 +57,7 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
                         buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
                         buf.readVarInt(), buf.readVarInt(), buf.readVarInt()));
             }
-            return new SkillTreeDataS2CPacket(skillPoints, learnedSkills, toggles, activeLevels, auraEnabled, auraTargetModes, lootVacuumBind, weatherMode, stickToolOn, stickToolMode, operZones, protectZones);
+            return new SkillTreeDataS2CPacket(skillPoints, learnedSkills, toggles, activeLevels, auraEnabled, auraTargetModes, lootVacuumBind, weatherMode, stickToolOn, stickToolMode, stickLinkedItem, operZones, protectZones);
         }
 
         @Override
@@ -72,6 +75,7 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
             buf.writeVarInt(p.weatherMode());
             buf.writeBoolean(p.stickToolOn());
             buf.writeVarInt(p.stickToolMode());
+            buf.writeUtf(p.stickLinkedItem()); // ★ 2026-10-09
             buf.writeVarInt(p.operZones().size());
             for (Map.Entry<String, org.zifeng.skilltree.data.OperZone> e : p.operZones().entrySet()) {
                 buf.writeUtf(e.getKey());
@@ -125,6 +129,7 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
                         + "|" + record.getLootVacuumType()
                         : null,
                 record.getWeatherMode(), record.isStickToolOn(), record.getStickToolMode(),
+                record.getStickLinkedItem(), // ★ 2026-10-09 木棍手势链接物品类型
                 new java.util.HashMap<>(record.getOperZones()),
                 new java.util.ArrayList<>(record.getProtectZones()));
     }
@@ -155,6 +160,8 @@ public record SkillTreeDataS2CPacket(double skillPoints, Map<String, Integer> le
                 org.zifeng.skilltree.client.ModKeyBindingEvents.setLootVacuumBindClient(packet.lootVacuumBind());
                 // 校准木棍工具层（2026-09-08：总开关 + 模式；渲染/手势路由/信息栏用）
                 org.zifeng.skilltree.client.ModKeyBindingEvents.setStickToolStateClient(packet.stickToolOn(), packet.stickToolMode());
+                // ★ 2026-10-09 校准木棍手势链接物品（客户端判定「手持物可承载木棍手势」用）
+                org.zifeng.skilltree.client.ModKeyBindingEvents.setStickLinkedItemClient(packet.stickLinkedItem());
                 // 校准机械共鸣·操作区（2026-09-08：渲染操作区框用）
                 org.zifeng.skilltree.client.ModKeyBindingEvents.setOperZonesClient(packet.operZones());
                 // 校准防护区多块列表（2026-09-08：渲染全部防护区框用）

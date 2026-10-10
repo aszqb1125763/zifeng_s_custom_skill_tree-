@@ -174,6 +174,11 @@ public final class ContainerHaulEvents {
             if (isAeDeviceSlot(slot)) {
                 continue;
             }
+            // ⚠️ 2026-10-10 跳过【玩家自身槽位】（饰品栏 Curios）—— 否则会把玩家身上的饰品搬走。
+            //    详见 {@link #isPlayerSideSlot}。
+            if (isPlayerSideSlot(slot)) {
+                continue;
+            }
             ItemStack stack = slot.getItem();
             if (stack == null || stack.isEmpty()) {
                 continue;
@@ -244,6 +249,103 @@ public final class ContainerHaulEvents {
         } catch (Throwable t) {
             return false; // 判定失败时按普通槽处理（保守：不阻止搬运）
         }
+    }
+
+    // ============ ★ 2026-10-10 玩家自身槽位（饰品栏）排除 ============
+    //
+    // <h2>要解决的问题</h2>
+    // 搬运术原本的规则是「菜单里除【玩家背包】与【AE2 设备槽】外的所有槽位都搬」，
+    // 而饰品栏（Curios）的槽位既不是 player.getInventory()、也不以 appeng. 开头，
+    // 于是【玩家身上的饰品会被当外部容器物品搬进绑定容器】。
+    //
+    // <h2>为什么躲过了旧判定（javap 实证 Curios）</h2>
+    // <pre>
+    //   public class CurioSlot extends net.neoforged.neoforge.items.SlotItemHandler
+    //                         implements top.theillusivec4.curios.api.type.ICurioSlot
+    // </pre>
+    // 它是 {@code SlotItemHandler}（不是原版 {@code Slot} + BlockEntity 容器），
+    // 而 {@code SlotItemHandler} 的 {@code container} 是 NeoForge/Forge 内部的
+    // {@code InventoryWrapper}（包裹 IItemHandler）→ 不等于 {@code player.getInventory()}。
+    // 所以「按背包对象比对」的老判定天然漏掉它。
+    //
+    // <h2>两种触发场景（都要覆盖）</h2>
+    // <ol>
+    //   <li>直接打开饰品栏界面（Curios 自己的菜单）→ 槽位是 CurioSlot；</li>
+    //   <li>打开某个普通容器，而 Curios 在该 GUI 里插入了饰品槽
+    //       （Curios 的 {@code ProxySlot}，类名同样带 curios 前缀）→ 混在容器槽里被搬。</li>
+    // </ol>
+    // 两者都靠「槽位类/接口/背后容器」的名字前缀识别，一处判定即可全覆盖。
+    //
+    // <h2>为何用类名字符串而不是 instanceof</h2>
+    // 本项目对模组联动统一采用「包名前缀软判定」：
+    // <ul>
+    //   <li>未装 Curios 时永远不会命中，无需编译期/运行期依赖，不会因缺类而崩；</li>
+    //   <li>与 {@link #isAeDeviceSlot} 同一套思路，风格一致好维护。</li>
+    // </ul>
+
+    /** Curios 的包名前缀（槽位类 / 接口 / 容器均位于其下） */
+    private static final String CURIOS_PKG = "top.theillusivec4.curios.";
+
+    /**
+     * 是否为【玩家自身】的槽位（当前：饰品栏 Curios）。
+     *
+     * <p>这类槽位装的是「玩家穿戴的东西」，不是「打开的那个容器的内容」，
+     * 因此不应被搬运术转移。
+     *
+     * <p>三重判定（任一命中即排除）：
+     * <ol>
+     *   <li><b>槽位类及其父类</b>在 Curios 包下（含直接子类化的模组槽）；</li>
+     *   <li>槽位类<b>实现</b>的接口在 Curios 包下（{@code ICurioSlot}）；</li>
+     *   <li>槽位背后的<b>容器</b>在 Curios 包下（{@code CuriosResourceHandler} 等）。</li>
+     * </ol>
+     *
+     * <p>⚠️ 判定失败（异常）时返回 false —— 保持旧行为（不阻止搬运），
+     * 不因兼容代码出错而让搬运术整体失效。
+     */
+    private static boolean isPlayerSideSlot(Slot slot) {
+        if (slot == null) {
+            return false;
+        }
+        try {
+            // ① 槽位类 + 继承链
+            for (Class<?> cls = slot.getClass(); cls != null && cls != Object.class; cls = cls.getSuperclass()) {
+                if (cls.getName().startsWith(CURIOS_PKG)) {
+                    return true;
+                }
+            }
+            // ② 实现的接口（含父接口）
+            if (hasCuriosInterface(slot.getClass(), 0)) {
+                return true;
+            }
+            // ③ 背后的容器
+            net.minecraft.world.Container cont = slot.container;
+            if (cont != null) {
+                for (Class<?> cls = cont.getClass(); cls != null && cls != Object.class; cls = cls.getSuperclass()) {
+                    if (cls.getName().startsWith(CURIOS_PKG)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } catch (Throwable t) {
+            return false; // 保守：判定失败按普通槽处理
+        }
+    }
+
+    /** 递归检查接口（含父接口）；{@code depth} 限深防病态类层次 */
+    private static boolean hasCuriosInterface(Class<?> c, int depth) {
+        if (c == null || depth > 4) {
+            return false;
+        }
+        for (Class<?> itf : c.getInterfaces()) {
+            if (itf.getName().startsWith(CURIOS_PKG)) {
+                return true;
+            }
+            if (hasCuriosInterface(itf, depth + 1)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static PlayerSkillRecord getRecord(ServerPlayer player) {

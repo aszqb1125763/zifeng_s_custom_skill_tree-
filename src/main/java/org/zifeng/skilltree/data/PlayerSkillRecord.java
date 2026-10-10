@@ -74,6 +74,12 @@ public class PlayerSkillRecord {
      *  ⚠️ 仅决定"木棍手势当前路由给哪个功能模块"，模块间互相独立、切走不关闭任何功能。 */
     private int stickToolMode = 0;
 
+    // ★ 2026-10-09 木棍手势链接物品类型（触发键「链接到手持物」）
+    /** 已链接的物品<b>类型</b>（如 {@code minecraft:stone}；<b>空串 = 未链接</b>）。
+     *  <p>非空时，手持该类型物品（不必是木棍）即可使用木棍手势；只保留一个，新链接顶替旧的。
+     *  <p>⚠️ 按<b>物品类型</b>而非具体实例 —— 附魔/自定义名不影响聚合；玩家数据各自独立。 */
+    private String stickLinkedItem = "";
+
     /** 木棍工具总开关是否开启（默认开） */
     public boolean isStickToolOn() {
         return stickToolOn;
@@ -93,6 +99,34 @@ public class PlayerSkillRecord {
         if (mode == 0 || mode == 1 || mode == 2 || mode == 3 || mode == 4 || mode == 5) {
             this.stickToolMode = mode;
         }
+    }
+
+    // ============ 木棍手势链接（★ 2026-10-09）============
+
+    /** 已链接的物品类型 id（空串 = 未链接） */
+    public String getStickLinkedItem() {
+        return stickLinkedItem;
+    }
+
+    /**
+     * 设置已链接的物品类型（传 null/空串 = 解除链接）。
+     * <p>⚠️ <b>单值语义</b>：只保留一个，新链接自动顶替旧的。
+     */
+    public void setStickLinkedItem(String itemId) {
+        this.stickLinkedItem = itemId == null ? "" : itemId;
+    }
+
+    /** 是否已链接某个物品类型 */
+    public boolean hasStickLink() {
+        return !stickLinkedItem.isEmpty();
+    }
+
+    /**
+     * 给定物品类型 id 是否命中本玩家的链接。
+     * <p>⚠️ 玩家数据各自独立：本方法只看自己的 record，绝不读全局状态。
+     */
+    public boolean matchesStickLink(String itemId) {
+        return !stickLinkedItem.isEmpty() && stickLinkedItem.equals(itemId);
     }
 
     // ============ 机械共鸣·操作区（2026-09-08：放置/挖掘/攻击/防护各一块，单人生效，存玩家） ============
@@ -789,6 +823,8 @@ public class PlayerSkillRecord {
         // 木棍工具层（2026-09-08）：总开关 + 模式
         tag.putBoolean("StickToolOn", stickToolOn);
         tag.putInt("StickToolMode", stickToolMode);
+        // 木棍手势链接的物品类型（★ 2026-10-09；空串=未链接）
+        tag.putString("StickLinkedItem", stickLinkedItem);
         // 机械共鸣·操作区（2026-09-08）：技能ID → 区
         ListTag operList = new ListTag();
         for (Map.Entry<String, OperZone> e : operZones.entrySet()) {
@@ -948,6 +984,9 @@ public class PlayerSkillRecord {
         record.stickToolOn = !tag.contains("StickToolOn") || tag.getBoolean("StickToolOn");
         record.stickToolMode = tag.contains("StickToolMode", Tag.TAG_INT)
                 ? Math.max(0, Math.min(5, tag.getInt("StickToolMode"))) : 0;
+        // 木棍手势链接（★ 2026-10-09；旧存档无此字段 → 默认未链接）
+        record.stickLinkedItem = tag.contains("StickLinkedItem", Tag.TAG_STRING)
+                ? tag.getString("StickLinkedItem") : "";
         // 机械共鸣·操作区（2026-09-08：旧存档无此字段默认空）
         if (tag.contains("OperZones", Tag.TAG_LIST)) {
             ListTag operList = tag.getList("OperZones", Tag.TAG_COMPOUND);

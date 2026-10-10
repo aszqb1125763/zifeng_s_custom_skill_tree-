@@ -672,10 +672,12 @@ public final class Skills {
     /**
      * 是否需要「功能触发键」（2026-09-07 第三类快捷键）：主动技在场景内按一下触发一次。
      * 搬运术手动 / 闪现 / 机械共鸣·选区放置、选区挖掘（2026-09-08 手持物品按触发键执行一次）。
+     * <p>★ 2026-10-09：新增木棍工具（STICK_TOOL）—— 触发键 = 把木棍手势链接到当前主手物品类型。
      */
     public static boolean isTriggerBindable(String skillId) {
         return CONTAINER_HAUL.equals(skillId) || BLINK.equals(skillId)
-                || MACHINE_ZONE_PLACE.equals(skillId) || MACHINE_ZONE_EXCAVATE.equals(skillId);
+                || MACHINE_ZONE_PLACE.equals(skillId) || MACHINE_ZONE_EXCAVATE.equals(skillId)
+                || STICK_TOOL.equals(skillId);
     }
 
     // ==================== 第一代快捷键能力注册表（2026-09-07 规范 v1.0） ====================

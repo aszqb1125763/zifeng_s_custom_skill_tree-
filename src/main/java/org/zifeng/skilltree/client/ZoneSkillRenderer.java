@@ -72,10 +72,11 @@ public final class ZoneSkillRenderer {
         if (mc.player == null || mc.level == null) {
             return;
         }
-        // 条件：主手或副手任一木棍 + 当前模式为机械共鸣区（2-5）且对应技能已学
-        // ⚠️ 2026-09-08：副手木棍仅【显示】，框选/删除等交互仍要求主手木棍（输入层未放宽）
-        if (!mc.player.getMainHandItem().is(net.minecraft.world.item.Items.STICK)
-                && !mc.player.getOffhandItem().is(net.minecraft.world.item.Items.STICK)) {
+        // 条件：主手或副手任一为【木棍手势载体】+ 当前模式为机械共鸣区（2-5）且对应技能已学
+        // ⚠️ 2026-09-08：副手木棍仅【显示】，框选/删除等交互仍要求主手（输入层未放宽）
+        // ★ 2026-10-09：判定改为「木棍本体 或 已链接物品类型」（与输入层保持一致）
+        if (!ModKeyBindingEvents.matchesStickGestureClient(mc.player.getMainHandItem())
+                && !ModKeyBindingEvents.matchesStickGestureClient(mc.player.getOffhandItem())) {
             return;
         }
         String skill = ZoneSelectionInputHandler.zoneSkillOfCurrentMode();

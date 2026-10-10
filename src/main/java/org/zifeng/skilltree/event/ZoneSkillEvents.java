@@ -151,6 +151,14 @@ public final class ZoneSkillEvents {
         /** 作业开始时刻（nanoTime）：完成后输出精确耗时到日志（2026-09-12，供调参参考） */
         final long startNanos = System.nanoTime();
 
+        // ---- ★ 2026-10-09 放置攒批（性能修复）----
+        //   柱内 x/z 恒定，所以只需记 Y 坐标 → 零对象分配（避免每格 new BlockPos）。
+        //   长度 = 柱高（maxY-minY+1），作业级复用，每柱把 placeCount 归零即一轮。
+        /** 仅放置：本柱待放的 Y 坐标缓冲 */
+        final int[] placeYs;
+        /** 仅放置：本柱已记录的待放格数 */
+        int placeCount;
+
         // ---- 掉落物攒批（2026-09-12 1.4.1 性能优化） ----
         /** 本 tick 是否已绑定容器/AE（决定掉落是"攒起来批量入"还是"直接丢弃"） */
         boolean vacuumBound;
@@ -199,6 +207,8 @@ public final class ZoneSkillEvents {
             this.maxY = zone.maxY();
             this.maxZ = zone.maxZ();
             this.total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+            // ★ 2026-10-09 放置整柱缓冲（长度 = 柱高）
+            this.placeYs = new int[Math.max(1, maxY - minY + 1)];
             // ★ 2026-09-19 分批：先把选区在 X-Z 平面上切块，算出批数与【第一批】范围
             this.batchSide = Math.max(1, org.zifeng.skilltree.Config.ZONE_BATCH_SIDE.get());
             this.batchColsX = (maxX - minX) / batchSide + 1;
@@ -556,41 +566,109 @@ public final class ZoneSkillEvents {
         if (System.nanoTime() >= deadlineNanos) {
             return true;
         }
-        // ★ 2026-09-15：挖掘走「逐层扫描建表 → 统一清空 → 按类型结算」批量路径；放置保持原逻辑
-        if (!Skills.MACHINE_ZONE_PLACE.equals(job.skillId)) {
-            return advanceExcavate(player, record, level, job, deadlineNanos);
+        // ★ 2026-09-15：挖掘走「逐层扫描建表 → 统一清空 → 按类型结算」批量路径
+        // ★ 2026-10-09：放置也改为批量（整柱攒批 → 一次取料 → 批量放置），不再逐格取材料
+        if (Skills.MACHINE_ZONE_PLACE.equals(job.skillId)) {
+            return advancePlace(player, record, level, job, deadlineNanos);
         }
-        job.vacuumBound = false;
-        int sinceCheck = 0; // 距离上次时间检查已处理格数（降频用，见 TIME_CHECK_INTERVAL）
-        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        return advanceExcavate(player, record, level, job, deadlineNanos);
+    }
 
+    /**
+     * ★ 2026-10-09 放置批量路径：<b>整柱「攒待放格 → 一次取料 → 批量放置」</b>。
+     *
+     * <h2>为何要改</h2>
+     * 旧实现是<b>逐格</b> {@code takeMaterial(..., 1)} —— 每放一格就向绑定容器要 1 个方块。
+     * 而 {@code extractFromBoundRaw} 每次调用都要付一大串固定开销：
+     * {@code ResourceLocation.tryParse} + {@code ResourceKey.create} + {@code getLevel} +
+     * {@code getChunk} + 两次 {@code getBlockEntity} + capability 查询
+     * （绑 AE 时还要多一轮反射 + 网络查询）。
+     * 放 10 万格 = 10 万套开销，而每次只要 1 个方块 —— 纯浪费。
+     *
+     * <h2>怎么改</h2>
+     * 与拆解的「柱内原子化」一一对应：
+     * <ol>
+     *   <li>逐格只做「读方块 → 若可放则记下 Y」（零对象分配）</li>
+     *   <li><b>柱末</b>：一次性取够本柱所需材料（固定开销每柱只付一次）</li>
+     *   <li><b>柱末</b>：批量放置（flag 只同步客户端、不通知邻居）</li>
+     * </ol>
+     * <p>放置次数不变，但「取料」次数从【每格一次】降到【每柱一次】（柱高 256 → 降 256 倍）。
+     *
+     * <p>⚠️ 材料不足时：把已取到的部分放完（不浪费），再中断作业并提示（与旧行为一致）。
+     */
+    private static boolean advancePlace(ServerPlayer player, PlayerSkillRecord record, ServerLevel level,
+                                        Job job, long deadlineNanos) {
+        job.vacuumBound = false;
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         while (job.advanceCursor()) {
             pos.set(job.curX, job.curY, job.curZ);
             job.scanned++;
             BlockState cur = level.getBlockState(pos);
             if (cur.isAir() || cur.canBeReplaced()) {
-                ItemStack material = takeMaterial(player, record, job.tagItem, 1);
-                if (material.isEmpty()) {
-                    // 材料耗尽：中断作业（与旧行为一致：缺则停）
-                    finishJob(player, job, false);
-                    player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
-                            "chat.zifeng_s_custom_skill_tree.zone_job_nomaterial"), true);
-                    return false;
+                if (job.placeCount < job.placeYs.length) {
+                    job.placeYs[job.placeCount++] = job.curY; // 只存 Y（x/z 柱内恒定）
                 }
-                level.setBlock(pos, job.placeState, 3);
-                job.changed++;
             }
-            // 时间检查降频：每 TIME_CHECK_INTERVAL 格才调一次 nanoTime（见常量注释）
-            if (++sinceCheck >= TIME_CHECK_INTERVAL) {
-                sinceCheck = 0;
+            // ★ 预算/结算检查点 = 柱末（与拆解一致）：本格是本柱最后一格
+            if (job.curY == job.minY) {
+                if (!flushColumnPlace(player, record, level, job)) {
+                    return false; // 材料不足：已报错并结束作业
+                }
                 if (System.nanoTime() >= deadlineNanos) {
                     reportProgress(player, job);
-                    return true; // 预算用完：保持作业，下 tick 继续（由 ZoneWorkModule 驱动）
+                    return true; // 预算用完：作业保留，下 tick 继续
                 }
             }
         }
         finishJob(player, job, true);  // 遍历结束 = 完成
         return false;
+    }
+
+    /**
+     * ★ 2026-10-09：结算一根柱的放置 —— <b>一次取料 + 批量放置</b>。
+     *
+     * <p>这是本优化的核心：把「每格一次容器查询」变成「每柱一次」。
+     *
+     * <p>★ 2026-10-09 <b>创造模式无限放置</b>（用户需求）：创造模式（{@code instabuild}）下
+     * 手持方块<b>只当「放什么方块」的标签</b>，不消耗任何材料（<b>背包与绑定容器都不扣</b>）
+     * → 整柱直接放满，与生存模式行为区分。生存模式仍走「绑定容器优先 → 手头补 → 缺则中断」。
+     *
+     * @return true = 材料足够（本柱已放完）；false = 材料不足（已中断作业 + 提示玩家）
+     */
+    private static boolean flushColumnPlace(ServerPlayer player, PlayerSkillRecord record, ServerLevel level,
+                                            Job job) {
+        final int need = job.placeCount;
+        if (need <= 0) {
+            return true;
+        }
+        // ① 取本柱所需材料：创造模式不取（标签不消耗）；生存模式一次性取够
+        //    （容器 / AE 查询的固定开销每柱只付一次）
+        final int place;
+        if (player.isCreative()) {
+            place = need; // ★ 创造模式：无限放置，不扣任何材料
+        } else {
+            ItemStack material = takeMaterial(player, record, job.tagItem, need);
+            final int got = material.isEmpty() ? 0 : material.getCount();
+            place = Math.min(got, need);
+        }
+        // ② 批量放置
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+        final int x = job.curX;
+        final int z = job.curZ;
+        for (int i = 0; i < place; i++) {
+            p.set(x, job.placeYs[i], z);
+            level.setBlock(p, job.placeState, PLACE_FLAGS);
+            job.changed++;
+        }
+        job.placeCount = 0;
+        if (place < need) {
+            // 材料不足：已取到的部分已经放完（不浪费）→ 中断作业并提示（与旧行为一致）
+            finishJob(player, job, false);
+            player.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                    "chat.zifeng_s_custom_skill_tree.zone_job_nomaterial"), true);
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -733,6 +811,20 @@ public final class ZoneSkillEvents {
      */
     private static final int EXCAVATE_FLAGS = 2 | 16; // UPDATE_CLIENTS | UPDATE_KNOWN_SHAPE
 
+    /**
+     * ★ 2026-10-09 放置用的固定参数（<b>与拆解同款</b>）。
+     *
+     * <pre>PLACE_FLAGS = Block.UPDATE_CLIENTS(2) | Block.UPDATE_KNOWN_SHAPE(16) = 18</pre>
+     * <b>为何不通知邻居（用户明确要求「用拆解的方式」）</b>：
+     * <ul>
+     *   <li>每格通知 6 个邻居的形态/光照更新是纯开销；选区放置填的是<b>连片同种方块</b>，
+     *       支撑来自区域内，不需要逐格触发邻居更新。</li>
+     *   <li>与拆解保持行为一致（区域作业只在结束时一次性到位）。</li>
+     * </ul>
+     * 副作用（与拆解同理）：火把/告示牌等不因失去支撑而弹掉；重力方块不下落；流体不流动。
+     */
+    private static final int PLACE_FLAGS = 2 | 16; // = EXCAVATE_FLAGS
+
     /** 区块拆解清空后的方块状态（空气，复用同一实例） */
     private static final BlockState EXCAVATE_AIR =
             net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
@@ -760,15 +852,19 @@ public final class ZoneSkillEvents {
                 if (one == null || one.isEmpty()) {
                     continue;
                 }
-                long remaining = (long) one.getCount() * blocks;
-                int maxStack = Math.max(1, one.getMaxStackSize());
-                while (remaining > 0) {
-                    int take = (int) Math.min(maxStack, remaining);
-                    ItemStack s = one.copy();
-                    s.setCount(take);
-                    job.pendingDrops.add(s);
-                    remaining -= take;
+                long total = (long) one.getCount() * blocks;
+                if (total <= 0) {
+                    continue;
                 }
+                // ★ 2026-10-09 性能修复：整笔入列表，不再按单堆上限切分成多堆。
+                //   切分会让同种物品变成几百条 → 交付时向容器下几百次单；
+                //   普通容器（本地槽位遍历）无所谓，但 AE 每次下单都要走
+                //   「网络路由（遍历全部存储元件）+ 元件快照」，几百次就是秒级卡顿
+                //   （整合包日志实证：挖 3254 格红石，移除方块 3ms / 掉落入容器 4556ms）。
+                //   数量由容器自己的规则处理：普通容器在 insertAll 内按上限切分，AE 按其 insert(key, long) 一次收下。
+                ItemStack s = one.copy();
+                s.setCount((int) Math.min(Integer.MAX_VALUE, total));
+                job.pendingDrops.add(s);
             }
         }
         job.tSmelt += System.nanoTime() - t0; // 结算建栈耗时（复用 tSmelt 槽位）
