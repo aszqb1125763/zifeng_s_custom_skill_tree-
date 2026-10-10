@@ -70,6 +70,12 @@ public class SkillKeyBinds {
     private static int skillTreeGuiOffset = 0;
     /** 技能树界面缩放模式：true=自适应屏幕，false=手动偏移。 */
     private static boolean skillTreeGuiAdaptive = true;
+    /**
+     * 技能树界面黑暗模式（★ 2026-10-09 用户需求：很多玩家反馈界面太亮）。
+     * <p>只影响「结构面色」（贴片底/描边/其上的文字），类别强调色与状态色不变 → 保留辨识度。
+     * <p>客户端本地存储、不跟存档（与界面尺寸同一性质）。
+     */
+    private static boolean skillTreeDarkMode = false;
     /** 技能树上次选中的类别（客户端本地视图状态，0~9）。 */
     private static int skillTreeSelectedCategory = 0;
     /** 技能树上次的技能列表纵向滚动位置（客户端本地视图状态）。 */
@@ -396,6 +402,18 @@ public class SkillKeyBinds {
         save();
     }
 
+    /** 技能树界面是否使用黑暗模式（★ 2026-10-09） */
+    public static boolean isSkillTreeDarkMode() {
+        load();
+        return skillTreeDarkMode;
+    }
+
+    /** 设置技能树界面黑暗模式（自动持久化） */
+    public static void setSkillTreeDarkMode(boolean dark) {
+        skillTreeDarkMode = dark;
+        save();
+    }
+
     /**
      * 获取技能树上次关闭时的视图状态：[类别索引, 技能列表纵向滚动, 类别栏横向滚动]。
      *
@@ -531,6 +549,8 @@ public class SkillKeyBinds {
             skillTreeGuiOffset = data.skillTreeGuiOffset != null
                     ? Math.max(-50, Math.min(100, data.skillTreeGuiOffset)) : 0;
             skillTreeGuiAdaptive = data.skillTreeGuiAdaptive == null || data.skillTreeGuiAdaptive;
+            // 黑暗模式（★ 2026-10-09）：旧配置无此字段 / null → 默认关闭（浅色）
+            skillTreeDarkMode = data.skillTreeDarkMode != null && data.skillTreeDarkMode;
             // 技能树视图状态：旧配置没有这些字段时回到默认类别/顶部；滚动上限由界面按当前尺寸重算
             skillTreeSelectedCategory = data.skillTreeSelectedCategory != null
                     ? Math.max(0, Math.min(SKILL_TREE_CATEGORY_COUNT - 1, data.skillTreeSelectedCategory)) : 0;
@@ -583,6 +603,7 @@ public class SkillKeyBinds {
             data.panelUseVanillaAttr = panelUseVanillaAttr;
             data.skillTreeGuiOffset = skillTreeGuiOffset;
             data.skillTreeGuiAdaptive = skillTreeGuiAdaptive;
+            data.skillTreeDarkMode = skillTreeDarkMode;
             data.skillTreeSelectedCategory = skillTreeSelectedCategory;
             data.skillTreeScrollY = skillTreeScrollY;
             data.skillTreeCatScrollX = skillTreeCatScrollX;
@@ -615,6 +636,7 @@ public class SkillKeyBinds {
         Boolean panelUseVanillaAttr; // 属性面板数据源（2026-09-11；null=跟随配置文件）
         Integer skillTreeGuiOffset;  // 技能树界面尺寸偏移量（★ 2026-09-21；0=基准，null=旧配置→0）
         Boolean skillTreeGuiAdaptive; // 技能树界面缩放模式（null=旧配置→自适应）
+        Boolean skillTreeDarkMode;    // 技能树黑暗模式（★ 2026-10-09；null=旧配置→浅色）
         Integer skillTreeSelectedCategory; // 技能树上次选中的类别（旧配置无此字段→0）
         Integer skillTreeScrollY; // 技能树技能列表纵向滚动位置（旧配置无此字段→0）
         Integer skillTreeCatScrollX; // 技能树类别栏横向滚动位置（旧配置无此字段→0）

@@ -15,6 +15,9 @@ import java.util.function.Supplier;
  *   <li>action=1 模式设置：把木棍模式设为 mode（0-5；客户端已按已解锁技能算好目标模式，
  *       服务端照单全收——⚠️ 2026-09-08 修复：旧版服务端固定 1-mode 只允许 BIND↔RANGE，
  *       导致切到 2-5（放置/挖掘/攻击/防护）后回发校准被弹回）</li>
+ *   <li>action=2 <b>链接手势到当前主手物品类型</b>（★ 2026-10-09）：把「木棍手势」放开给手持的该类物品。
+ *       ⚠️ 服务端<b>自读主手</b>（权威状态），不接受客户端传物品 id —— 客户端无法伪造。
+ *       ⚠️ <b>单值</b>：新链接顶替旧的（无独立解除動作）。</li>
  * </ul>
  */
 public class StickToolC2SPacket {
@@ -47,6 +50,15 @@ public class StickToolC2SPacket {
                 record.setStickToolOn(!record.isStickToolOn()); // 总开关取反
             } else if (packet.action == 1) {
                 record.setStickToolMode(packet.mode); // 目标模式（record 内部 clamp 0-5）
+            } else if (packet.action == 2) {
+                // ★ 2026-10-09 把木棍手势链接到「当前主手物品的类型」
+                //   ⚠️ 服务端自读主手（权威），不接受客户端传来的物品 id。
+                //   ⚠️ per-player：写入该玩家自己的 record，不碰任何全局状态。
+                String itemId = org.zifeng.skilltree.skill.StickGesture.itemIdOf(player.getMainHandItem());
+                if (itemId.isEmpty()) {
+                    return; // 空手 / 未注册物品 → 无物可链接
+                }
+                record.setStickLinkedItem(itemId); // 单值：新链接自动顶替旧的
             } else {
                 return;
             }

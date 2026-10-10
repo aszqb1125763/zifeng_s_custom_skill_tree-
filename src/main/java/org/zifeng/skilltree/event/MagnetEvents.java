@@ -30,10 +30,11 @@ public class MagnetEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return;
         }
-        if (!player.getMainHandItem().is(Items.STICK)) {
+        PlayerSkillRecord record = getRecord(player);
+        // ★ 2026-10-09 统一判定：木棍本体 或 本玩家已链接的物品类型（per-player，绝不共享）
+        if (!org.zifeng.skilltree.skill.StickGesture.matches(player.getMainHandItem(), record.getStickLinkedItem())) {
             return;
         }
-        PlayerSkillRecord record = getRecord(player);
         // ⚠️ 2026-09-08 迁入工具层 RANGE 模块：需工具开 + 模式=RANGE + 磁铁已学（磁铁开关不影响左键配置）
         if (!record.isStickToolOn() || record.getStickToolMode() != Skills.STICK_MODE_RANGE) {
             return;

@@ -160,10 +160,11 @@ public final class MagnetExclusionRenderer {
         if (mc.player == null || mc.level == null) {
             return;
         }
-        // 条件：主手或副手任一木棍 + 工具开 + RANGE 模块（磁铁已学；仅已学判定，磁铁开关不影响查看/配置）
-        // ⚠️ 2026-09-08：副手木棍仅【显示】，框选/删除等交互仍要求主手木棍（输入层未放宽）
-        if (!mc.player.getMainHandItem().is(net.minecraft.world.item.Items.STICK)
-                && !mc.player.getOffhandItem().is(net.minecraft.world.item.Items.STICK)) {
+        // 条件：主手或副手任一为【木棍手势载体】+ 工具开 + RANGE 模块（磁铁已学；仅已学判定，磁铁开关不影响查看/配置）
+        // ⚠️ 2026-09-08：副手木棍仅【显示】，框选/删除等交互仍要求主手（输入层未放宽）
+        // ★ 2026-10-09：判定改为「木棍本体 或 已链接物品类型」（与输入层保持一致）
+        if (!ModKeyBindingEvents.matchesStickGestureClient(mc.player.getMainHandItem())
+                && !ModKeyBindingEvents.matchesStickGestureClient(mc.player.getOffhandItem())) {
             return;
         }
         if (!MagnetExclusionInputHandler.isRangeModuleActiveClient()) {

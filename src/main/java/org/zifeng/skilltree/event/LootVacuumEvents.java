@@ -52,12 +52,16 @@ public final class LootVacuumEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return;
         }
-        // 条件：主手原版木棍 + 潜行 + 已学任一容器绑定技能（不需要对应技能开启）
+        // 条件：主手为【木棍手势载体】+ 潜行 + 已学任一容器绑定技能（不需要对应技能开启）
         ItemStack stack = event.getItemStack();
-        if (stack.getItem() != Items.STICK || !player.isShiftKeyDown()) {
+        if (!player.isShiftKeyDown()) {
             return;
         }
         PlayerSkillRecord record = getRecord(player);
+        // ★ 2026-10-09 统一判定：木棍本体 或 本玩家已链接的物品类型（per-player，绝不共享）
+        if (!org.zifeng.skilltree.skill.StickGesture.matches(stack, record.getStickLinkedItem())) {
+            return;
+        }
         // ⚠️ 2026-09-08 迁入木棍工具层 BIND 模块：需工具总开关开 + 当前模式=BIND（潜行右键绑容器）
         //    工具关（还原木棍）或切到 RANGE 时，潜行右键回到原版行为。
         if (!record.isStickToolOn() || record.getStickToolMode() != Skills.STICK_MODE_BIND) {
@@ -243,12 +247,39 @@ public final class LootVacuumEvents {
     }
 
     /**
-     * 通用容器放入（2026-09-09）：直接用 Forge 官方 ItemHandlerHelper.insertItem——
-     * 所有模组/管道共用的标准"把物品塞进容器"方法，内部自行处理逐槽/堆叠/容量规则。
-     * 我们只负责"放"，放不下返回剩余由调用方处理，不掺任何自定义逻辑。
+     * 把一整笔数量塞进普通容器（★ 2026-10-09）。
+     *
+     * <p>{@link ItemStack} 的单堆上限（通常 64）是<b>类型层面的硬约束</b>，
+     * 无法用「一个 stack 装 100 万」表达，所以这里按上限切分逐堆调用。
+     * 与 AE 不同，普通容器每次调用只是<b>本地槽位遍历</b>（微秒级），
+     * 逐堆不会成为瓶颈（瓶颈只在 AE 的网络路由 + 元件快照）。
      */
     private static ItemStack insertAll(IItemHandler handler, ItemStack stack) {
-        return net.minecraftforge.items.ItemHandlerHelper.insertItem(handler, stack, false);
+        if (stack == null || stack.isEmpty()) {
+            return ItemStack.EMPTY;
+        }
+        int maxStack = Math.max(1, stack.getMaxStackSize());
+        if (stack.getCount() <= maxStack) {
+            return net.minecraftforge.items.ItemHandlerHelper.insertItem(handler, stack, false);
+        }
+        int remaining = stack.getCount();
+        while (remaining > 0) {
+            int take = Math.min(maxStack, remaining);
+            ItemStack part = stack.copy();
+            part.setCount(take);
+            ItemStack left = net.minecraftforge.items.ItemHandlerHelper.insertItem(handler, part, false);
+            int moved = take - left.getCount();
+            if (moved <= 0) {
+                break; // 容器已满 → 停止（剩余由调用方处理）
+            }
+            remaining -= moved;
+        }
+        if (remaining <= 0) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack leftover = stack.copy();
+        leftover.setCount(remaining);
+        return leftover;
     }
 
     /**
@@ -358,40 +389,58 @@ public final class LootVacuumEvents {
     }
 
     /**
-     * 批量插入（选区挖掘专用，2026-09-12 1.4.1）：先按「物品 + 标签完全相同」合并，再逐个插入。
+     * 批量插入（选区挖掘专用；★ 2026-10-09 改为「按总数一整笔下单」）。
      *
-     * <p>选区挖掘每 tick 会产生上千个掉落物（石头/泥土…反复几样），逐个插入等于把
-     * {@code insertItem} 的逐槽扫描做上千次；合并后通常只剩个位数 stack → 插入次数降 2~3 个数量级。
-     * <p>⚠️ 只合并 {@link ItemStack#isSameItemSameTags} 完全一致且不超单堆上限的堆——绝不改变物品语义。
+     * <p><b>为何改</b>：原实现先按「物品 + 标签」分桶，但每桶仍按 {@code maxStackSize} 切成多堆，
+     * 再逐堆 {@link #insertIntoTarget} —— 红石 13016 个 = 204 堆 = 向容器下 204 次单。
+     * 普通容器逐堆只是本地槽位遍历（微秒级），但 <b>AE</b> 每次下单都要走
+     * 「网络路由（遍历全部存储元件）+ 元件快照」—— 204 次实测 4556ms。
+     *
+     * <p>现改为：同种物品先把数量<b>累加成一个总数</b>，每个物品只下一次单。
+     * 怎么存是容器自己的规则 —— 普通容器在 {@code insertAll} 内部按单堆上限切分，
+     * AE 则按其 {@code insert(key, long)} 接口一次收下（返回的剩余按选区设定直接丢弃）。
+     *
      * <p>⚠️ 未塞下的剩余<b>丢弃</b>（与选区挖掘既有行为一致：不生成掉落实体）。
      */
     public static void insertBatch(BoundTarget target, java.util.List<ItemStack> drops) {
         if (target == null || drops == null || drops.isEmpty()) {
             return;
         }
-        java.util.Map<net.minecraft.world.item.Item, java.util.List<ItemStack>> byItem = new java.util.HashMap<>();
+        for (ItemStack s : aggregate(drops)) {
+            insertIntoTarget(target, s); // leftover 丢弃（需求：多余掉落清除）
+        }
+    }
+
+    /**
+     * 按「物品 + 标签完全相同」聚合数量（★ 2026-10-09）。
+     *
+     * <p>返回的每个 stack 的 count 可能<b>远大于</b>单堆上限（如 1,000,000）——这是刻意的：
+     * 交付时以总数下单，由容器决定怎么拆分存储（避免「同一种物品被拆成几百条」导致
+     * AE 侧被下几百次单）。
+     */
+    public static java.util.List<ItemStack> aggregate(java.util.List<ItemStack> drops) {
+        java.util.List<ItemStack> out = new java.util.ArrayList<>();
+        if (drops == null || drops.isEmpty()) {
+            return out;
+        }
         for (ItemStack s : drops) {
             if (s == null || s.isEmpty()) {
                 continue;
             }
-            java.util.List<ItemStack> bucket = byItem.computeIfAbsent(s.getItem(), k -> new java.util.ArrayList<>(2));
             boolean merged = false;
-            for (ItemStack m : bucket) {
-                if (ItemStack.isSameItemSameTags(m, s) && m.getCount() + s.getCount() <= m.getMaxStackSize()) {
-                    m.grow(s.getCount());
+            for (ItemStack m : out) {
+                if (ItemStack.isSameItemSameTags(m, s)) {
+                    long sum = (long) m.getCount() + s.getCount();
+                    m.setCount((int) Math.min(Integer.MAX_VALUE, sum));
                     merged = true;
                     break;
                 }
             }
             if (!merged) {
-                bucket.add(s);
+                out.add(s.copy());
             }
         }
-        for (java.util.List<ItemStack> bucket : byItem.values()) {
-            for (ItemStack s : bucket) {
-                insertIntoTarget(target, s); // leftover 丢弃（需求：多余掉落清除）
-            }
-        }
+        return out;
     }
 
     /**
@@ -487,22 +536,51 @@ public final class LootVacuumEvents {
             return false; // 容器所在维度未加载
         }
         targetLevel.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
+        // ★ 2026-10-09 性能修复：先按物品聚合总数，每个物品只下一次单（原为逐件下单）。
+        //   原因同 insertBatch：AE 每次下单都要走「网络路由 + 元件快照」，件数多时是秒级开销。
         boolean allMoved = true;
-        Iterator<ItemStack> it = drops.iterator();
-        while (it.hasNext()) {
-            ItemStack stack = it.next();
-            if (stack == null || stack.isEmpty()) {
-                continue;
-            }
-            ItemStack leftover = insertIntoBoundTarget(targetLevel, pos, record.getLootVacuumFace(), stack, player);
-            if (leftover.isEmpty()) {
-                it.remove(); // 全部塞进容器
-            } else {
-                stack.setCount(leftover.getCount()); // 部分塞进，剩余保留（留在掉落列表里正常掉落）
+        java.util.List<ItemStack> aggs = aggregate(drops);
+        drops.clear();
+        for (ItemStack s : aggs) {
+            ItemStack leftover = insertIntoBoundTarget(targetLevel, pos, record.getLootVacuumFace(), s, player);
+            if (!leftover.isEmpty()) {
+                // ⚠️ 2026-10-09 必修：leftover 必须【切回单堆上限】再放回掉落列表。
+                //    aggregate() 产出的是「总数」（如 90 万格萤石 → 270 万件），若原样放回，
+                //     GLM 回写后原版会为它生成一个 count=2700000 的 ItemEntity ——
+                //     而原版 ItemEntity 不会自动切分 → 渲染/拾取/存档全都异常。
+                //    （选区的 insertBatch 不需要：那里的 leftover 直接丢弃，不进世界）
+                splitToStacks(leftover, drops);
                 allMoved = false;
             }
         }
         return allMoved;
+    }
+
+    /**
+     * 把可能「超单堆上限」的 stack 切回正常堆（★ 2026-10-09）。
+     *
+     * <p>{@link #aggregate} 会产出 count 远大于 64 的 stack（如 270 万）——
+     * 这在<b>交给容器</b>时没问题（AE 按 {@code long} 收、普通容器在 {@code insertAll} 内切分），
+     * 但 leftover 会<b>回到世界生成掉落实体</b>，而原版 {@code ItemEntity} 不会自动切分，
+     * count > 64 的实体会导致渲染/拾取/存档异常。故回写前必须切分。
+     */
+    private static void splitToStacks(ItemStack stack, java.util.List<ItemStack> out) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+        int maxStack = Math.max(1, stack.getMaxStackSize());
+        if (stack.getCount() <= maxStack) {
+            out.add(stack);
+            return;
+        }
+        int remaining = stack.getCount();
+        while (remaining > 0) {
+            int take = Math.min(maxStack, remaining);
+            ItemStack part = stack.copy();
+            part.setCount(take);
+            out.add(part);
+            remaining -= take;
+        }
     }
 
     private static void markDirty(ServerPlayer player) {

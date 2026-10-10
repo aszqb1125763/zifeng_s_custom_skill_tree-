@@ -671,7 +671,8 @@ public final class Skills {
      */
     public static boolean isTriggerBindable(String skillId) {
         return CONTAINER_HAUL.equals(skillId) || BLINK.equals(skillId) // 闪现：改造为触发键传送（2026-09-07 规范）
-                || MACHINE_ZONE_PLACE.equals(skillId) || MACHINE_ZONE_EXCAVATE.equals(skillId); // 选区放置/挖掘（2026-09-08）
+                || MACHINE_ZONE_PLACE.equals(skillId) || MACHINE_ZONE_EXCAVATE.equals(skillId) // 选区放置/挖掘（2026-09-08）
+                || STICK_TOOL.equals(skillId); // ★ 2026-10-09 木棍工具：触键=链接手势到主手物品类型
     }
 
     // ==================== 第一代快捷键能力注册表（2026-09-07 规范 v1.0） ====================

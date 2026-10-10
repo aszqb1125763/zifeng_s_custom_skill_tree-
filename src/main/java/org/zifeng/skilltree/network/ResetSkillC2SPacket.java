@@ -49,8 +49,10 @@ public class ResetSkillC2SPacket {
                     return;
                 }
                 // 计算该技能总消耗并返还
-                double spent = record.totalSpentOf(skillId);
-                record.resetSkill(skillId);
+                // ★ 2026-10-09 修复：改用 resetSkill 的【返回值】作为返还额（权威——它内部就是 totalSpent × rate），
+                //   不再在外面另算一次（避免两处逻辑漂移；也顺便省一次 totalSpent 调用）
+                double rate = org.zifeng.skilltree.Config.RESET_REFUND_RATE.get();
+                double refund = record.resetSkill(skillId);
                 data.setDirty();
                 // 更新属性修饰符 + 清理终极被动临时状态
                 SkillEffects.applyAll(player, record);
@@ -80,17 +82,32 @@ public class ResetSkillC2SPacket {
                 }
 
                 // 重置村庄英雄/发光/战利品爆炸/虚空之躯等被动 → 状态由事件每次 tick 按记录重判，无残留
-                double rate = org.zifeng.skilltree.Config.RESET_REFUND_RATE.get();
-                player.sendSystemMessage(Component.translatable(
-                        rate >= 1.0
-                                ? "chat.zifeng_s_custom_skill_tree.reset_full"
-                                : "chat.zifeng_s_custom_skill_tree.reset_partial",
-                        Skills.getDisplayNameComponent(skillId),
-                        String.format("%.0f", rate * 100),
-                        String.format("%.1f", spent * rate)));
+                // ⚠️ 2026-10-09 修复（显示错误）：两条文案占位符数量不同 ——
+                //    reset_full    = 2 个（技能名 / 返还点数）
+                //    reset_partial = 3 个（技能名 / 返还率 / 返还点数）
+                //    旧代码【统一传 3 个参数】→ 全额返还时第 2 个 %s 吃到了 rate*100（=100），
+                //    导致无论实际返还多少，永远显示「全额返还 100 技能点」（默认返还率就是 1.0）。
+                //    现按分支各传对应数量，金额用 resetSkill 的返回值（与真正入账数额完全一致）。
+                player.sendSystemMessage(rate >= 1.0
+                        ? Component.translatable("chat.zifeng_s_custom_skill_tree.reset_full",
+                                Skills.getDisplayNameComponent(skillId), fmtPoints(refund))
+                        : Component.translatable("chat.zifeng_s_custom_skill_tree.reset_partial",
+                                Skills.getDisplayNameComponent(skillId),
+                                String.format("%.0f", rate * 100), fmtPoints(refund)));
                 ModNetwork.sendToPlayer(player,
                         SkillTreeDataS2CPacket.from(record));
         });
         ctx.setPacketHandled(true);
+    }
+
+    /**
+     * 技能点数值显示（★ 2026-10-09）：整数不拖小数尾巴（1000 而非 1000.0），小数保留 1 位（1234.5）。
+     * <p>⚠️ <b>不把小数四舍五入成整数</b> —— 避免显示值与真实入账不符。
+     */
+    private static String fmtPoints(double v) {
+        if (!Double.isFinite(v)) {
+            return String.format("%.1f", v);
+        }
+        return v == Math.rint(v) ? String.format("%.0f", v) : String.format("%.1f", v);
     }
 }

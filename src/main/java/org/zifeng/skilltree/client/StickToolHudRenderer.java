@@ -26,8 +26,9 @@ public final class StickToolHudRenderer {
             return;
         }
         // ⚠️ 2026-09-08：主手或副手任一木棍均显示（副手木棍只做状态/选区查看，不抢交互）
-        if (!mc.player.getMainHandItem().is(net.minecraft.world.item.Items.STICK)
-                && !mc.player.getOffhandItem().is(net.minecraft.world.item.Items.STICK)) {
+        // ★ 2026-10-09：判定改为「木棍本体 或 已链接物品类型」
+        if (!ModKeyBindingEvents.matchesStickGestureClient(mc.player.getMainHandItem())
+                && !ModKeyBindingEvents.matchesStickGestureClient(mc.player.getOffhandItem())) {
             return;
         }
         if (!ModKeyBindingEvents.hasAnyStickToolSkillClient()) {
