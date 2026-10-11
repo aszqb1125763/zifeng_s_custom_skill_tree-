@@ -44,11 +44,13 @@ public final class StickToolHudRenderer {
         String title;
         int titleColor;
         String sub = null;
+        net.minecraft.world.item.ItemStack icon = null;
         if (on) {
-            // 首行：彩色圆点 + 功能名（切换后直接看到对应功能）
-            title = "● " + Component.translatable(
+            // 首行：模式图标 + 功能名（切换后一眼看到对应功能）
+            title = Component.translatable(
                     "ui.zifeng_s_custom_skill_tree." + StickToolModes.modeLang(mode)).getString();
             titleColor = StickToolModes.colorOfMode(mode);
+            icon = new net.minecraft.world.item.ItemStack(StickToolModes.iconOfMode(mode));
             // 次行：一行核心操作提示
             sub = Component.translatable(
                     "ui.zifeng_s_custom_skill_tree." + StickToolModes.hintLang(mode)).getString();
@@ -68,7 +70,11 @@ public final class StickToolHudRenderer {
         while (font.width(title) > 180) {
             title = title.substring(0, title.length() - 1);
         }
-        int maxW = font.width(title);
+        // ★ 2026-10-11：模式图标占 12×12（物品图标 16×16 缩放），标题文字右移让位
+        final int iconSize = 12;
+        final int iconGap = 3;
+        final int iconW = icon != null ? iconSize + iconGap : 0;
+        int maxW = font.width(title) + iconW;
         if (sub != null) {
             maxW = Math.max(maxW, font.width(sub));
         }
@@ -77,7 +83,16 @@ public final class StickToolHudRenderer {
         int totalH = lines * 10 + pad * 2 - 4;
         gg.fill(bgX - 1, bottom - totalH - 1, right + 1, bottom + 1, 0xAA000000);
         int y = bottom - totalH + pad - 2;
-        gg.drawString(font, title, bgX + pad, y, titleColor, false);
+        if (icon != null) {
+            // 图标垂直居中于首行文字（文字高 9px，图标 12px → 上移 2px 对齐）
+            var pose = gg.pose();
+            pose.pushPose();
+            pose.translate(bgX + pad, y - 2, 0);
+            pose.scale(iconSize / 16.0F, iconSize / 16.0F, 1.0F);
+            gg.renderItem(icon, 0, 0);
+            pose.popPose();
+        }
+        gg.drawString(font, title, bgX + pad + iconW, y, titleColor, false);
         if (sub != null) {
             gg.drawString(font, sub, bgX + pad, y + 10, 0xFFDDDDDD, false);
         }

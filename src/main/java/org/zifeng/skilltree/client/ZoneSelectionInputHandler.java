@@ -45,16 +45,16 @@ public final class ZoneSelectionInputHandler {
         resetPendingScroll(); // 待发的滚轮调整一并丢弃（防残留到新会话）
     }
 
-    /** 当前工具模式下对应的机械共鸣技能（模式 2-5；BIND/RANGE 返回 null） */
+    /** 当前工具模式下对应的选区技能（区块模式与挖掘防护；BIND/RANGE 返回 null） */
     static String zoneSkillOfCurrentMode() {
         int mode = ModKeyBindingEvents.getStickToolModeClient();
-        if (mode < Skills.STICK_MODE_ZONE_PLACE || mode > Skills.STICK_MODE_ZONE_PROTECT) {
-            return null;
-        }
-        return Skills.skillForStickMode(mode);
+        // ⚠️ 不要再写成「连续区间」判定：模式号之间隔着 MARK(6) 这类非选区模式，
+        //    用 Skills.isStickZoneSkill 反查更稳（加新模式时不会静默漏掉）
+        String skill = Skills.skillForStickMode(mode);
+        return skill != null && Skills.isStickZoneSkill(skill) ? skill : null;
     }
 
-    /** 当前机械共鸣模式激活（客户端）：工具开 + 模式 2-5 + 对应技能已学 */
+    /** 当前选区模式激活（客户端）：工具开 + 选区模式 + 对应技能已学 */
     static boolean isZoneModuleActiveClient() {
         String skill = zoneSkillOfCurrentMode();
         if (skill == null) {
@@ -64,9 +64,20 @@ public final class ZoneSelectionInputHandler {
                 && ModKeyBindingEvents.isStickModeUnlocked(ModKeyBindingEvents.getStickToolModeClient());
     }
 
-    /** 模式 → ZoneC2SPacket 设置 action（0=放置 1=挖掘 2=攻击 3=防护） */
+    /**
+     * 模式 → ZoneC2SPacket 设置 action（0=放置 1=挖掘 2=攻击 3=防护 4=挖掘防护）。
+     * <p>⚠️ 不要用 {@code mode - STICK_MODE_ZONE_PLACE} 算：模式号中间夹着 MARK(6)，
+     * 差值会对不上 action（旧写法在加了 MARK 之后就会错位）。
+     */
     private static int actionOfMode() {
-        return ModKeyBindingEvents.getStickToolModeClient() - Skills.STICK_MODE_ZONE_PLACE;
+        return switch (ModKeyBindingEvents.getStickToolModeClient()) {
+            case Skills.STICK_MODE_ZONE_PLACE -> 0;
+            case Skills.STICK_MODE_ZONE_EXCAVATE -> 1;
+            case Skills.STICK_MODE_ZONE_ATTACK -> 2;
+            case Skills.STICK_MODE_ZONE_PROTECT -> 3;
+            case Skills.STICK_MODE_MINE_PROTECT -> 4;
+            default -> -1;
+        };
     }
 
     /** 清预览：脱手木棍 / 工具关 / 切走当前模式 时不再显示旧预览 */
@@ -325,6 +336,9 @@ public final class ZoneSelectionInputHandler {
         java.util.List<OperZone> zones = new java.util.ArrayList<>();
         if (Skills.MACHINE_ZONE_PROTECT.equals(skill)) {
             zones.addAll(ModKeyBindingEvents.getProtectZonesClient());
+        } else if (Skills.MINING_PROTECT.equals(skill)) {
+            // ★ 2026-10-11 方块保护：多块，不限数量
+            zones.addAll(ModKeyBindingEvents.getMiningProtectZonesClient());
         } else {
             OperZone single = ModKeyBindingEvents.getOperZoneClient(skill);
             if (single != null) {
@@ -503,10 +517,13 @@ public final class ZoneSelectionInputHandler {
         String dim = mc.level.dimension().location().toString();
         net.minecraft.world.phys.Vec3 eye = mc.player.getEyePosition();
         net.minecraft.world.phys.Vec3 look = mc.player.getLookAngle();
-        // 当前技能可展示的全部区：防护 = 多块列表；其余 = 单块 map
+        // 当前技能可展示的全部区：防护/方块保护 = 多块列表；其余 = 单块 map
         java.util.List<OperZone> zones = new java.util.ArrayList<>();
         if (Skills.MACHINE_ZONE_PROTECT.equals(skill)) {
             zones.addAll(ModKeyBindingEvents.getProtectZonesClient());
+        } else if (Skills.MINING_PROTECT.equals(skill)) {
+            // ★ 2026-10-11 方块保护：多块，不限数量
+            zones.addAll(ModKeyBindingEvents.getMiningProtectZonesClient());
         } else {
             OperZone single = ModKeyBindingEvents.getOperZoneClient(skill);
             if (single != null) {
@@ -540,10 +557,14 @@ public final class ZoneSelectionInputHandler {
                     "chat.zifeng_s_custom_skill_tree.zone_miss"), true);
             return;
         }
-        // 清除：防护（action 23）带命中区一角坐标删单块；其余单块技能（action 20-22）直接清
+        // 清除：防护（action 23）/ 方块保护（action 24）带命中区一角坐标删单块；其余单块技能（action 20-22）直接清
         if (Skills.MACHINE_ZONE_PROTECT.equals(skill)) {
             org.zifeng.skilltree.network.ModNetwork.sendToServer(new org.zifeng.skilltree.network.ZoneC2SPacket(
                     23, dim, hitZone.minX(), hitZone.minY(), hitZone.minZ(), 0, 0, 0));
+        } else if (Skills.MINING_PROTECT.equals(skill)) {
+            // ★ 2026-10-11 方块保护多块：只删射线命中的那一块
+            org.zifeng.skilltree.network.ModNetwork.sendToServer(new org.zifeng.skilltree.network.ZoneC2SPacket(
+                    24, dim, hitZone.minX(), hitZone.minY(), hitZone.minZ(), 0, 0, 0));
         } else {
             org.zifeng.skilltree.network.ModNetwork.sendToServer(new org.zifeng.skilltree.network.ZoneC2SPacket(
                     actionOfMode() + 20, dim, 0, 0, 0, 0, 0, 0));

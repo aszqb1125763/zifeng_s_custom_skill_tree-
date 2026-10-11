@@ -640,7 +640,7 @@ public class AuraEvents {
                     net.minecraft.core.registries.Registries.DAMAGE_TYPE,
                     new net.minecraft.resources.ResourceLocation("draconicevolution", "chaos_implosion"));
 
-    private static DamageSource buildChaosSource(ServerLevel level, Player player) {
+    public static DamageSource buildChaosSource(ServerLevel level, Player player) {
         var registry = level.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE);
         // 1. DE chaos_implosion（自带 chaotic 标签）
         var deHolder = registry.getHolder(DE_CHAOS_IMPLOSION_KEY).orElse(null);
@@ -697,15 +697,6 @@ public class AuraEvents {
     // ============ 杀戮光环·虚空之矛：虚空秒杀（参考虚空之矛 damageLoop + forceFinish，数值不削弱） ============
 
     /**
-     * 虚空秒杀：对单个目标执行绝对击杀（参考虚空之矛）：
-     * <ul>
-     *   <li>① 秒杀循环：1 亿伤害 × 64 次，每次清零受击无敌帧（invulnerableTime/hurtTime），
-     *       换魔法伤害源（无视护甲），突破不同伤害源的免疫</li>
-     *   <li>② forceFinish 兜底：清吸收 + Float.MAX 强杀 + 血量归零 + die()，对伤害免疫实体也能强杀</li>
-     * </ul>
-     * 伤害源归属玩家（indirectMagic(player, player)）→ 击杀归功/掉落增幅/生命汲取全部生效。
-     */
-    /**
      * 虚空秒杀：对单个目标执行绝对击杀（参考虚空之矛，2026-08-15 性能优化）：
      * <ul>
      *   <li>① 秒杀：1 亿伤害 × 3 次（原 64 次，性能优化——刷怪塔场景 50 目标 × 64 = 3200 次 hurt 卡死服务器；
@@ -715,8 +706,13 @@ public class AuraEvents {
      *   <li>③ forceFinish 兜底：清吸收 + Float.MAX 强杀 + 血量归零 + die()，对伤害免疫实体也能强杀</li>
      * </ul>
      * 伤害源归属玩家（attacker=player）→ 击杀归功/掉落增幅/生命汲取全部生效。
+     *
+     * <p>★ 2026-10-11 起由枪械「杀戮弹幕」复用，故放宽为<b>包内可见</b>。
+     * ⚠️ 复用方是 {@code TaczGunDamageEvents}：子弹命中时若学了虚空诛灭，直接走这套
+     * 与光环<b>完全相同</b>的击杀流程（含混沌伤害源挂 Boss 判定、forceFinish 兜底破免疫），
+     * 而不是另写一份「设个超大伤害」——这样两边的行为永远一致，不会各自漂移。
      */
-    private static void voidSpearKill(ServerLevel level, ServerPlayer player, LivingEntity target) {
+    static void voidSpearKill(ServerLevel level, ServerPlayer player, LivingEntity target) {
         if (target == null || !target.isAlive()) {
             return;
         }

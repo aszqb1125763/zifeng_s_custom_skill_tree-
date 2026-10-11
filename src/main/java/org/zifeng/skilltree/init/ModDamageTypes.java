@@ -28,6 +28,27 @@ public class ModDamageTypes {
                 new ResourceLocation("draconicevolution", "chaotic"));
     }
 
+    /**
+     * 真实伤害类型（★ 2026-10-11 新增，供「无视护甲与保护附魔」的伤害使用）。
+     *
+     * <p>通过 data 包打 {@code minecraft:bypasses_armor} 标签 → 完全无视护甲与保护附魔，
+     * 配合调用方把 {@code invulnerableTime} 归零，即可做到"每发子弹都结算、不吞伤害"。
+     * <p>⚠️ 刻意<b>不</b>打 {@code bypasses_invulnerability}：那会让伤害绕过整个 {@code hurt()}
+     * 流程（等于 {@code /kill}），失去死亡消息与各类受击事件。
+     * <p>注：原唯一调用方「枪械 · 真伤弹」已在【杀戮弹幕】改版中删除，故当前无引用。
+     * 类型与其数据包标签一并保留 —— 删掉它要同时动注册项、damage_type json 与
+     * {@code minecraft:bypasses_armor} 标签文件，收益只是少一个空注册项，
+     * 不值得在发布版为此改动 registry 内容。
+     */
+    public static final Supplier<DamageType> TRUE_DAMAGE = DAMAGE_TYPES.register("true_damage",
+            () -> new DamageType("true_damage", 0.1F));
+
+    /** 真实伤害类型的 ResourceKey（供构造 DamageSource） */
+    public static net.minecraft.resources.ResourceKey<DamageType> trueDamageKey() {
+        return net.minecraft.resources.ResourceKey.create(Registries.DAMAGE_TYPE,
+                new ResourceLocation(SkillTreeMod.MOD_ID, "true_damage"));
+    }
+
     /** 混沌伤害类型的 ResourceKey（供构造 DamageSource） */
     public static net.minecraft.resources.ResourceKey<DamageType> chaosDamageKey() {
         return net.minecraft.resources.ResourceKey.create(Registries.DAMAGE_TYPE, chaosDamageId());

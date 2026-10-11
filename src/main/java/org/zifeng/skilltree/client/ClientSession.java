@@ -60,5 +60,8 @@ public final class ClientSession {
     public static void resetSession() {
         MagnetExclusionInputHandler.resetSession();
         ZoneSelectionInputHandler.resetSession();
+        ClientTreasureEvents.resetSession(); // ★ 2026-10-11 寻宝大师·已开容器记忆（进服/换维度/重连清空）
+        ClientBlockScanEvents.resetSession(); // ★ 2026-10-11 方块扫描·扫描结果（进服/换维度/重连清空）
+        MiningProtectClientState.resetSession(); // ★ 2026-10-11 挖掘防护区缓存（换服防残留）
     }
 }

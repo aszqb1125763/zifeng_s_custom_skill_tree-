@@ -1,0 +1,20 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "org.zifeng.skilltree.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "zifeng_s_custom_skill_tree.refmap.json",
+  "mixins": [
+    "TaczGunAmmoMixin",
+    "TaczGunReloadMixin",
+    "TaczInfiniteAmmoMixin",
+    "TaczPropertyMixin",
+    "TaczDrawSpeedMixin"
+  ],
+  "client": [
+    "TaczRecoilMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

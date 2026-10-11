@@ -81,12 +81,23 @@ repositories {
             includeGroup 'maven.modrinth'
         }
     }
+    // TaCZ 枪械（★ 2026-10-11）走本地 libs/ jar，不需要远程仓库
 }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     // Jade API（compileOnly：仅编译用；运行时若未安装 Jade 不会加载插件类，绝不崩溃）
     compileOnly "maven.modrinth:jade:11.13.2+forge"
+    // ★ 2026-10-11 TaCZ 枪械兼容（compileOnly 本地 jar）：
+    //   jar 放在工程的 libs/ 文件夹（不进版本管理）。⚠️ 条件加载 —— 没放 jar 时自动跳过，
+    //   不会让正常构建失败（TaCZ 只在 1.20.1 发布，故本兼容仅存在于 1.20.1 工程）。
+    def taczJars = fileTree(dir: 'libs', include: ['*.jar'])
+    if (!taczJars.isEmpty()) {
+        compileOnly taczJars
+        logger.lifecycle("[zifeng] 已加载 TaCZ 编译依赖: ${taczJars.files*.name}")
+    } else {
+        logger.lifecycle("[zifeng] 未发现 libs/ 下的 TaCZ jar → 跳过枪械兼容编译")
+    }
     // ⚠️ Mixin refmap 处理器：发布 jar（reobf）需要 refmap 把 official 名映射到 srg 名，
     //    否则 @Shadow/@Inject 引用的字段/方法名在 reobf 后找不到 → 崩溃（InvalidMixinException）
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
@@ -97,6 +108,8 @@ dependencies {
 mixin {
     add sourceSets.main, 'zifeng_s_custom_skill_tree.refmap.json'
     config 'zifeng_s_custom_skill_tree.mixins.json'
+    // ★ 2026-10-11 TaCZ 枪械兼容 mixin（独立配置；内部注解全部 remap=false，因为 TaCZ 是模组类）
+    config 'zifeng_tacz.mixins.json'
 }
 
 // 资源复制（mixins.json 等）
@@ -114,7 +127,7 @@ jar {
                 "Specification-Version"   : "1",
                 "Implementation-Title"    : mod_id,
                 "Implementation-Version"  : project.version,
-                "MixinConfigs"            : "${mod_id}.mixins.json"
+                "MixinConfigs"            : "${mod_id}.mixins.json,zifeng_tacz.mixins.json"
         ])
     }
 }

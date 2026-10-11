@@ -59,6 +59,11 @@ public class SetSkillToggleC2SPacket {
                 }
                 record.setEnabled(packet.skillId, packet.enabled);
                 data.setDirty();
+                // ★ 2026-10-11 挖掘防护开关影响「全服保护是否生效」→ 重新广播区列表
+                //   （关闭时区不再保护，客户端要恢复显示破坏进度条）
+                if (Skills.MINING_PROTECT.equals(packet.skillId)) {
+                    org.zifeng.skilltree.event.MiningProtectEvents.broadcastZones(player.getServer());
+                }
                 // 重挂属性使开关生效
                 SkillEffects.applyAll(player, record);
                 // 开关提示（2026-08-13 需求：所有技能快捷键切换开关时都有提示，带图标）

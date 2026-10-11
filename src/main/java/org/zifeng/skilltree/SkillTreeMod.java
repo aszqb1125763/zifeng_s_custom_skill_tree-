@@ -69,6 +69,16 @@ public class SkillTreeMod {
         MinecraftForge.EVENT_BUS.register(MagnetEvents.class);
         MinecraftForge.EVENT_BUS.register(LockEvents.class);
         MinecraftForge.EVENT_BUS.register(LootVacuumEvents.class);
+        MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.event.BlockMarkEvents.class); // ★ 2026-10-11 方块扫描·方块标记
+        MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.event.MiningProtectEvents.class); // ★ 2026-10-11 挖掘防护（选区免挖/免炸）
+        // ★ 2026-10-11 枪械技能（TaCZ 兼容）：周期刷新 TaCZ 属性缓存（双端都触发，故一个类覆盖两端）
+        MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.event.TaczGunSkillEvents.class);
+        // ★ 2026-10-11 枪械伤害（杀戮弹幕 = 杀戮光环伤害 + 修罗杀域混沌附加/换源 + 虚空诛灭秒杀）
+        //   ⚠️ 本类的方法签名直接引用 TaCZ 事件类型 → 未装 TaCZ 时注册会 NoClassDefFoundError，
+        //      必须把关在 isTaczLoaded() 之内（类字面量是惰性解析的，放在 if 里就不会被加载）
+        if (org.zifeng.skilltree.compat.TaczSkills.isTaczLoaded()) {
+            MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.event.TaczGunDamageEvents.class);
+        }
         MinecraftForge.EVENT_BUS.register(ContainerHaulEvents.class);
         MinecraftForge.EVENT_BUS.register(GiftEvents.class);
         // 垂钓（2026-10-03）：手动收杆走 ItemFishedEvent（自动垂钓在 Z-Link 模块里）

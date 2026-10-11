@@ -29,6 +29,8 @@ public class ClientRegistrar {
         MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientFlightEvents.class);
         // 寻宝大师：64格内战利品容器/考古点发光轮廓（2026-08-27，RenderLevelStageEvent）
         MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientTreasureEvents.class);
+        // 方块扫描：已标记方块 id 的同类方块高亮（★ 2026-10-11，主动扫描 + RenderLevelStageEvent）
+        MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientBlockScanEvents.class);
         // 技能点变动左下角 HUD 提示（2026-08-25：不刷聊天栏，显示在聊天栏下方）
         MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.SkillPointHudRenderer.class);
         // 真实血量数字（2026-09-11：血条压缩后显示真实值；独立于血条渲染，兼容其他血条模组）

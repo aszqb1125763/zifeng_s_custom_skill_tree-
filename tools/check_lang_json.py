@@ -30,7 +30,7 @@ MODES = [
 LANG_DIR = os.path.join("src", "main", "resources", "assets",
                         "zifeng_s_custom_skill_tree", "lang")
 
-LANGS = ["zh_cn", "en_us", "zh_cn.json.bak_gift", "en_us.json.bak_gift"]
+LANGS = ["zh_cn", "zh_tw", "zh_hk", "en_us", "zh_cn.json.bak_gift", "en_us.json.bak_gift"]
 
 
 def load(path):
@@ -64,25 +64,36 @@ def main():
         return 1
 
     print()
-    print("========== 2. 同版本内 zh_cn / en_us key 对齐 ==========")
+    print("========== 2. 同版本内各语言 key 对齐 ==========")
     for name, _root in MODES:
         zh = tables.get((name, "zh_cn"), {})
         en = tables.get((name, "en_us"), {})
-        only_zh = sorted(set(zh) - set(en))
-        only_en = sorted(set(en) - set(zh))
-        if only_zh or only_en:
-            failed = True
-            print("  [不对称] %s" % name)
-            if only_zh:
-                print("     只在 zh_cn: %s" % only_zh[:10])
-            if only_en:
-                print("     只在 en_us: %s" % only_en[:10])
-        else:
-            print("  [OK]   %-16s 两侧各 %d 条，完全对齐" % (name, len(zh)))
+        tw = tables.get((name, "zh_tw"), {})
+        hk = tables.get((name, "zh_hk"), {})
+        groups = [("zh_cn", zh), ("zh_tw", tw), ("zh_hk", hk), ("en_us", en)]
+        groups = [(label, table) for label, table in groups if table]
+        if not groups:
+            continue
+        base_label, base = groups[0]
+        mismatched = False
+        for label, table in groups[1:]:
+            only_base = sorted(set(base) - set(table))
+            only_other = sorted(set(table) - set(base))
+            if only_base or only_other:
+                mismatched = True
+                failed = True
+                print("  [不对称] %s  %s vs %s" % (name, base_label, label))
+                if only_base:
+                    print("     只在 %s: %s" % (base_label, only_base[:10]))
+                if only_other:
+                    print("     只在 %s: %s" % (label, only_other[:10]))
+        if not mismatched:
+            print("  [OK]   %-16s %s 完全对齐（各 %d 条）"
+                  % (name, " / ".join(label for label, _ in groups), len(base)))
 
     print()
     print("========== 3. 两版本 key 集合是否一致 ==========")
-    for lang in ("zh_cn", "en_us"):
+    for lang in ("zh_cn", "zh_tw", "zh_hk", "en_us"):
         a = tables.get((MODES[0][0], lang), {})
         b = tables.get((MODES[1][0], lang), {})
         only_a = sorted(set(a) - set(b))

@@ -105,6 +105,12 @@ public class ModNetwork {
                 .decoder(StickToolC2SPacket::decode)
                 .consumerMainThread(StickToolC2SPacket::handle)
                 .add();
+        // 寻宝大师·已开容器过滤（★ 2026-10-11）：C2S 开关切换
+        CHANNEL.messageBuilder(TreasureFilterC2SPacket.class, id++)
+                .encoder(TreasureFilterC2SPacket::encode)
+                .decoder(TreasureFilterC2SPacket::decode)
+                .consumerMainThread(TreasureFilterC2SPacket::handle)
+                .add();
         // 机械共鸣·操作区（2026-09-08）：C2S 框选设置/清除/触发放置挖掘
         CHANNEL.messageBuilder(ZoneC2SPacket.class, id++)
                 .encoder(ZoneC2SPacket::encode)
@@ -142,6 +148,12 @@ public class ModNetwork {
                 .encoder(MagnetExclusionS2CPacket::encode)
                 .decoder(MagnetExclusionS2CPacket::decode)
                 .consumerMainThread(MagnetExclusionS2CPacket::handle)
+                .add();
+        // 挖掘防护区全局列表（★ 2026-10-11：客户端据此不显示破坏进度条）
+        CHANNEL.messageBuilder(MiningProtectS2CPacket.class, id++)
+                .encoder(MiningProtectS2CPacket::encode)
+                .decoder(MiningProtectS2CPacket::decode)
+                .consumerMainThread(MiningProtectS2CPacket::handle)
                 .add();
     }
 

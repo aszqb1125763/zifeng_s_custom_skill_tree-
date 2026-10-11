@@ -197,6 +197,7 @@ public final class Skills {
             case UNLIMITED_TRADES -> 100L;   // 无限交易：一次性 100 点
             case VILLAGER_MASTER -> 1000L;   // 村民大师：一次性 1000 点
             case TREASURE_HUNTER -> 500L;    // 寻宝大师：一次性 500 点
+            case BLOCK_SCAN -> 100L;         // 方块扫描：一次性 100 点（★ 2026-10-11）
             case GLUTTONY -> 5L;             // 暴食：一次性 5 点（2026-09-06）
             case BLINK -> 10L;               // 闪现：一次性 10 点（2026-09-06）
             // 奥术防护（2026-09-14）：进阶机制各 1000 点；奥术神体走 Config
@@ -228,7 +229,9 @@ public final class Skills {
         /** 子枫的馈赠（2026-08-25 新增：最右列，按游戏时长激活，免费获得技能点的新途径） */
         GIFT,
         /** 垂钓（2026-10-03 新增：第 11 列，钓鱼玩法 + 自动化 + 现有机制联动） */
-        FISHING
+        FISHING,
+        /** 枪械（★ 2026-10-11 新增：第 12 列，TaCZ 枪械兼容——换弹/容量/无限子弹） */
+        GUN
     }
 
     // ============ 基础属性技能 ============
@@ -279,6 +282,10 @@ public final class Skills {
     public static final String UNLIMITED_TRADES = "unlimited_trades"; // 无限交易（100点，村民不用补货，交易次数不减少）
     public static final String VILLAGER_MASTER = "villager_master";   // 村民大师（1000点，交易后村民直接满级）
     public static final String TREASURE_HUNTER = "treasure_hunter";   // 寻宝大师（500点，64格内战利品容器/考古刷扫点发光）
+    /** 方块扫描（★ 2026-10-11）：一次性 100 点。配合木棍工具的「方块标记」模块——
+     *  标记方块后，按【触发键】主动扫描一次，半径 64 格内所有<b>同 id</b> 方块全部高亮
+     *  （只比对方块 id，不比 NBT / 方块状态）。 */
+    public static final String BLOCK_SCAN = "block_scan";
     public static final String GLUTTONY = "gluttony";                 // 暴食（秒吃所有食物，1级，5点，2026-09-06）
     public static final String BLINK = "blink";                       // 闪现（向视线方向传送，1级，10点，2026-09-06）
 
@@ -414,6 +421,12 @@ public final class Skills {
     public static final String MANA_SIPHON = "mana_siphon";
     /** 净化领域：光环，周期性清除范围内友方的负面效果（上限100） */
     public static final String PURIFY_FIELD = "purify_field";
+    /**
+     * 挖掘防护（★ 2026-10-11）：光环类技能，一次性解锁。
+     * <p>配合木棍工具的「挖掘防护」模式框选一个选区 → 区内方块<b>全服生效</b>地
+     * <b>挖不动 + 炸不坏</b>（防乱挖/防炸图）。选区存在 {@code operZones}，与机械共鸣区块技能同一套机制。
+     */
+    public static final String MINING_PROTECT = "mining_protect";
     /** 破法之刃：近战命中驱散目标一个增益，并按目标增益数量增伤（1级） */
     public static final String SPELLBREAK_BLADE = "spellbreak_blade";
     /** 子枫的奥术神体：魔法防护终极，是【全能精通】的前置之一（1级） */
@@ -460,9 +473,113 @@ public final class Skills {
     /** 所有垂钓技能（纵列10，2026-10-03） */
     public static final List<String> FISHING_SKILLS = List.of(
             FISH_HASTE, FISH_FORTUNE, FISH_BOUNTY, FISH_XP,
-            FISH_AUTO, FISH_OPEN_WATER,
-            FISH_SMELT, FISH_VACUUM, FISH_BOMB);
+            FISH_AUTO, FISH_OPEN_WATER, FISH_SMELT, FISH_VACUUM, FISH_BOMB);
 
+    // ============ 枪械（纵列11，★ 2026-10-11 新增：TaCZ 兼容） ============
+    //   ⚠️ 仅 1.20.1 工程有本列（TaCZ 只发布 1.20.1）；未装 TaCZ 时技能可学但无效果。
+    /** 快速换弹：枪械换弹时长每级 -5%（最高 10 级 → -50%） */
+    public static final String GUN_RELOAD_SPEED = "gun_reload_speed";
+    /** 弹匣增容：基础弹匣容量每级 +10%（最高 10 级 → +100%） */
+    public static final String GUN_AMMO_CAPACITY = "gun_ammo_capacity";
+    /** 弹夹扩容：在百分比之外，每级额外 +2 发（最高 10 级 → +20 发） */
+    public static final String GUN_MAG_CAPACITY = "gun_mag_capacity";
+    /** 无限子弹：开火与换弹都不消耗弹药（一次性解锁，高价） */
+    public static final String GUN_INFINITE_AMMO = "gun_infinite_ammo";
+
+    // ── 属性强化（★ 2026-10-11 第二版：TaCZ 属性缓存 + 客户端相机/切枪钩子）──
+    /** 枪械伤害提升：子弹基础伤害每级 +5% */
+    public static final String GUN_DAMAGE = "gun_damage";
+    /** 弹道穿透强化：子弹穿透数每级 +1（上限 {@link #GUN_PIERCE_CAP}） */
+    public static final String GUN_PIERCE = "gun_pierce";
+    /** 精准射击：弹道扩散每级 -3%（指数衰减，上限 {@link #GUN_REDUCTION_CAP}） */
+    public static final String GUN_ACCURACY = "gun_accuracy";
+    /** 后坐力抑制：垂直/水平后坐力每级 -3%（指数衰减，上限 {@link #GUN_REDUCTION_CAP}） */
+    public static final String GUN_RECOIL = "gun_recoil";
+    /** 快速开镜：开镜（ADS）耗时每级 -3%（指数衰减，上限 {@link #GUN_REDUCTION_CAP}） */
+    public static final String GUN_ADS_SPEED = "gun_ads_speed";
+    /** 快速切枪：举枪/收枪耗时每级 -3%（指数衰减，上限 {@link #GUN_REDUCTION_CAP}） */
+    public static final String GUN_DRAW_SPEED = "gun_draw_speed";
+    /** 持枪疾行：持枪时的移速倍率每级 +1%（线性，100 级 → +100%） */
+    public static final String GUN_MOVE_SPEED = "gun_move_speed";
+
+    // ── 杀戮光环联动（★ 2026-10-11 第三版：替换原「混沌弹 / 魔法弹 / 真伤弹」三件套）──
+    //   原三件套各自换伤害类型（混沌 / 魔法 / 真伤），是一条「列内互锁」的 100 级链。
+    //   现在换成一项【跨列联动】：直接借用光环列的杀戮光环伤害，不再改伤害类型。
+    /**
+     * 杀戮弹幕：一次性解锁。枪械命中时，额外附带一份<b>杀戮光环伤害</b>，
+     * 并自动带上光环的两个强化态（★ 2026-10-11 第四版）：
+     * <ul>
+     *   <li>{@link #AURA_EMPOWER 修罗杀域} → 再附加光环同款<b>混沌伤害</b>，
+     *       并把本次命中的伤害源换成混沌伤害源（破盾 / 破守卫水晶 / 挂 Boss 判定）；</li>
+     *   <li>{@link #AURA_VOID 虚空诛灭} → 命中直接<b>绝对秒杀</b>
+     *       （复用光环自己的击杀流程，行为两边一致）。</li>
+     * </ul>
+     * <p>〈前置：杀戮光环 1 级〉—— 本列唯一一条连到<b>别的列</b>的联动。
+     */
+    public static final String GUN_AURA_LINK = "gun_aura_link";
+
+    /**
+     * ⚠️ LEGACY（★ 2026-10-11 第三版：三件套已被 {@link #GUN_AURA_LINK} 取代，技能树中不再出现）：
+     * 保留常量、类型映射与「上限/消耗」规则，<b>仅为旧存档退点迁移</b>能算出真实投入量
+     * ——{@code PlayerSkillRecord.totalSpent} 按 {@link #getType} 分派、按 {@link #getGunCost} 累加，
+     * 少了任一项退点就会算成 0 或按「基础线性消耗」算错。
+     * <p>免费全额退还的入口在 {@link #isRemovedSkill}（与 mob_drop / machine_mob_drop 同一套机制）。
+     */
+    public static final String GUN_CHAOS_AMMO = "gun_chaos_ammo";  // [LEGACY] 原「混沌弹」
+    public static final String GUN_MAGIC_AMMO = "gun_magic_ammo";  // [LEGACY] 原「魔法弹」
+    public static final String GUN_TRUE_AMMO = "gun_true_ammo";    // [LEGACY] 原「真伤弹」
+
+    /**
+     * 所有枪械技能（纵列11，2026-10-11，共 12 项）。
+     *
+     * <p>⚠️ <b>顺序 = 界面自上而下的显示顺序</b>，且必须满足「前置在上、被前置在下」
+     * （见 {@link #getPrerequisites}），否则玩家会先看到结果再看到条件。
+     */
+    public static final List<String> GUN_SKILLS = List.of(
+            // ── 基础四件套（初版）──
+            GUN_RELOAD_SPEED, GUN_AMMO_CAPACITY, GUN_MAG_CAPACITY, GUN_INFINITE_AMMO,
+            // ── 属性强化（前置链：伤害 → 穿透/精准 → 后坐力；开镜 → 切枪）──
+            GUN_DAMAGE, GUN_PIERCE, GUN_ACCURACY, GUN_RECOIL,
+            GUN_ADS_SPEED, GUN_DRAW_SPEED, GUN_MOVE_SPEED,
+            // ── 杀戮光环联动（前置：杀戮光环 1 级，跨界联动光环列）──
+            GUN_AURA_LINK);
+
+    /** 枪械列每级固定加成（换弹速度缩减比例 / 弹匣容量比例 / 弹夹固定加成） */
+    public static final double GUN_RELOAD_REDUCTION_PER_LEVEL = 0.05;
+    public static final double GUN_AMMO_BONUS_PER_LEVEL = 0.10;
+    public static final int GUN_MAG_BONUS_PER_LEVEL = 2;
+    /** 换弹缩减上限（★ 2026-10-11）：指数衰减逼近但不超过此值，防「0 秒换弹」 */
+    public static final double GUN_RELOAD_REDUCTION_CAP = 0.95;
+
+    // ── 枪械属性强化：每级系数与上限（★ 2026-10-11 第二版）──
+    /** 枪械伤害：每级 +5%（线性，100 级 → ×6.0） */
+    public static final double GUN_DAMAGE_BONUS_PER_LEVEL = 0.05;
+    /** 弹道穿透：每级 +1 */
+    public static final int GUN_PIERCE_PER_LEVEL = 1;
+    /** 弹道穿透上限（防止一发子弹穿透全场实体导致性能问题） */
+    public static final int GUN_PIERCE_CAP = 50;
+    /** 弹道扩散 / 后坐力 / 开镜 / 切枪：每级把剩余量乘 (1 - 此值) → 指数衰减 */
+    public static final double GUN_ACCURACY_PER_LEVEL = 0.03;
+    public static final double GUN_RECOIL_PER_LEVEL = 0.03;
+    public static final double GUN_ADS_PER_LEVEL = 0.03;
+    public static final double GUN_DRAW_PER_LEVEL = 0.03;
+    /** 上述四项缩减的通用上限（防「0 秒开镜 / 0 后坐力」） */
+    public static final double GUN_REDUCTION_CAP = 0.90;
+    /** 持枪疾行：每级 +1%（线性，100 级 → 移速倍率 +100%） */
+    public static final double GUN_MOVE_BONUS_PER_LEVEL = 0.01;
+    /** 持枪移速倍率上限（防止移速爆炸） */
+    public static final double GUN_MOVE_BONUS_CAP = 3.0;
+
+    // ── 杀戮光环联动（★ 2026-10-11 第三版）──
+    /**
+     * 杀戮弹幕：命中时额外附带的<b>杀戮光环伤害</b>比例。
+     * <p>固定 100%（一次性解锁，不吃等级）。
+     * <p>⚠️ 之所以不做成「每级 +x%」：用户定案「一次性解锁、命中直接附带 100% 杀戮光环伤害」
+     * —— 这样它就是字面意义的「附带一份光环伤害」，数值随玩家的攻击力（与光环等级）自然成长。
+     */
+    public static final float GUN_AURA_LINK_RATIO = 1.0F;
+    /** 附加伤害的下限（防止攻击力很低时取整成 0 伤害的无意义命中） */
+    public static final float GUN_AMMO_MIN_BONUS = 1.0F;
     /** 所有基础技能（纵列1） */
     /** 所有基础技能（纵列1）：2026-09-14 起移除「铁壁金身 BODY」（职责拆给磐石之躯 + 金身真解） */
     public static final List<String> BASE_SKILLS = List.of(BODY_HP, TOUGH, BLADE, ATTACK_SPEED, MINING, MOVE, REGEN, LUCK, JUMP, FLY, SWIM, CRIT, LIFESTEAL, THORNS, ARMOR_PEN);
@@ -497,6 +614,7 @@ public final class Skills {
             VILLAGE_HERO, REACH, GLOW,
             ENCHANT_RANDOM, ENCHANT_BREAK, ENCHANT_OVER,
             UNLIMITED_TRADES, VILLAGER_MASTER, TREASURE_HUNTER,
+            BLOCK_SCAN, // ★ 2026-10-11：方块扫描（紧随寻宝大师之后）
             GLUTTONY, BLINK,
             // 奥术防护（2026-09-14）：一次性奇技
             ARCANE_ADAPT, SPELL_REFLECT, SPELL_PURGE, MANA_SIPHON, SPELLBREAK_BLADE);
@@ -504,7 +622,8 @@ public final class Skills {
     /** 所有杀戮光环（纵列5）：杀戮光环·强化 在 虚空之矛 上方；时之环/晴空环已移至寰宇法则列（2026-08-27）
      *  ⚠️ 2026-09-07：子枫的搬运术（CONTAINER_HAUL）紧随子枫挪移术后（系列，复用其绑定容器）。 */
     public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM, CONTAINER_HAUL, AURA_XP,
-            PURIFY_FIELD); // 净化领域（2026-09-14 奥术防护：光环清友方负面）
+            PURIFY_FIELD, // 净化领域（2026-09-14 奥术防护：光环清友方负面）
+            MINING_PROTECT); // ★ 2026-10-11 挖掘防护（选区全服免挖/免炸）
     /** 所有寰宇法则（纵列6，2026-08-27 新增）：全局更改类技能（服务器全局生效，无法单人隔离） */
     public static final List<String> GLOBAL_SKILLS = List.of(AURA_TIME, AURA_WEATHER, AE_INFINITE_CHANNEL);
     /** 所有魔法增幅（纵列0）：其余模组兼容技能（新生魔艺/铁魔法等），不作为任何前置 */
@@ -551,6 +670,12 @@ public final class Skills {
     public static final int STICK_MODE_ZONE_ATTACK = 4;
     /** 工具模式：ZONE_PROTECT=框选防护区（杀戮光环·防护选区，2026-09-08） */
     public static final int STICK_MODE_ZONE_PROTECT = 5;
+    /** 工具模式：MARK=潜行右键标记方块（方块扫描，★ 2026-10-11）——
+     *  标记后按方块扫描的触发键主动扫描一次，同 id 方块全部高亮。 */
+    public static final int STICK_MODE_MARK = 6;
+    /** 工具模式：MINE_PROTECT=框选挖掘防护区（挖掘防护，★ 2026-10-11）——
+     *  区内方块全服生效地挖不动 + 炸不坏。 */
+    public static final int STICK_MODE_MINE_PROTECT = 7;
     /** 工具占位列（第10列） */
     public static final List<String> TOOL_SKILLS = List.of(STICK_TOOL);
 
@@ -559,9 +684,9 @@ public final class Skills {
         return STICK_TOOL.equals(skillId);
     }
 
-    /** 工具模式总数（BIND/RANGE/放置/挖掘/攻击/防护，2026-09-08 扩展为 6） */
+    /** 工具模式总数（BIND/RANGE/放置/挖掘/攻击/防护/标记/挖掘防护，2026-10-11 扩展为 8） */
     public static int stickModeCount() {
-        return 6;
+        return 8;
     }
 
     /** 木棍工具模式 → 解锁该模式的技能 ID（返回 null=不依赖技能的常驻模式如 BIND/RANGE 由各自绑技能判定） */
@@ -571,14 +696,22 @@ public final class Skills {
             case STICK_MODE_ZONE_EXCAVATE -> MACHINE_ZONE_EXCAVATE;
             case STICK_MODE_ZONE_ATTACK -> MACHINE_ZONE_ATTACK;
             case STICK_MODE_ZONE_PROTECT -> MACHINE_ZONE_PROTECT;
+            case STICK_MODE_MARK -> BLOCK_SCAN;             // ★ 2026-10-11：方块标记 ← 方块扫描
+            case STICK_MODE_MINE_PROTECT -> MINING_PROTECT; // ★ 2026-10-11：挖掘防护
             default -> null;
         };
     }
 
-    /** 是否木棍工具·区块类技能（放置/挖掘/攻击/防护；各自解锁一个工具模式，2026-09-08） */
+    /** 是否木棍工具·区块类技能（放置/挖掘/攻击/防护/挖掘防护；各自解锁一个工具模式，2026-09-08） */
     public static boolean isStickZoneSkill(String skillId) {
         return MACHINE_ZONE_PLACE.equals(skillId) || MACHINE_ZONE_EXCAVATE.equals(skillId)
-                || MACHINE_ZONE_ATTACK.equals(skillId) || MACHINE_ZONE_PROTECT.equals(skillId);
+                || MACHINE_ZONE_ATTACK.equals(skillId) || MACHINE_ZONE_PROTECT.equals(skillId)
+                || MINING_PROTECT.equals(skillId); // ★ 2026-10-11：挖掘防护也走 operZones 选区存储
+    }
+
+    /** 是否木棍工具·标记类技能（方块标记 ∩ 方块扫描，★ 2026-10-11） */
+    public static boolean isStickMarkSkill(String skillId) {
+        return BLOCK_SCAN.equals(skillId);
     }
 
     /** 区块技能 → 对应的木棍工具模式 */
@@ -587,6 +720,8 @@ public final class Skills {
         if (MACHINE_ZONE_EXCAVATE.equals(skillId)) return STICK_MODE_ZONE_EXCAVATE;
         if (MACHINE_ZONE_ATTACK.equals(skillId)) return STICK_MODE_ZONE_ATTACK;
         if (MACHINE_ZONE_PROTECT.equals(skillId)) return STICK_MODE_ZONE_PROTECT;
+        if (BLOCK_SCAN.equals(skillId)) return STICK_MODE_MARK;              // ★ 2026-10-11
+        if (MINING_PROTECT.equals(skillId)) return STICK_MODE_MINE_PROTECT;  // ★ 2026-10-11
         return -1;
     }
 
@@ -601,6 +736,7 @@ public final class Skills {
         addAll(MACHINE_SKILLS);
         addAll(GIFT_SKILLS);
         addAll(FISHING_SKILLS);
+        addAll(GUN_SKILLS);
     }};
 
     /**
@@ -621,6 +757,12 @@ public final class Skills {
         for (String s : SPECIAL_SKILLS) map.put(s, SkillType.SPECIAL);
         for (String s : AURA_SKILLS) map.put(s, SkillType.AURA);
         for (String s : FISHING_SKILLS) map.put(s, SkillType.FISHING);
+        for (String s : GUN_SKILLS) map.put(s, SkillType.GUN);
+        // ⚠️ LEGACY（★ 2026-10-11 枪械三件套已删除）：必须保留类型映射，
+        //    否则 getType 回退到 BASE → 退点按"基础线性消耗"算，金额完全错。
+        map.put(GUN_CHAOS_AMMO, SkillType.GUN);
+        map.put(GUN_MAGIC_AMMO, SkillType.GUN);
+        map.put(GUN_TRUE_AMMO, SkillType.GUN);
         // ⚠️ LEGACY（2026-09-30 已合并进战利品大爆发）：必须保留类型映射，
         //    否则 getType 回退到 BASE → 退点按"基础线性消耗"算，金额完全错。
         map.put(MOB_DROP, SkillType.ULTIMATE);
@@ -672,7 +814,9 @@ public final class Skills {
     public static boolean isTriggerBindable(String skillId) {
         return CONTAINER_HAUL.equals(skillId) || BLINK.equals(skillId) // 闪现：改造为触发键传送（2026-09-07 规范）
                 || MACHINE_ZONE_PLACE.equals(skillId) || MACHINE_ZONE_EXCAVATE.equals(skillId) // 选区放置/挖掘（2026-09-08）
-                || STICK_TOOL.equals(skillId); // ★ 2026-10-09 木棍工具：触键=链接手势到主手物品类型
+                || STICK_TOOL.equals(skillId) // ★ 2026-10-09 木棍工具：触键=链接手势到主手物品类型
+                || TREASURE_HUNTER.equals(skillId) // ★ 2026-10-11 寻宝大师：触键=切换「已开容器过滤」
+                || BLOCK_SCAN.equals(skillId);     // ★ 2026-10-11 方块扫描：触键=主动扫描一次
     }
 
     // ==================== 第一代快捷键能力注册表（2026-09-07 规范 v1.0） ====================
@@ -693,13 +837,29 @@ public final class Skills {
     /** 模式 3：自定义黑名单 —— 命中黑名单（物品 id 或其标签）的掉落不参与 */
     public static final int LOOT_MODE_BLACKLIST = 3;
 
+    // ============ 寻宝大师：高亮类别模式常量（★ 2026-10-11）============
+    //   同样复用 auraTargetModes 存模式；只影响【显示哪几类高亮】，不影响扫描。
+    /** 模式 0：全部 —— 容器 / 考古点 / 刷怪笼 三类都高亮（旧行为） */
+    public static final int TREASURE_MODE_ALL = 0;
+    /** 模式 1：仅战利品容器（金色） */
+    public static final int TREASURE_MODE_CONTAINER = 1;
+    /** 模式 2：仅考古刷扫点（青色） */
+    public static final int TREASURE_MODE_ARCHAEOLOGY = 2;
+    /** 模式 3：仅刷怪笼（品红） */
+    public static final int TREASURE_MODE_SPAWNER = 3;
+
     /**
      * 是否为「已移除/已合并」的历史技能（★ 2026-09-30）。
      * <p>这些技能不再出现在技能树里，但旧存档可能仍有点数 —— 由
      * {@code PlayerSkillRecord} 的一次性迁移按 100% 退还。
+     * <p>★ 2026-10-11 加入枪械三件套（混沌弹/魔法弹/真伤弹 → 合并为「杀戮弹幕」）：
+     * 它们已从 {@link #GUN_SKILLS} 移除，因此必须在这里登记，否则老存档投入的点数
+     * 既看不到、也退不回来（技能树里已经没有对应的节点可点了）。
      */
     public static boolean isRemovedSkill(String skillId) {
-        return MOB_DROP.equals(skillId) || MACHINE_MOB_DROP.equals(skillId);
+        return MOB_DROP.equals(skillId) || MACHINE_MOB_DROP.equals(skillId)
+                || GUN_CHAOS_AMMO.equals(skillId) || GUN_MAGIC_AMMO.equals(skillId)
+                || GUN_TRUE_AMMO.equals(skillId);
     }
 
     /**
@@ -713,7 +873,8 @@ public final class Skills {
                 || AURA_WEATHER.equals(skillId)  // 晴空环天气 3 态
                 || isContainerHaul(skillId)      // 搬运术自动/手动 2 态
                 || isStickTool(skillId)          // 木棍工具 BIND/RANGE 2 态（2026-09-08）
-                || LOOT_BOMB.equals(skillId);    // 战利品大爆发 4 态（2026-09-30）
+                || LOOT_BOMB.equals(skillId)     // 战利品大爆发 4 态（2026-09-30）
+                || TREASURE_HUNTER.equals(skillId); // 寻宝大师 高亮类别 4 态（2026-10-11）
     }
 
     /** 子2 模式循环的态数（敌我/天气=3，搬运=2，工具=stickModeCount，战利品大爆发=4）；无模式返回 0 */
@@ -726,6 +887,9 @@ public final class Skills {
         }
         if (LOOT_BOMB.equals(skillId)) {
             return 4; // ★ 2026-09-30：全 / 仅堆叠 / 仅不堆叠 / 黑名单
+        }
+        if (TREASURE_HUNTER.equals(skillId)) {
+            return 4; // ★ 2026-10-11：全部 / 仅容器 / 仅考古点 / 仅刷怪笼
         }
         if (isStickTool(skillId)) {
             return stickModeCount();
@@ -762,6 +926,7 @@ public final class Skills {
             case CONTAINER_HAUL -> 1; // 子枫的搬运术：一次性解锁（10 技能点，2026-09-07）
             case AURA_XP -> 100; // 汲灵之环：上限 100 级（2026-09-06）
             case PURIFY_FIELD -> 100; // 净化领域：上限 100 级（2026-09-14 奥术防护）
+            case MINING_PROTECT -> 1; // ★ 2026-10-11 挖掘防护：一次性解锁
             default -> 0;
         };
     }
@@ -801,7 +966,28 @@ public final class Skills {
             case MACHINE -> getMachineMaxPoints(skillId);
             case GIFT -> getGiftMaxPoints(skillId);
             case FISHING -> getFishingMaxPoints(skillId);
+            case GUN -> getGunMaxPoints(skillId);
         };
+    }
+
+    /**
+     * 枪械：等级上限（★ 2026-10-11）。
+     * <p>「无限子弹」与「杀戮弹幕」是开关型一次性解锁；其余 10 项均为 100 级可升级
+     * （含 7 项属性强化）。
+     */
+    public static int getGunMaxPoints(String skillId) {
+        return (GUN_INFINITE_AMMO.equals(skillId) || GUN_AURA_LINK.equals(skillId)) ? 1 : 100;
+    }
+
+    /** 枪械：第 n 级消耗（★ 2026-10-11）：无限子弹一次性 500；杀戮弹幕一次性 1000；其余线性 10/20/.../1000 */
+    public static long getGunCost(String skillId, int currentLevel) {
+        if (GUN_INFINITE_AMMO.equals(skillId)) {
+            return 500L;
+        }
+        if (GUN_AURA_LINK.equals(skillId)) {
+            return 1000L; // 一次性解锁：此项承接了原「混沌弹/魔法弹/真伤弹」三条 100 级线的定位
+        }
+        return (long) (currentLevel + 1) * 10L;
     }
 
     /**
@@ -1519,6 +1705,14 @@ public final class Skills {
             case FISH_SMELT -> List.of(Map.entry(AUTO_SMELT, 1));       // 现钓现炼 ← 自动熔炼术
             case FISH_VACUUM -> List.of(Map.entry(AURA_LOOT_VACUUM, 1));// 定点渔获 ← 子枫挪移术
             case FISH_BOMB -> List.of(Map.entry(LOOT_BOMB, 1));         // 渔获爆发 ← 战利品大爆发
+            // 枪械（★ 2026-10-11 第二版）：属性强化与伤害类型都要「先会用枪，再强化」
+            //   ⚠️ 基础四件套（换弹/容量/弹夹/无限子弹）刻意不设前置 —— 它们是本列的入口
+            case GUN_PIERCE, GUN_ACCURACY -> List.of(Map.entry(GUN_DAMAGE, 10));   // 穿透/精准 ← 枪械伤害提升 10
+            case GUN_RECOIL -> List.of(Map.entry(GUN_ACCURACY, 20));               // 后坐力抑制 ← 精准射击 20
+            case GUN_DRAW_SPEED -> List.of(Map.entry(GUN_ADS_SPEED, 10));          // 快速切枪 ← 快速开镜 10
+            // ★ 2026-10-11 第三版：本列唯一的【跨列联动】—— 直接要求杀戮光环 1 级
+            //   （原「伤害提升 → 混沌弹 → 魔法弹 → 真伤弹」的列内互锁链已随三件套删除）
+            case GUN_AURA_LINK -> List.of(Map.entry(AURA_DAMAGE, 1));              // 杀戮弹幕 ← 杀戮光环 1
             default -> List.of(); // 机械之星/宇宙的青睐/夜视/饱食/村庄英雄/接触距离/发光/战利品爆炸/工具不毁/掉落/经验/时间洗礼无前置
         };
     }
@@ -1662,6 +1856,20 @@ public final class Skills {
             case AURA_SPEED -> Items.REDSTONE;                 // 光环·速度：红石粉（高频）
             case AURA_HEAL -> Items.HONEY_BOTTLE;              // 治愈光环：蜂蜜瓶
             case AURA_MAGNET -> Items.LODESTONE;               // 磁力光环：磁石（吸铁）
+            // ★ 2026-10-11 枪械列（TaCZ 兼容）
+            case GUN_RELOAD_SPEED -> Items.REDSTONE;           // 快速换弹：红石（快）
+            case GUN_AMMO_CAPACITY -> Items.IRON_INGOT;        // 弹匣增容：铁锭（材料）
+            case GUN_MAG_CAPACITY -> Items.CHEST;              // 弹夹扩容：箱子（装更多）
+            case GUN_INFINITE_AMMO -> Items.NETHER_STAR;       // 无限子弹：下界之星
+            case GUN_DAMAGE -> Items.DIAMOND_SWORD;            // 枪械伤害提升：钻石剑（伤害）
+            case GUN_PIERCE -> Items.SPECTRAL_ARROW;           // 弹道穿透强化：光灵箭（穿透）
+            case GUN_ACCURACY -> Items.TARGET;                // 精准射击：标靶（精准）
+            case GUN_RECOIL -> Items.SLIME_BALL;               // 后坐力抑制：黏液球（缓冲）
+            case GUN_ADS_SPEED -> Items.SPYGLASS;              // 快速开镜：望远镜（瞄准镜）
+            case GUN_DRAW_SPEED -> Items.CROSSBOW;             // 快速切枪：弩（切换迅速）
+            case GUN_MOVE_SPEED -> Items.FEATHER;              // 持枪疾行：羽毛（轻快）
+            case GUN_AURA_LINK -> Items.END_CRYSTAL;           // 杀戮弹幕：末地水晶（弹头里蕴含的杀戮能量）
+            case MINING_PROTECT -> Items.BEDROCK;              // ★ 2026-10-11 挖掘防护：基岩（无法破坏）
             case AURA_TIME -> Items.CLOCK;                     // 时之环：时钟（锁定时间）
             case AURA_WEATHER -> Items.SUNFLOWER;              // 晴空环：向日葵（面向太阳）
             case AURA_LOCK -> Items.ANVIL;                     // 光环锁定：铁砧（稳固不动）
@@ -1688,6 +1896,7 @@ public final class Skills {
             case UNLIMITED_TRADES -> Items.EMERALD;           // 无限交易：绿宝石（交易货币）
             case VILLAGER_MASTER -> Items.EMERALD_BLOCK;      // 村民大师：绿宝石块（满级大师）
             case TREASURE_HUNTER -> Items.GOLD_NUGGET;        // 寻宝大师：金粒（宝箱宝藏）
+            case BLOCK_SCAN -> Items.SPYGLASS;                // 方块扫描：望远镜（扫描/观察，★ 2026-10-11）
             case GLUTTONY -> Items.COOKED_BEEF;               // 暴食：牛排（大快朵颐秒吃）
             case BLINK -> Items.ENDER_PEARL;                  // 闪现：末影珍珠（瞬移）
             case STICK_TOOL -> Items.STICK;                   // 木棍工具占位：木棍（2026-09-08）

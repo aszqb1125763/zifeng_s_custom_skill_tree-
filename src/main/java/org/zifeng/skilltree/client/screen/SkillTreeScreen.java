@@ -837,6 +837,10 @@ public class SkillTreeScreen extends Screen {
         if (Skills.LOOT_BOMB.equals(skillId)) {
             return lootModeTextOf(skillId);
         }
+        // ★ 2026-10-11：寻宝大师 = 高亮类别 4 态，语义与光环敌我也完全不同 → 单独分派
+        if (Skills.TREASURE_HUNTER.equals(skillId)) {
+            return treasureModeTextOf(skillId);
+        }
         return switch (auraTargetModes.getOrDefault(skillId, 0)) {
             case 1 -> t("mode_friendly");
             case 2 -> t("mode_all");
@@ -857,6 +861,21 @@ public class SkillTreeScreen extends Screen {
     /** 战利品大爆发模式文字（★ 2026-09-30：0 全 / 1 仅堆叠 / 2 仅不堆叠 / 3 黑名单） */
     private String lootModeTextOf(String skillId) {
         return t(lootModeKey(auraTargetModes.getOrDefault(skillId, 0)));
+    }
+
+    /** 寻宝大师高亮类别 → 语言 key（★ 2026-10-11；静态，属性区与 tooltip 共用） */
+    private static String treasureModeKey(int mode) {
+        return switch (mode) {
+            case 1 -> "treasure_mode_container";
+            case 2 -> "treasure_mode_archaeology";
+            case 3 -> "treasure_mode_spawner";
+            default -> "treasure_mode_all";
+        };
+    }
+
+    /** 寻宝大师高亮类别文字（★ 2026-10-11：0 全部 / 1 仅容器 / 2 仅考古点 / 3 仅刷怪笼） */
+    private String treasureModeTextOf(String skillId) {
+        return t(treasureModeKey(auraTargetModes.getOrDefault(skillId, 0)));
     }
 
     /** 子2 能力类型（2026-09-07 规范 v1.0：第二框配色/文案分派）：0=等级循环 1=敌我目标 2=天气 3=搬运 */
@@ -1294,12 +1313,12 @@ public class SkillTreeScreen extends Screen {
      * <p>顺序 = 原列顺序（0 魔法 / 1 基础 / 2 增幅 / 3 终极 / 4 被动 / 5 光环 / 6 寰宇 / 7 机械 / 8 馈赠 / 9 工具）。
      */
     private static final String[] CATEGORY_TITLE_KEYS = {"col_magic", "col_base", "col_amplify", "col_ultimate",
-            "col_special", "col_aura", "col_global", "col_machine", "col_gift", "col_tool", "col_fishing"};
+            "col_special", "col_aura", "col_global", "col_machine", "col_gift", "col_tool", "col_fishing", "col_gun"};
     /** 十一个类别的强调色（沿用改版前各列标题配色，保持视觉延续） */
     private static final int[] CATEGORY_COLORS = {0xFF55FFAA, 0xFF87CEEB, 0xFFFFAA55, 0xFFFF5555, 0xFFD7A55A,
-            0xFFAA55FF, 0xFF66CCFF, 0xFFD7D7D7, 0xFFE0B6C8, 0xFFC8A87C, 0xFF40E0D0};
+            0xFFAA55FF, 0xFF66CCFF, 0xFFD7D7D7, 0xFFE0B6C8, 0xFFC8A87C, 0xFF40E0D0, 0xFFFF8C42};
     /** 类别总数 */
-    private static final int CATEGORY_COUNT = 11;
+    private static final int CATEGORY_COUNT = 12;
 
     /** 取第 i 个类别的技能列表 */
     private static List<String> categorySkills(int i) {
@@ -1315,6 +1334,7 @@ public class SkillTreeScreen extends Screen {
             case 8 -> Skills.GIFT_SKILLS;
             case 9 -> Skills.TOOL_SKILLS;
             case 10 -> Skills.FISHING_SKILLS;
+            case 11 -> Skills.GUN_SKILLS; // ★ 2026-10-11 枪械（TaCZ 兼容）
             default -> List.of(); // 越界（理论上不会）→ 空列，避免静默落到错误列
         };
     }
@@ -2165,6 +2185,28 @@ public class SkillTreeScreen extends Screen {
                                 Component.literal(boundText),
                                 Component.literal(t("tip_bind_hint")),
                                 Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                    } else if (Skills.TREASURE_HUNTER.equals(skillId)) {
+                        // ★ 2026-10-11 寻宝大师：第二键 = 4 态高亮类别循环（全部 / 仅容器 / 仅考古点 / 仅刷怪笼）
+                        String treasureMode = treasureModeTextOf(skillId);
+                        lines = java.util.List.of(
+                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
+                                Component.literal(t("tip_treasure_mode") + "【" + treasureMode + "】"),
+                                Component.literal(t("tip_treasure_mode_desc")),
+                                Component.literal(boundText),
+                                Component.literal(t("tip_bind_hint")),
+                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                    } else if (Skills.isStickTool(skillId)) {
+                        // ★ 2026-10-11 木棍工具：第二键 = 在【已解锁模式】间循环（BIND/RANGE/放置/挖掘/攻击/防护/标记）。
+                        //   ⚠️ 之前落到最后的 else（"可调等级技能"文案）→ 描述完全不对，这里补专属分支。
+                        String stickMode = t(org.zifeng.skilltree.client.StickToolModes.modeLang(
+                                org.zifeng.skilltree.client.ModKeyBindingEvents.getStickToolModeClient()));
+                        lines = java.util.List.of(
+                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
+                                Component.literal(t("tip_stick_mode") + "【" + stickMode + "】"),
+                                Component.literal(t("tip_stick_mode_desc")),
+                                Component.literal(boundText),
+                                Component.literal(t("tip_bind_hint")),
+                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
                     } else {
                         // 可调等级技能：显示当前生效/已学 + 操作说明（Shift=10级 Ctrl+Shift=100级 Alt反向）
                         int learned = learnedSkills.getOrDefault(skillId, 0);
@@ -2201,6 +2243,33 @@ public class SkillTreeScreen extends Screen {
                         renderCrispTooltip(guiGraphics, java.util.List.of(
                                         Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
                                         Component.literal(t("tip_blink_trigger")),
+                                        Component.literal(trigText),
+                                        Component.literal(t("tip_bind_hint")),
+                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
+                                mouseX, mouseY + 12);
+                    } else if (Skills.TREASURE_HUNTER.equals(skillId)) {
+                        // ★ 2026-10-11 寻宝大师：触发键 = 切换「已开容器过滤」开关
+                        renderCrispTooltip(guiGraphics, java.util.List.of(
+                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
+                                        Component.literal(t("tip_treasure_trigger")),
+                                        Component.literal(trigText),
+                                        Component.literal(t("tip_bind_hint")),
+                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
+                                mouseX, mouseY + 12);
+                    } else if (Skills.BLOCK_SCAN.equals(skillId)) {
+                        // ★ 2026-10-11 方块扫描：触发键 = 主动扫描一次（标记的方块 id 同类全部高亮）
+                        renderCrispTooltip(guiGraphics, java.util.List.of(
+                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
+                                        Component.literal(t("tip_blockscan_trigger")),
+                                        Component.literal(trigText),
+                                        Component.literal(t("tip_bind_hint")),
+                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
+                                mouseX, mouseY + 12);
+                    } else if (Skills.isStickTool(skillId)) {
+                        // ★ 2026-10-11 木棍工具：触发键 = 把木棍手势链接到手持物品种类
+                        renderCrispTooltip(guiGraphics, java.util.List.of(
+                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
+                                        Component.literal(t("stick_tool_hint_link")),
                                         Component.literal(trigText),
                                         Component.literal(t("tip_bind_hint")),
                                         Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
@@ -2436,6 +2505,7 @@ public class SkillTreeScreen extends Screen {
             case MACHINE -> 0xFFD7D7D7;
             case GIFT -> 0xFFE0B6C8; // 子枫的馈赠：柔和藕粉
             case FISHING -> 0xFF40E0D0; // 垂钓：青蓝（水主题，2026-10-03）
+            case GUN -> 0xFFFF8C42; // ★ 2026-10-11 枪械：橙（枪口火光）
         };
         String typeTag = switch (type) {
             case BASE -> "[" + Component.translatable("ui.zifeng_s_custom_skill_tree.type_base").getString() + "]";
@@ -2448,6 +2518,7 @@ public class SkillTreeScreen extends Screen {
             case MACHINE -> "[" + Component.translatable("ui.zifeng_s_custom_skill_tree.type_machine").getString() + "]";
             case GIFT -> "[" + Component.translatable("ui.zifeng_s_custom_skill_tree.type_gift").getString() + "]";
             case FISHING -> "[" + Component.translatable("ui.zifeng_s_custom_skill_tree.type_fishing").getString() + "]";
+            case GUN -> "[" + Component.translatable("ui.zifeng_s_custom_skill_tree.type_gun").getString() + "]"; // ★ 2026-10-11
         };
         // 1. 标题行（大字号 + 类型色）
         lines.add(new TooltipLine(typeTag + " " + Skills.getDisplayNameComponent(skillId).getString(), titleColor, 1.15F));
@@ -3471,6 +3542,11 @@ public class SkillTreeScreen extends Screen {
         if (type == Skills.SkillType.MACHINE && current >= Skills.getMachineMaxPoints(skillId)) return false;
         if (type == Skills.SkillType.GIFT && current >= Skills.getGiftMaxPoints(skillId)) return false; // 子枫的馈赠：单级
         if (type == Skills.SkillType.FISHING && current >= Skills.getFishingMaxPoints(skillId)) return false; // 垂钓（2026-10-03）
+        if (type == Skills.SkillType.GUN) { // 枪械（★ 2026-10-11）
+            if (current >= Skills.getGunMaxPoints(skillId)) return false;
+            // 未装 TaCZ → 不可学（避免白花技能点；红字提示见悬停说明）
+            if (missingModName(skillId) != null) return false;
+        }
         // 前置需求（终极/光环通用：前置技能 → 所需等级）
         for (Map.Entry<String, Integer> entry : Skills.getPrerequisites(skillId)) {
             if (learnedSkills.getOrDefault(entry.getKey(), 0) < entry.getValue()) return false;
@@ -3504,6 +3580,11 @@ public class SkillTreeScreen extends Screen {
                 || Skills.GOETY_VOID.equals(skillId) || Skills.GOETY_WILD.equals(skillId)
                 || Skills.GOETY_WIND.equals(skillId)) {
             return org.zifeng.skilltree.compat.GoetyCompat.isLoaded() ? null : net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.mod_goety").getString();
+        }
+        // 枪械（★ 2026-10-11）：TaCZ 兼容技能，未装 TaCZ 则不可学
+        if (Skills.GUN_SKILLS.contains(skillId)) {
+            return org.zifeng.skilltree.compat.TaczSkills.isTaczLoaded() ? null
+                    : net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.mod_tacz").getString();
         }
         return null;
     }
@@ -4355,9 +4436,22 @@ public class SkillTreeScreen extends Screen {
     private static String searchCacheQuery = null;
     private static List<String> searchCacheResult = null;
 
+    /**
+     * 技能显示名缓存（技能ID → 小写的显示名）★ 2026-10-11。
+     *
+     * <p>只用于<b>拼音匹配</b>：拼音交给 JEC 处理（见
+     * {@link org.zifeng.skilltree.compat.JecCompat}），而 JEC 只应拿「界面上真正显示的
+     * 名字」去匹配 —— 若把<b>描述</b>也塞进去，打两个字母就会命中一大堆技能
+     * （描述几乎什么字都有）。描述仍照常参与普通的子串匹配，见 {@link #searchTextOf}。
+     *
+     * <p>与 {@link SEARCH_TEXT_CACHE} 一样，语言重载时需清空（见 {@link #init()}）。
+     */
+    private static final Map<String, String> SEARCH_NAME_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
     /** 清掉搜索相关的全部缓存（语言重载 / 界面重开时调用，否则会拿着旧语言的文本继续匹配） */
     private static void clearSearchCaches() {
         SEARCH_TEXT_CACHE.clear();
+        SEARCH_NAME_CACHE.clear(); // ★ 2026-10-11：显示名随语言变化，必须重取
         searchCacheQuery = null;
         searchCacheResult = null;
     }
@@ -4377,23 +4471,53 @@ public class SkillTreeScreen extends Screen {
     }
 
     /**
-     * 技能是否匹配关键词（名称 / 描述 / 技能 ID；大小写不敏感）。
+     * 取某技能的<b>显示名</b>（小写），带缓存。仅供拼音匹配使用。
      *
-     * <p>行为：把小写后的关键词在「技能 ID + 显示名 + 描述」里找子串。
-     * 覆盖「直接打汉字」「打英文名」「打技能 ID 片段」三种习惯。
+     * <p>为什么不直接复用 {@link #searchTextOf}：那个串里还拼了 ID 与描述，
+     * 拿它去做拼音匹配会让「输入两个字母命中几十个技能」——因为描述几乎包含常用字。
+     */
+    private static String searchNameOf(String skillId) {
+        String cached = SEARCH_NAME_CACHE.get(skillId);
+        if (cached != null) {
+            return cached;
+        }
+        String name = Skills.getDisplayNameComponent(skillId).getString()
+                .toLowerCase(java.util.Locale.ROOT);
+        SEARCH_NAME_CACHE.put(skillId, name);
+        return name;
+    }
+
+    /**
+     * 技能是否匹配关键词（名称 / 描述 / 技能 ID / 拼音；大小写不敏感）。
+     *
+     * <p>行为：先把小写后的关键词在「技能 ID + 显示名 + 描述」里找子串；
+     * 没命中再交给 <b>Just Enough Characters</b>（JEC）按拼音匹配<b>显示名</b>。
+     * 覆盖「直接打汉字」「打英文名」「打技能 ID 片段」「打拼音」四种习惯。
      *
      * <p>⚠️ 必须走 {@code Locale.ROOT} 小写，不能用默认 Locale ——
      * 土耳其语环境下 {@code "I".toLowerCase()} 会变成 ı（无点小写 i），
      * 与关键词里打出的普通 {@code i} 不相等，导致含大写 I 的技能 ID / 英文名搜不到。
      *
-     * <p>★ 2026-09-20：曾经的拼音匹配（移植 PinIn）已按用户要求移除 ——
-     * 本模组有纯英文玩家，拼音对他们无用，不值得为此多背一个词典资源。
+     * <p>★ 2026-10-11 拼音搜索改由 JEC 提供，不再自建拼音表：
+     * <ul>
+     *   <li>JEC 未安装 → {@link org.zifeng.skilltree.compat.JecCompat#matches} 直接返回 false，
+     *       搜索行为与从前完全一致（只有普通子串匹配）；</li>
+     *   <li>JEC 已安装 → 自动获得全拼 / 声母 / 声调 / 注音 / 双拼支持，
+     *       且跟随玩家在 JEC 里的配置，本模组无需感知；</li>
+     *   <li><b>不再需要「中文语言才启用拼音」的判断</b> —— 匹配的文本就是界面上真正显示的
+     *       名字，英文语言下名字是英文，拼音自然匹配不到；多一层语言判断反而会让本搜索框
+     *       与同实例里其他搜索框（JEI / 创造背包）行为不一致。</li>
+     * </ul>
      */
     private static boolean matchesQuery(String skillId, String q) {
         if (q == null || q.isEmpty()) {
             return true;
         }
-        return searchTextOf(skillId).contains(q.toLowerCase(java.util.Locale.ROOT));
+        String needle = q.toLowerCase(java.util.Locale.ROOT);
+        if (searchTextOf(skillId).contains(needle)) {
+            return true;
+        }
+        return org.zifeng.skilltree.compat.JecCompat.matches(searchNameOf(skillId), needle);
     }
 
     /**
@@ -4882,6 +5006,9 @@ public class SkillTreeScreen extends Screen {
                 addModFlat(parts, 1.0 + lv, "❖");
                 parts.add(t(lootModeKey(record.getAuraTargetMode(Skills.LOOT_BOMB))));
             }
+            // ★ 2026-10-11：寻宝大师 = 当前高亮类别短标签（4 模式必须一眼可见）
+            case Skills.TREASURE_HUNTER ->
+                    parts.add(t(treasureModeKey(record.getAuraTargetMode(Skills.TREASURE_HUNTER))));
 
             // ── 特殊 / 光环 ──
             case Skills.VILLAGE_HERO -> addModFlat(parts, lv, "☺");
@@ -4939,6 +5066,8 @@ public class SkillTreeScreen extends Screen {
             Skills.FIRE_PROTECT, Skills.WATER_BREATH, Skills.DARK_VISION, Skills.UNDERWATER_VISION,
             Skills.ENCHANT_RANDOM, Skills.ENCHANT_BREAK, Skills.ENCHANT_OVER,
             Skills.UNLIMITED_TRADES, Skills.VILLAGER_MASTER, Skills.TREASURE_HUNTER,
+            Skills.BLOCK_SCAN, // ★ 2026-10-11 方块扫描（功能短标签）
+            Skills.MINING_PROTECT, // ★ 2026-10-11 挖掘防护（功能短标签）
             Skills.GLUTTONY, Skills.BLINK, Skills.ARCANE_ADAPT, Skills.SPELL_PURGE,
             // 光环·功能
             Skills.AURA_MAGNET, Skills.AURA_LOCK, Skills.AURA_LOOT_VACUUM,
@@ -5509,6 +5638,7 @@ public class SkillTreeScreen extends Screen {
         if (type == Skills.SkillType.MACHINE) return Skills.getMachineCost(skillId); // 机械共鸣：一次性（机械之星 1000 / 其余 5000）
         if (type == Skills.SkillType.GIFT) return Skills.getGiftCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 子枫的馈赠：时间系列 0 / 洗礼阶梯 / 增幅指数
         if (type == Skills.SkillType.FISHING) return Skills.getFishingCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 垂钓：二次曲线 / 一次性（2026-10-03）
+        if (type == Skills.SkillType.GUN) return Skills.getGunCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 枪械（★ 2026-10-11）：线性 / 一次性
         return Skills.getUltimateLevelCost(skillId, learnedSkills.getOrDefault(skillId, 0)); // 终极节点/特殊被动（单次或节点类阶梯递增）
     }
 

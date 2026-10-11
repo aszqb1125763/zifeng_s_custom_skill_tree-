@@ -29,3 +29,28 @@ mandatory = true
 versionRange = "[1.20.1,1.21)"
 ordering = "NONE"
 side = "BOTH"
+
+# ★ 2026-10-11 TaCZ 枪械兼容（可选）：未安装时「枪械」列技能照常显示但无效果，绝不崩游戏。
+#   ⚠️ 该兼容仅存在于 1.20.1 工程（TaCZ 只发布 1.20.1）。
+[[dependencies.zifeng_s_custom_skill_tree]]
+modId = "tacz"
+mandatory = false
+versionRange = "[1.1.0,)"
+ordering = "AFTER"
+side = "BOTH"
+
+# ★ 2026-10-11 拼音搜索兼容（可选）：技能树搜索框在装了 Just Enough Characters 时支持拼音。
+#   未安装时搜索退化为「汉字 / 英文名 / 技能 ID 子串匹配」，功能正常，绝不崩游戏。
+#   ⚠️ 客户端模组（side = CLIENT）—— 服务端不需要装。
+#   ⚠️⚠️ versionRange 在 Forge 里是【必填】：漏写会被解析成空范围 ''，
+#       于是「任何版本都不匹配」→ 即使 mandatory = false 也会直接 ModLoadingException 崩启动。
+#       （2026-10-11 实测踩坑：Expected range: '' , Actual version: '4.6.4'）
+#   ⚠️ 这里刻意写 [0,)（接受任何版本）：我们的对接是
+#       JecCompat 的「反射 + 运行时特性探测 + 解析失败永久降级」，
+#       本来就不依赖 JEC 的某个具体版本 —— 声明下限只会凭空多出一个崩溃点。
+[[dependencies.zifeng_s_custom_skill_tree]]
+modId = "jecharacters"
+mandatory = false
+versionRange = "[0,)"
+ordering = "AFTER"
+side = "CLIENT"
