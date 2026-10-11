@@ -197,6 +197,7 @@ public final class Skills {
             case UNLIMITED_TRADES -> 100L;   // 无限交易：一次性 100 点
             case VILLAGER_MASTER -> 1000L;   // 村民大师：一次性 1000 点
             case TREASURE_HUNTER -> 500L;    // 寻宝大师：一次性 500 点
+            case BLOCK_SCAN -> 100L;         // 方块扫描：一次性 100 点（★ 2026-10-11）
             case GLUTTONY -> 5L;             // 暴食：一次性 5 点（2026-09-06）
             case BLINK -> 10L;               // 闪现：一次性 10 点（2026-09-06）
             // 奥术防护（2026-09-14）：进阶机制各 1000 点；奥术神体走 Config
@@ -279,6 +280,10 @@ public final class Skills {
     public static final String UNLIMITED_TRADES = "unlimited_trades"; // 无限交易（100点，村民不用补货，交易次数不减少）
     public static final String VILLAGER_MASTER = "villager_master";   // 村民大师（1000点，交易后村民直接满级）
     public static final String TREASURE_HUNTER = "treasure_hunter";   // 寻宝大师（500点，64格内战利品容器/考古刷扫点发光）
+    /** 方块扫描（★ 2026-10-11）：一次性 100 点。配合木棍工具的「方块标记」模块——
+     *  标记方块后，按【触发键】主动扫描一次，半径 64 格内所有<b>同 id</b> 方块全部高亮
+     *  （只比对方块 id，不比 NBT / 方块状态）。 */
+    public static final String BLOCK_SCAN = "block_scan";
     public static final String GLUTTONY = "gluttony";                 // 暴食（秒吃所有食物，1级，5点，2026-09-06）
     public static final String BLINK = "blink";                       // 闪现（向视线方向传送，1级，10点，2026-09-06）
 
@@ -414,6 +419,12 @@ public final class Skills {
     public static final String MANA_SIPHON = "mana_siphon";
     /** 净化领域：光环，周期性清除范围内友方的负面效果（上限100） */
     public static final String PURIFY_FIELD = "purify_field";
+    /**
+     * 挖掘防护（★ 2026-10-11）：光环类技能，一次性解锁。
+     * <p>配合木棍工具的「挖掘防护」模式框选一个选区 → 区内方块<b>全服生效</b>地
+     * <b>挖不动 + 炸不坏</b>（防乱挖/防炸图）。选区存在 {@code operZones}，与机械共鸣区块技能同一套机制。
+     */
+    public static final String MINING_PROTECT = "mining_protect";
     /** 破法之刃：近战命中驱散目标一个增益，并按目标增益数量增伤（1级） */
     public static final String SPELLBREAK_BLADE = "spellbreak_blade";
     /** 子枫的奥术神体：魔法防护终极，是【全能精通】的前置之一（1级） */
@@ -501,13 +512,15 @@ public final class Skills {
             VILLAGE_HERO, REACH, GLOW,
             ENCHANT_RANDOM, ENCHANT_BREAK, ENCHANT_OVER,
             UNLIMITED_TRADES, VILLAGER_MASTER, TREASURE_HUNTER,
+            BLOCK_SCAN, // ★ 2026-10-11：方块扫描（紧随寻宝大师之后）
             GLUTTONY, BLINK,
             // 奥术防护（2026-09-14）：一次性奇技
             ARCANE_ADAPT, SPELL_REFLECT, SPELL_PURGE, MANA_SIPHON, SPELLBREAK_BLADE);
     /** 所有杀戮光环（纵列5）：杀戮光环·强化 在 虚空之矛 上方；时之环/晴空环已移至寰宇法则列（2026-08-27）
      *  ⚠️ 2026-09-07：子枫的搬运术（CONTAINER_HAUL）紧随子枫挪移术后（系列，复用其绑定容器）。 */
     public static final List<String> AURA_SKILLS = List.of(AURA_DAMAGE, AURA_SPEED, AURA_HEAL, AURA_MAGNET, AURA_LOCK, AURA_EMPOWER, AURA_VOID, AURA_LOOT_VACUUM, CONTAINER_HAUL, AURA_XP,
-            PURIFY_FIELD); // 净化领域（2026-09-14 奥术防护：光环清友方负面）
+            PURIFY_FIELD, // 净化领域（2026-09-14 奥术防护：光环清友方负面）
+            MINING_PROTECT); // ★ 2026-10-11 挖掘防护（选区全服免挖/免炸）
     /** 所有寰宇法则（纵列6，2026-08-27 新增）：全局更改类技能（服务器全局生效，无法单人隔离） */
     public static final List<String> GLOBAL_SKILLS = List.of(AURA_TIME, AURA_WEATHER, AE_INFINITE_CHANNEL);
     /** 所有魔法增幅（纵列0）：其余模组兼容技能（新生魔艺/铁魔法等），不作为任何前置 */
@@ -555,6 +568,12 @@ public final class Skills {
     public static final int STICK_MODE_ZONE_ATTACK = 4;
     /** 工具模式：ZONE_PROTECT=框选防护区（杀戮光环·防护选区，2026-09-08） */
     public static final int STICK_MODE_ZONE_PROTECT = 5;
+    /** 工具模式：MARK=潜行右键标记方块（方块扫描，★ 2026-10-11）——
+     *  标记后按方块扫描的触发键主动扫描一次，同 id 方块全部高亮。 */
+    public static final int STICK_MODE_MARK = 6;
+    /** 工具模式：MINE_PROTECT=框选挖掘防护区（挖掘防护，★ 2026-10-11）——
+     *  区内方块全服生效地挖不动 + 炸不坏。 */
+    public static final int STICK_MODE_MINE_PROTECT = 7;
     /** 工具占位列（第10列） */
     public static final List<String> TOOL_SKILLS = List.of(STICK_TOOL);
 
@@ -563,9 +582,9 @@ public final class Skills {
         return STICK_TOOL.equals(skillId);
     }
 
-    /** 工具模式总数（BIND/RANGE/放置/挖掘/攻击/防护，2026-09-08 扩展为 6） */
+    /** 工具模式总数（BIND/RANGE/放置/挖掘/攻击/防护/标记/挖掘防护，2026-10-11 扩展为 8） */
     public static int stickModeCount() {
-        return 6;
+        return 8;
     }
 
     /** 木棍工具模式 → 解锁该模式的技能 ID（返回 null=不依赖技能的常驻模式如 BIND/RANGE 由各自绑技能判定） */
@@ -575,14 +594,22 @@ public final class Skills {
             case STICK_MODE_ZONE_EXCAVATE -> MACHINE_ZONE_EXCAVATE;
             case STICK_MODE_ZONE_ATTACK -> MACHINE_ZONE_ATTACK;
             case STICK_MODE_ZONE_PROTECT -> MACHINE_ZONE_PROTECT;
+            case STICK_MODE_MARK -> BLOCK_SCAN;             // ★ 2026-10-11：方块标记 ← 方块扫描
+            case STICK_MODE_MINE_PROTECT -> MINING_PROTECT; // ★ 2026-10-11：挖掘防护
             default -> null;
         };
     }
 
-    /** 是否木棍工具·区块类技能（放置/挖掘/攻击/防护；各自解锁一个工具模式，2026-09-08） */
+    /** 是否木棍工具·区块类技能（放置/挖掘/攻击/防护/挖掘防护；各自解锁一个工具模式，2026-09-08） */
     public static boolean isStickZoneSkill(String skillId) {
         return MACHINE_ZONE_PLACE.equals(skillId) || MACHINE_ZONE_EXCAVATE.equals(skillId)
-                || MACHINE_ZONE_ATTACK.equals(skillId) || MACHINE_ZONE_PROTECT.equals(skillId);
+                || MACHINE_ZONE_ATTACK.equals(skillId) || MACHINE_ZONE_PROTECT.equals(skillId)
+                || MINING_PROTECT.equals(skillId); // ★ 2026-10-11：挖掘防护也走 operZones 选区存储
+    }
+
+    /** 是否木棍工具·标记类技能（方块标记 ∩ 方块扫描，★ 2026-10-11） */
+    public static boolean isStickMarkSkill(String skillId) {
+        return BLOCK_SCAN.equals(skillId);
     }
 
     /** 区块技能 → 对应的木棍工具模式 */
@@ -591,6 +618,8 @@ public final class Skills {
         if (MACHINE_ZONE_EXCAVATE.equals(skillId)) return STICK_MODE_ZONE_EXCAVATE;
         if (MACHINE_ZONE_ATTACK.equals(skillId)) return STICK_MODE_ZONE_ATTACK;
         if (MACHINE_ZONE_PROTECT.equals(skillId)) return STICK_MODE_ZONE_PROTECT;
+        if (BLOCK_SCAN.equals(skillId)) return STICK_MODE_MARK;              // ★ 2026-10-11
+        if (MINING_PROTECT.equals(skillId)) return STICK_MODE_MINE_PROTECT;  // ★ 2026-10-11
         return -1;
     }
 
@@ -677,7 +706,9 @@ public final class Skills {
     public static boolean isTriggerBindable(String skillId) {
         return CONTAINER_HAUL.equals(skillId) || BLINK.equals(skillId)
                 || MACHINE_ZONE_PLACE.equals(skillId) || MACHINE_ZONE_EXCAVATE.equals(skillId)
-                || STICK_TOOL.equals(skillId);
+                || STICK_TOOL.equals(skillId)
+                || TREASURE_HUNTER.equals(skillId) // ★ 2026-10-11：切换「已开容器过滤」开关
+                || BLOCK_SCAN.equals(skillId);     // ★ 2026-10-11：主动扫描一次（方块扫描）
     }
 
     // ==================== 第一代快捷键能力注册表（2026-09-07 规范 v1.0） ====================
@@ -697,6 +728,17 @@ public final class Skills {
     public static final int LOOT_MODE_UNSTACKABLE = 2;
     /** 模式 3：自定义黑名单 —— 命中黑名单（物品 id 或其标签）的掉落不参与 */
     public static final int LOOT_MODE_BLACKLIST = 3;
+
+    // ============ 寻宝大师：高亮类别模式常量（★ 2026-10-11）============
+    //   同样复用 auraTargetModes 存模式；只影响【显示哪几类高亮】，不影响扫描。
+    /** 模式 0：全部 —— 容器 / 考古点 / 刷怪笼 三类都高亮（旧行为） */
+    public static final int TREASURE_MODE_ALL = 0;
+    /** 模式 1：仅战利品容器（金色） */
+    public static final int TREASURE_MODE_CONTAINER = 1;
+    /** 模式 2：仅考古刷扫点（青色） */
+    public static final int TREASURE_MODE_ARCHAEOLOGY = 2;
+    /** 模式 3：仅刷怪笼（品红） */
+    public static final int TREASURE_MODE_SPAWNER = 3;
 
     /**
      * 是否为「已移除/已合并」的历史技能（★ 2026-09-30）。
@@ -718,7 +760,8 @@ public final class Skills {
                 || AURA_WEATHER.equals(skillId)  // 晴空环天气 3 态
                 || isContainerHaul(skillId)      // 搬运术自动/手动 2 态
                 || isStickTool(skillId)          // 木棍工具 BIND/RANGE 2 态（2026-09-08）
-                || LOOT_BOMB.equals(skillId);    // 战利品大爆发 4 态（2026-09-30）
+                || LOOT_BOMB.equals(skillId)     // 战利品大爆发 4 态（2026-09-30）
+                || TREASURE_HUNTER.equals(skillId); // 寻宝大师 高亮类别 4 态（2026-10-11）
     }
 
     /** 子2 模式循环的态数（敌我/天气=3，搬运=2，工具=stickModeCount，战利品大爆发=4）；无模式返回 0 */
@@ -731,6 +774,9 @@ public final class Skills {
         }
         if (LOOT_BOMB.equals(skillId)) {
             return 4; // ★ 2026-09-30：全 / 仅堆叠 / 仅不堆叠 / 黑名单
+        }
+        if (TREASURE_HUNTER.equals(skillId)) {
+            return 4; // ★ 2026-10-11：全部 / 仅容器 / 仅考古点 / 仅刷怪笼
         }
         if (isStickTool(skillId)) {
             return stickModeCount();
@@ -767,6 +813,7 @@ public final class Skills {
             case CONTAINER_HAUL -> 1; // 子枫的搬运术：一次性解锁（10 技能点，2026-09-07）
             case AURA_XP -> 100; // 汲灵之环：上限 100 级（2026-09-06）
             case PURIFY_FIELD -> 100; // 净化领域：上限 100 级（2026-09-14 奥术防护）
+            case MINING_PROTECT -> 1; // ★ 2026-10-11 挖掘防护：一次性解锁
             default -> 0;
         };
     }
@@ -1662,6 +1709,7 @@ public final class Skills {
             case AURA_SPEED -> Items.REDSTONE;                 // 光环·速度：红石粉（高频）
             case AURA_HEAL -> Items.HONEY_BOTTLE;              // 治愈光环：蜂蜜瓶
             case AURA_MAGNET -> Items.LODESTONE;               // 磁力光环：磁石（吸铁）
+            case MINING_PROTECT -> Items.BEDROCK;              // ★ 2026-10-11 挖掘防护：基岩（无法破坏）
             case AURA_TIME -> Items.CLOCK;                     // 时之环：时钟（锁定时间）
             case AURA_WEATHER -> Items.SUNFLOWER;              // 晴空环：向日葵（面向太阳）
             case AURA_LOCK -> Items.ANVIL;                     // 光环锁定：铁砧（稳固不动）
@@ -1688,6 +1736,7 @@ public final class Skills {
             case UNLIMITED_TRADES -> Items.EMERALD;           // 无限交易：绿宝石（交易货币）
             case VILLAGER_MASTER -> Items.EMERALD_BLOCK;      // 村民大师：绿宝石块（满级大师）
             case TREASURE_HUNTER -> Items.GOLD_NUGGET;        // 寻宝大师：金粒（宝箱宝藏）
+            case BLOCK_SCAN -> Items.SPYGLASS;                // 方块扫描：望远镜（扫描/观察，★ 2026-10-11）
             case GLUTTONY -> Items.COOKED_BEEF;               // 暴食：牛排（大快朵颐秒吃）
             case BLINK -> Items.ENDER_PEARL;                  // 闪现：末影珍珠（瞬移）
             case MACHINE_ZONE_PLACE -> Items.BRICK;           // 选区放置：砖（摆放）

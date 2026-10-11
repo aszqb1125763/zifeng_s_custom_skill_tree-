@@ -80,6 +80,23 @@ public class PlayerSkillRecord {
      *  <p>⚠️ 按<b>物品类型</b>而非具体实例 —— 附魔/自定义名不影响聚合；玩家数据各自独立。 */
     private String stickLinkedItem = "";
 
+    // ============ 寻宝大师·已开容器过滤（★ 2026-10-11）============
+    /** 「已开容器过滤」开关（默认开）：
+     *  <p>开启时，玩家<b>本次会话</b>内已打开过的战利品容器不再显示金色发光轮廓；
+     *  由寻宝大师的<b>触发键</b>切换（同木棍工具层：专用字段 + 专用包，不进技能开关表）。
+     *  <p>⚠️ 属「玩家配置」——重洗技能（{@link #resetAll()}）与硬重置（{@link #hardReset()}）
+     *  都<b>不</b>清空，与自动熔炼黑名单 / 战利品黑名单同款。 */
+    private boolean treasureOpenedFilter = true;
+
+    /** 「已开容器过滤」是否生效（默认开） */
+    public boolean isTreasureOpenedFilter() {
+        return treasureOpenedFilter;
+    }
+
+    public void setTreasureOpenedFilter(boolean on) {
+        this.treasureOpenedFilter = on;
+    }
+
     /** 木棍工具总开关是否开启（默认开） */
     public boolean isStickToolOn() {
         return stickToolOn;
@@ -96,7 +113,9 @@ public class PlayerSkillRecord {
 
     /** 切换木棍工具模式（BIND↔RANGE 循环；非法值忽略） */
     public void setStickToolMode(int mode) {
-        if (mode == 0 || mode == 1 || mode == 2 || mode == 3 || mode == 4 || mode == 5) {
+        // ⚠️ 上限从 Skills.stickModeCount() 推导（BIND..标记，2026-10-11 共 7 态）——
+        //    硬编码会导致新增模式被静默丢弃（服务端回发被拒 → 模式切换"卡在"最后一态）
+        if (mode >= 0 && mode < Skills.stickModeCount()) {
             this.stickToolMode = mode;
         }
     }
@@ -245,6 +264,107 @@ public class PlayerSkillRecord {
         return false;
     }
 
+    /**
+     * 方块保护（{@code MINING_PROTECT}）的选区列表。
+     *
+     * <p>★ 2026-10-11 修改：旧实现把区存在 {@link #operZones}（「每技能一块」的 map）里，
+     * 玩家<b>只能框一块</b>，想护住多个仓库/机器就得反复重框。
+     * 现在改为独立列表，可框多块。
+     *
+     * <p>⚠️ <b>刻意不设数量上限</b>（与「庇护领域」的 {@link #MAX_PROTECT_ZONES}=10 不同）：
+     * 用户明确要求「选区数量不能做限制」。
+     * 代价是 {@code MiningProtectEvents} 的线性扫描随块数变长，但可接受：
+     * <ul>
+     *   <li>挖掘/爆炸只在<b>玩家真的动手时</b>触发，不是每 tick 扫描；</li>
+     *   <li>每块只做「维度字符串相等 + AABB 包含」两次廉价判断。</li>
+     * </ul>
+     * 若将来真的因块数过多而卡顿，正确做法是<b>加提示或做空间索引</b>，
+     * 而不是静默拒绝玩家框选。
+     */
+    private final java.util.List<OperZone> miningProtectZones = new java.util.ArrayList<>();
+
+    /** 全部方块保护区（只读） */
+    public java.util.List<OperZone> getMiningProtectZones() {
+        return java.util.Collections.unmodifiableList(miningProtectZones);
+    }
+
+    /** 方块保护区当前数量 */
+    public int miningProtectZoneCount() {
+        return miningProtectZones.size();
+    }
+
+    /** 新增一块方块保护区（与已有块完全重复则返回 false；<b>不限数量</b>） */
+    public boolean addMiningProtectZone(OperZone zone) {
+        if (zone == null) {
+            return false;
+        }
+        for (OperZone z : miningProtectZones) {
+            if (z.minX() == zone.minX() && z.minY() == zone.minY() && z.minZ() == zone.minZ()
+                    && z.maxX() == zone.maxX() && z.maxY() == zone.maxY() && z.maxZ() == zone.maxZ()
+                    && z.dim().equals(zone.dim())) {
+                return false; // 重复块
+            }
+        }
+        miningProtectZones.add(zone);
+        return true;
+    }
+
+    /** 查找包含该坐标的方块保护区（滚轮微调 / 删除时定位）；找不到返回 null */
+    public OperZone findMiningProtectZoneAt(String dim, int x, int y, int z) {
+        for (OperZone oz : miningProtectZones) {
+            if (oz.dim().equals(dim)
+                    && x >= oz.minX() && x <= oz.maxX()
+                    && y >= oz.minY() && y <= oz.maxY()
+                    && z >= oz.minZ() && z <= oz.maxZ()) {
+                return oz;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 用新区替换旧的方块保护区（滚轮微调）。
+     * <p>按值比较定位（{@code OperZone} 是 record，equals 为逐字段比较）。
+     * @return true = 找到并替换
+     */
+    public boolean replaceMiningProtectZone(OperZone oldZone, OperZone newZone) {
+        if (oldZone == null || newZone == null) {
+            return false;
+        }
+        int i = miningProtectZones.indexOf(oldZone);
+        if (i < 0) {
+            return false;
+        }
+        miningProtectZones.set(i, newZone);
+        return true;
+    }
+
+    /** 移除包含该坐标的方块保护区（潜行+左键删单块）；返回是否移除 */
+    public boolean removeMiningProtectZoneAt(String dim, int x, int y, int z) {
+        java.util.Iterator<OperZone> it = miningProtectZones.iterator();
+        while (it.hasNext()) {
+            OperZone oz = it.next();
+            if (oz.dim().equals(dim)
+                    && x >= oz.minX() && x <= oz.maxX()
+                    && y >= oz.minY() && y <= oz.maxY()
+                    && z >= oz.minZ() && z <= oz.maxZ()) {
+                it.remove();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 目标是否落在任一方块保护区内 */
+    public boolean isInAnyMiningProtectZone(String dim, net.minecraft.core.BlockPos pos) {
+        for (OperZone z : miningProtectZones) {
+            if (z.dim().equals(dim) && z.contains(pos)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public Set<Item> getAutoSmeltBlacklist() {
         return Collections.unmodifiableSet(autoSmeltBlacklist);
     }
@@ -312,6 +432,45 @@ public class PlayerSkillRecord {
             }
         }
         return false;
+    }
+
+    // ============ 方块扫描·已标记方块（★ 2026-10-11）============
+    /**
+     * 已标记的方块 id 集合（{@code ns:path} 形式），<b>数量不设上限</b>。
+     * <p>语义：标记后按「方块扫描」触发键主动扫描一次，半径 64 格内所有
+     * <b>同 id</b> 方块全部高亮 —— <b>只比对方块 id，不比 NBT / 方块状态</b>
+     * （与 {@link #lootBlacklist} 的字符串比较同款思路，实现简单且无反射）。
+     * <p>标记来源：木棍工具「方块标记」模块（潜行 + 右键，toggle 语义：同 id 再标一次 = 取消）。
+     * <p>⚠️ 属「玩家配置」——重洗技能（{@link #resetAll()}）与硬重置（{@link #hardReset()}）
+     * 都<b>不</b>清空，与自动熔炼黑名单 / 战利品黑名单 / 容器绑定同款。
+     */
+    private final Set<String> markedBlocks = new java.util.LinkedHashSet<>();
+
+    /** 已标记方块 id（只读） */
+    public Set<String> getMarkedBlocks() {
+        return Collections.unmodifiableSet(markedBlocks);
+    }
+
+    /** 该方块 id 是否已标记 */
+    public boolean isBlockMarked(String blockId) {
+        return blockId != null && markedBlocks.contains(blockId);
+    }
+
+    /** 切换标记（同 id 再标一次 = 取消）；返回切换后<b>是否处于已标记</b>状态 */
+    public boolean toggleMarkedBlock(String blockId) {
+        if (blockId == null || blockId.isBlank()) {
+            return false;
+        }
+        if (markedBlocks.remove(blockId)) {
+            return false; // 原本已标记 → 本次取消
+        }
+        markedBlocks.add(blockId);
+        return true; // 新增标记
+    }
+
+    /** 清空全部标记（暂未接入按键，留给后续「一键清空」用） */
+    public void clearMarkedBlocks() {
+        markedBlocks.clear();
     }
 
     // ============ 凋落物挪移绑定（2026-08-24） ============
@@ -820,11 +979,19 @@ public class PlayerSkillRecord {
             lootBl.add(StringTag.valueOf(e));
         }
         tag.put("LootBlacklist", lootBl);
+        // 方块扫描·已标记方块（★ 2026-10-11；数量不设上限）
+        ListTag marks = new ListTag();
+        for (String e : markedBlocks) {
+            marks.add(StringTag.valueOf(e));
+        }
+        tag.put("MarkedBlocks", marks);
         // 木棍工具层（2026-09-08）：总开关 + 模式
         tag.putBoolean("StickToolOn", stickToolOn);
         tag.putInt("StickToolMode", stickToolMode);
         // 木棍手势链接的物品类型（★ 2026-10-09；空串=未链接）
         tag.putString("StickLinkedItem", stickLinkedItem);
+        // 寻宝大师·已开容器过滤开关（★ 2026-10-11；玩家配置，重洗技能不清）
+        tag.putBoolean("TreasureOpenedFilter", treasureOpenedFilter);
         // 机械共鸣·操作区（2026-09-08）：技能ID → 区
         ListTag operList = new ListTag();
         for (Map.Entry<String, OperZone> e : operZones.entrySet()) {
@@ -854,6 +1021,20 @@ public class PlayerSkillRecord {
             pzList.add(zt);
         }
         tag.put("ProtectZones", pzList);
+        // 方块保护区多块列表（★ 2026-10-11：不限数量）
+        ListTag mpzList = new ListTag();
+        for (OperZone z : miningProtectZones) {
+            CompoundTag zt = new CompoundTag();
+            zt.putString("Dim", z.dim());
+            zt.putInt("AX", z.ax());
+            zt.putInt("AY", z.ay());
+            zt.putInt("AZ", z.az());
+            zt.putInt("BX", z.bx());
+            zt.putInt("BY", z.by());
+            zt.putInt("BZ", z.bz());
+            mpzList.add(zt);
+        }
+        tag.put("MiningProtectZones", mpzList);
         // 凋落物挪移绑定
         if (lootVacuumDim != null) {
             tag.putString("LootVacuumDim", lootVacuumDim);
@@ -970,6 +1151,16 @@ public class PlayerSkillRecord {
                 }
             }
         }
+        // 方块扫描·已标记方块（★ 2026-10-11；旧存档无此字段默认空）
+        if (tag.contains("MarkedBlocks", Tag.TAG_LIST)) {
+            ListTag marks = tag.getList("MarkedBlocks", Tag.TAG_STRING);
+            for (int i = 0; i < marks.size(); i++) {
+                String e = marks.getString(i);
+                if (!e.isBlank()) {
+                    record.markedBlocks.add(e.trim());
+                }
+            }
+        }
         // 凋落物挪移绑定（旧存档无此字段默认未绑定）
         if (tag.contains("LootVacuumDim", Tag.TAG_STRING)) {
             record.lootVacuumDim = tag.getString("LootVacuumDim");
@@ -983,10 +1174,13 @@ public class PlayerSkillRecord {
         // 木棍工具层（2026-09-08：旧存档无此字段 → 默认开 + BIND 模式）
         record.stickToolOn = !tag.contains("StickToolOn") || tag.getBoolean("StickToolOn");
         record.stickToolMode = tag.contains("StickToolMode", Tag.TAG_INT)
-                ? Math.max(0, Math.min(5, tag.getInt("StickToolMode"))) : 0;
+                ? Math.max(0, Math.min(Skills.stickModeCount() - 1, tag.getInt("StickToolMode"))) : 0;
         // 木棍手势链接（★ 2026-10-09；旧存档无此字段 → 默认未链接）
         record.stickLinkedItem = tag.contains("StickLinkedItem", Tag.TAG_STRING)
                 ? tag.getString("StickLinkedItem") : "";
+        // 寻宝大师·已开容器过滤（★ 2026-10-11；旧存档无此字段 → 默认开）
+        record.treasureOpenedFilter = !tag.contains("TreasureOpenedFilter")
+                || tag.getBoolean("TreasureOpenedFilter");
         // 机械共鸣·操作区（2026-09-08：旧存档无此字段默认空）
         if (tag.contains("OperZones", Tag.TAG_LIST)) {
             ListTag operList = tag.getList("OperZones", Tag.TAG_COMPOUND);
@@ -1001,6 +1195,28 @@ public class PlayerSkillRecord {
                         zt.getInt("AX"), zt.getInt("AY"), zt.getInt("AZ"),
                         zt.getInt("BX"), zt.getInt("BY"), zt.getInt("BZ")));
             }
+        }
+        // 方块保护区多块列表（★ 2026-10-11：旧存档无此字段默认空）
+        if (tag.contains("MiningProtectZones", Tag.TAG_LIST)) {
+            ListTag mpzList = tag.getList("MiningProtectZones", Tag.TAG_COMPOUND);
+            for (int i = 0; i < mpzList.size(); i++) {
+                CompoundTag zt = mpzList.getCompound(i);
+                String dim = zt.getString("Dim");
+                if (dim.isBlank()) {
+                    continue;
+                }
+                // ⚠️ 这里【不设数量上限】：用户明确要求不限块数，老存档也要全量读回
+                record.miningProtectZones.add(new OperZone(dim,
+                        zt.getInt("AX"), zt.getInt("AY"), zt.getInt("AZ"),
+                        zt.getInt("BX"), zt.getInt("BY"), zt.getInt("BZ")));
+            }
+        }
+        // ★ 2026-10-11 存档迁移：方块保护从「单块（存在 OperZones map 里）」改为「多块列表」，
+        //   把旧存档里那一块搬进新列表，否则老玩家升级后会「选区凭空消失」。
+        //   （未框选时 setOperZone(null) 是直接 remove，map 里不会有空条目，故只需判 dim 非空）
+        OperZone legacyMining = record.operZones.remove(Skills.MINING_PROTECT);
+        if (legacyMining != null && !legacyMining.dim().isBlank()) {
+            record.miningProtectZones.add(legacyMining);
         }
         // 防护区多块列表（2026-09-08：旧存档无此字段默认空）
         if (tag.contains("ProtectZones", Tag.TAG_LIST)) {

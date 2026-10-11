@@ -102,7 +102,9 @@ public class ModKeyBindingEvents {
     }
 
     public static void setStickToolModeClient(int mode) {
-        if (mode >= 0 && mode <= 5) {
+        // ⚠️ 上限从 Skills.stickModeCount() 推导 —— 不要再硬编码（加模式时漏改会导致
+        //    服务端回发被丢弃、模式切换"卡住"）
+        if (mode >= 0 && mode < Skills.stickModeCount()) {
             stickToolModeClient = mode;
         }
     }
@@ -110,9 +112,23 @@ public class ModKeyBindingEvents {
     /** 服务端数据包统一校准 */
     public static void setStickToolStateClient(boolean on, int mode) {
         stickToolOnClient = on;
-        if (mode >= 0 && mode <= 5) {
+        if (mode >= 0 && mode < Skills.stickModeCount()) {
             stickToolModeClient = mode;
         }
+    }
+
+    // ============ 寻宝大师·已开容器过滤（★ 2026-10-11；服务端回发校准）============
+    /** 「已开容器过滤」开关客户端缓存：true = 本次会话已打开过的容器不再高亮；默认开 */
+    private static boolean treasureFilterOnClient = true;
+
+    /** 「已开容器过滤」是否生效（客户端渲染判定用） */
+    public static boolean isTreasureFilterOnClient() {
+        return treasureFilterOnClient;
+    }
+
+    /** 设置「已开容器过滤」客户端缓存（服务端回发校准 + 触发键乐观更新共用） */
+    public static void setTreasureFilterClient(boolean on) {
+        treasureFilterOnClient = on;
     }
 
     /** 是否已学任一木棍工具功能技能（磁铁 RANGE / 挪移+搬运 BIND / 机械共鸣区块）——信息栏显示条件（2026-09-08） */
@@ -162,6 +178,22 @@ public class ModKeyBindingEvents {
     /** 全部防护区（只读） */
     public static java.util.List<org.zifeng.skilltree.data.OperZone> getProtectZonesClient() {
         return java.util.Collections.unmodifiableList(protectZonesClient);
+    }
+
+    // ============ 方块保护区多块列表缓存（★ 2026-10-11：不限数量；框选/微调/删单块用） ============
+    private static final java.util.List<org.zifeng.skilltree.data.OperZone> miningProtectZonesClient = new java.util.ArrayList<>();
+
+    /** 服务端回发校准方块保护区列表 */
+    public static void setMiningProtectZonesClient(java.util.List<org.zifeng.skilltree.data.OperZone> zones) {
+        miningProtectZonesClient.clear();
+        if (zones != null) {
+            miningProtectZonesClient.addAll(zones);
+        }
+    }
+
+    /** 该玩家全部方块保护区（只读） */
+    public static java.util.List<org.zifeng.skilltree.data.OperZone> getMiningProtectZonesClient() {
+        return java.util.Collections.unmodifiableList(miningProtectZonesClient);
     }
 
     /**
@@ -250,16 +282,20 @@ public class ModKeyBindingEvents {
         // ★ 2026-10-09 链接一并清空（防换服后残留上个服务器的链接状态）
         stickLinkedItemClient = "";
         stickLinkedItemObjClient = null;
+        // ★ 2026-10-11 寻宝大师·已开容器过滤：断开重置为默认开
+        treasureFilterOnClient = true;
         operZonesClient.clear();
         protectZonesClient.clear();
+        miningProtectZonesClient.clear(); // ★ 2026-10-11 方块保护区多块
         // ⚠️ 2026-09-20 修复：天气模式客户端缓存原先漏了重置 → 换服后
         //    在服务端 GlobalState 推送到达前，技能树会显示**上个服务器**的天气模式。
         weatherModeClient = 0;
     }
 
     /**
-     * 木棍工具下一模式（2026-09-08）：0..5 顺序循环，但跳过【未解锁】的模式——
-     * BIND=学了容器绑技能；RANGE=学了磁铁；ZONE_PLACE/EXCAVATE/ATTACK/PROTECT=学了对应机械共鸣区块技能。
+     * 木棍工具下一模式：在 0..stickModeCount()-1 顺序循环，但跳过【未解锁】的模式——
+     * BIND=学了容器绑技能；RANGE=学了磁铁；
+     * ZONE_PLACE/EXCAVATE/ATTACK/PROTECT=学了对应机械共鸣区块技能；MARK=学了方块扫描。
      */
     public static int nextUnlockedStickMode(int current) {
         int total = Skills.stickModeCount();
@@ -504,6 +540,42 @@ public class ModKeyBindingEvents {
                                     "ui.zifeng_s_custom_skill_tree.stick_tool_link_ok",
                                     mainHand.getHoverName()), true);
                         }
+                    } else if (Skills.TREASURE_HUNTER.equals(skillId)) {
+                        // ★ 2026-10-11 寻宝大师：按触发键切换「已开容器过滤」开关
+                        //   （开启时本次会话已打开过的战利品容器不再显示金色轮廓）
+                        //   ⚠️ 不传玩家身份 —— 服务端只认 ctx.player()（权威）
+                        boolean now = !treasureFilterOnClient;
+                        treasureFilterOnClient = now; // 乐观更新（服务端回发数据包会校准）
+                        org.zifeng.skilltree.network.ModNetwork.sendToServer(
+                                new org.zifeng.skilltree.network.TreasureFilterC2SPacket(now));
+                        net.minecraft.client.player.LocalPlayer lp = Minecraft.getInstance().player;
+                        if (lp != null) {
+                            lp.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                                    now
+                                            ? "ui.zifeng_s_custom_skill_tree.treasure_filter_on"
+                                            : "ui.zifeng_s_custom_skill_tree.treasure_filter_off"), true);
+                        }
+                    } else if (Skills.BLOCK_SCAN.equals(skillId)) {
+                        // ★ 2026-10-11 方块扫描：按触发键【主动扫描一次】半径 64 格内的同类方块
+                        //   ⚠️ 纯客户端行为（高亮是渲染层）→ 不发包；技能未开/无标记时 scanNow 直接返回 -1
+                        int hits = org.zifeng.skilltree.client.ClientBlockScanEvents.scanNow();
+                        net.minecraft.client.player.LocalPlayer lp = Minecraft.getInstance().player;
+                        if (lp != null) {
+                            String msgKey;
+                            if (hits < 0) {
+                                // 未扫描：区分「技能没开」与「没有标记」，提示更明确
+                                msgKey = org.zifeng.skilltree.client.ModKeyBindingEvents
+                                        .isSkillEnabledClient(Skills.BLOCK_SCAN)
+                                        ? "ui.zifeng_s_custom_skill_tree.blockscan_no_marks"
+                                        : "ui.zifeng_s_custom_skill_tree.blockscan_off";
+                                lp.displayClientMessage(
+                                        net.minecraft.network.chat.Component.translatable(msgKey), true);
+                            } else {
+                                lp.displayClientMessage(net.minecraft.network.chat.Component.translatable(
+                                        "ui.zifeng_s_custom_skill_tree.blockscan_done", hits,
+                                        org.zifeng.skilltree.client.ClientBlockScanEvents.lastFaceCount()), true);
+                            }
+                        }
                     }
                 }
             }
@@ -523,6 +595,14 @@ public class ModKeyBindingEvents {
         }
         auraTargetModes.clear();
         auraTargetModes.putAll(modes);
+    }
+
+    /**
+     * 指定技能的模式客户端缓存（★ 2026-10-11）。
+     * <p>寻宝大师的渲染按此值过滤三类高亮（{@link Skills#TREASURE_MODE_ALL} 等）。
+     */
+    public static int getSkillModeClient(String skillId) {
+        return auraTargetModes.getOrDefault(skillId, 0);
     }
 
     /** 晴空环天气模式客户端缓存（2026-08-27：0=晴 1=雨 2=雷暴） */

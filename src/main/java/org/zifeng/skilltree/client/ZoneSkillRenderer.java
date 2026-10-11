@@ -83,10 +83,13 @@ public final class ZoneSkillRenderer {
         if (skill == null || !ZoneSelectionInputHandler.isZoneModuleActiveClient()) {
             return;
         }
-        // 当前模式展示区：防护 = 多块全画（上限 10）；其余技能 = 单块
+        // 当前模式展示区：防护/方块保护 = 多块全画（不限数量）；其余技能 = 单块
         java.util.List<OperZone> zones = new java.util.ArrayList<>();
         if (Skills.MACHINE_ZONE_PROTECT.equals(skill)) {
             zones.addAll(ModKeyBindingEvents.getProtectZonesClient());
+        } else if (Skills.MINING_PROTECT.equals(skill)) {
+            // ★ 2026-10-11 方块保护：多块，不限数量
+            zones.addAll(ModKeyBindingEvents.getMiningProtectZonesClient());
         } else {
             OperZone single = ModKeyBindingEvents.getOperZoneClient(skill);
             if (single != null) {

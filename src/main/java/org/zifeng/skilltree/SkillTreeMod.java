@@ -62,6 +62,8 @@ public class SkillTreeMod {
         NeoForge.EVENT_BUS.register(MagnetEvents.class);
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.LockEvents.class);
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.LootVacuumEvents.class);
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.BlockMarkEvents.class); // ★ 2026-10-11 方块扫描·方块标记
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.MiningProtectEvents.class); // ★ 2026-10-11 挖掘防护（选区免挖/免炸）
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.ContainerHaulEvents.class);
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.GiftEvents.class);
         // 垂钓（2026-10-03）：手动收杆走 ItemFishedEvent（自动垂钓在 Z-Link 模块里）

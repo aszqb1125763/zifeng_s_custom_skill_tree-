@@ -61,31 +61,40 @@ public record ZoneC2SPacket(int action, String dim,
                 }
                 PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
                 PlayerSkillRecord record = data.getOrCreatePlayer(player.getUUID());
-                // ===== 清除操作区（action 20-23）=====
-                if (packet.action() >= 20 && packet.action() <= 23) {
+                // ===== 清除操作区（action 20-24）=====
+                if (packet.action() >= 20 && packet.action() <= 24) {
                     String skillId = switch (packet.action()) {
                         case 20 -> Skills.MACHINE_ZONE_PLACE;
                         case 21 -> Skills.MACHINE_ZONE_EXCAVATE;
                         case 22 -> Skills.MACHINE_ZONE_ATTACK;
+                        case 24 -> Skills.MINING_PROTECT; // ★ 2026-10-11 挖掘防护
                         default -> Skills.MACHINE_ZONE_PROTECT;
                     };
                     if (packet.action() == 23) {
                         // 防护区多块：按坐标删单块（客户端射线命中的那块）
                         record.removeProtectZoneAt(packet.dim(), packet.ax(), packet.ay(), packet.az());
+                    } else if (packet.action() == 24) {
+                        // ★ 2026-10-11 方块保护多块：同样按坐标删单块（不再是「清除整块」）
+                        record.removeMiningProtectZoneAt(packet.dim(), packet.ax(), packet.ay(), packet.az());
                     } else {
                         record.setOperZone(skillId, null); // 单块技能：清除整块
                     }
                     data.setDirty();
                     org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                             SkillTreeDataS2CPacket.from(record));
+                    // ★ 2026-10-11 挖掘防护区被清除 → 全服广播（客户端恢复显示破坏进度条）
+                    if (Skills.MINING_PROTECT.equals(skillId)) {
+                        org.zifeng.skilltree.event.MiningProtectEvents.broadcastZones(player.getServer());
+                    }
                     return;
                 }
-                // ===== 设置操作区（action 0-3）=====
-                if (packet.action() >= 0 && packet.action() <= 3) {
+                // ===== 设置操作区（action 0-4）=====
+                if (packet.action() >= 0 && packet.action() <= 4) {
                     String skillId = switch (packet.action()) {
                         case 0 -> Skills.MACHINE_ZONE_PLACE;
                         case 1 -> Skills.MACHINE_ZONE_EXCAVATE;
                         case 2 -> Skills.MACHINE_ZONE_ATTACK;
+                        case 4 -> Skills.MINING_PROTECT; // ★ 2026-10-11 挖掘防护
                         default -> Skills.MACHINE_ZONE_PROTECT;
                     };
                     if (record.getLearnedPoints(skillId) <= 0) {
@@ -106,6 +115,9 @@ public record ZoneC2SPacket(int action, String dim,
                     if (packet.action() == 3) {
                         // 防护区多块：新增一块（上限 10，重复/满则忽略）
                         record.addProtectZone(new OperZone(curDim, minX, minY, minZ, maxX, maxY, maxZ));
+                    } else if (packet.action() == 4) {
+                        // ★ 2026-10-11 方块保护多块：新增一块（【不限数量】，仅重复则忽略）
+                        record.addMiningProtectZone(new OperZone(curDim, minX, minY, minZ, maxX, maxY, maxZ));
                     } else {
                         record.setOperZone(skillId, new OperZone(curDim, minX, minY, minZ, maxX, maxY, maxZ));
                     }
@@ -113,19 +125,25 @@ public record ZoneC2SPacket(int action, String dim,
                     // 回发校准（客户端渲染框）
                     org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                             SkillTreeDataS2CPacket.from(record));
+                    // ★ 2026-10-11 挖掘防护是【全服】生效 → 区变了要广播给所有人
+                    // （客户端据此抑制方块破坏进度条）
+                    if (Skills.MINING_PROTECT.equals(skillId)) {
+                        org.zifeng.skilltree.event.MiningProtectEvents.broadcastZones(player.getServer());
+                    }
                     return;
                 }
-                // ===== 微调操作区（action 30-33，木棍滚轮；2026-09-12 1.4.1）=====
+                // ===== 微调操作区（action 30-34，木棍滚轮；2026-09-12 1.4.1）=====
                 //   ax,ay,az = 射线命中到的区坐标（防护多块时用于定位；单块技能仅作冗余）
                 //   bx = 面序号（Direction ordinal，即“正对你的近面”）
                 //   by = 带符号步进（正=该面向外扩，负=向内缩）
                 //   服务端权威计算新区（不直接信任客户端传来的一整块区）
-                if (packet.action() >= 30 && packet.action() <= 33) {
+                if (packet.action() >= 30 && packet.action() <= 34) {
                     int idx = packet.action() - 30;
                     String skillId = switch (idx) {
                         case 0 -> Skills.MACHINE_ZONE_PLACE;
                         case 1 -> Skills.MACHINE_ZONE_EXCAVATE;
                         case 2 -> Skills.MACHINE_ZONE_ATTACK;
+                        case 4 -> Skills.MINING_PROTECT; // ★ 2026-10-11 挖掘防护
                         default -> Skills.MACHINE_ZONE_PROTECT;
                     };
                     if (record.getLearnedPoints(skillId) <= 0) {
@@ -135,9 +153,12 @@ public record ZoneC2SPacket(int action, String dim,
                     if (!curDim.equals(packet.dim())) {
                         return;
                     }
-                    OperZone old = idx == 3
-                            ? record.findProtectZoneAt(curDim, packet.ax(), packet.ay(), packet.az())
-                            : record.getOperZone(skillId);
+                    OperZone old = switch (idx) {
+                        case 3 -> record.findProtectZoneAt(curDim, packet.ax(), packet.ay(), packet.az());
+                        // ★ 2026-10-11 方块保护多块：同样靠射线命中点定位要微调的那一块
+                        case 4 -> record.findMiningProtectZoneAt(curDim, packet.ax(), packet.ay(), packet.az());
+                        default -> record.getOperZone(skillId);
+                    };
                     if (old == null) {
                         return;
                     }
@@ -158,6 +179,9 @@ public record ZoneC2SPacket(int action, String dim,
                     }
                     if (idx == 3) {
                         record.replaceProtectZone(old, updated);
+                    } else if (idx == 4) {
+                        // ★ 2026-10-11 方块保护多块
+                        record.replaceMiningProtectZone(old, updated);
                     } else {
                         record.setOperZone(skillId, updated);
                     }
@@ -170,6 +194,10 @@ public record ZoneC2SPacket(int action, String dim,
                             String.valueOf(updated.maxZ() - updated.minZ() + 1)), true);
                     org.zifeng.skilltree.network.ModNetwork.sendToPlayer(player,
                             SkillTreeDataS2CPacket.from(record));
+                    // ★ 2026-10-11 挖掘防护区被微调 → 全服广播
+                    if (Skills.MINING_PROTECT.equals(skillId)) {
+                        org.zifeng.skilltree.event.MiningProtectEvents.broadcastZones(player.getServer());
+                    }
                     return;
                 }
                 // ===== 触发 放置/挖掘 =====

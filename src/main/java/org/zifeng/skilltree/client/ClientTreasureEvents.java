@@ -10,15 +10,19 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BrushableBlockEntity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import org.zifeng.skilltree.skill.Skills;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 寻宝大师（TREASURE_HUNTER，2026-08-27）：64 格内战利品容器与考古刷扫点白色发光轮廓。
@@ -50,6 +54,16 @@ public class ClientTreasureEvents {
     private static final List<BlockPos> CACHED_SPAWNERS = new ArrayList<>();   // 刷怪笼（品红）
     private static int scanTimer = 0;
 
+    // ============ 已开容器过滤（★ 2026-10-11）============
+    /** 本次会话已打开过的战利品容器（客户端本地记忆；进服/换维度/重连由 {@link #resetSession()} 清空）。 */
+    private static final Set<GlobalPos> OPENED_CONTAINERS = new HashSet<>();
+    /** 待确认的「开箱」目标：右键容器方块时记下，等容器界面<b>真的</b>打开才落库（见 {@link #markOpened}）。 */
+    private static GlobalPos pendingOpen = null;
+    /** 待确认的时间戳（{@link ClientSession#now()} 口径） */
+    private static long pendingOpenAt = 0L;
+    /** 待确认有效期（tick）：右键后这么久还没打开容器界面 → 判定为误判并丢弃 */
+    private static final int PENDING_TTL_TICKS = 40;
+
     /** 水平 64 格 + 垂直 128 格的椭球范围判定（y 轴翻倍） */
     private static boolean withinRange(BlockPos center, double x, double y, double z) {
         double dx = x - center.getX();
@@ -63,6 +77,15 @@ public class ClientTreasureEvents {
     public static void onPlayerTick(PlayerTickEvent.Pre event) {
         if (!(event.getEntity() instanceof LocalPlayer)) {
             return;
+        }
+        // ★ 2026-10-11 每 tick 确认「已开容器」——不能放进 20 tick 的扫描里，否则开箱后要等 1 秒才反应
+        if (pendingOpen != null) {
+            if (ClientSession.now() - pendingOpenAt > PENDING_TTL_TICKS) {
+                pendingOpen = null; // 超时仍未打开容器界面 → 判为误判（手持方块右键等），丢弃
+            } else if (isContainerScreenOpen()) {
+                markOpened(pendingOpen);
+                pendingOpen = null;
+            }
         }
         scanTimer++;
         if (scanTimer < 20) {
@@ -99,7 +122,10 @@ public class ClientTreasureEvents {
                     //  品红 = 刷怪笼/试炼刷怪笼
                     // ⚠️ 2026-08-27：只标 RandomizableContainer 会漏掉无战利品表的普通箱子。
                     if (be instanceof net.minecraft.world.Container) {
-                        CACHED_TREASURES.add(pos);
+                        // ★ 2026-10-11：过滤开启时，本次会话已打开过的容器不再加入高亮列表
+                        if (!isOpenedHidden(pos)) {
+                            CACHED_TREASURES.add(pos);
+                        }
                     } else if (be instanceof BrushableBlockEntity) {
                         CACHED_ARCHAEOLOGY.add(pos); // 考古刷扫点：青色（样式区分，2026-08-27）
                     } else if (be instanceof net.minecraft.world.level.block.entity.SpawnerBlockEntity
@@ -162,9 +188,19 @@ public class ClientTreasureEvents {
         com.mojang.blaze3d.systems.RenderSystem.disableDepthTest();
         com.mojang.blaze3d.systems.RenderSystem.setShader(() -> GameRenderer.getPositionColorShader());
 
+        // ★ 2026-10-11：按当前模式决定显示哪几类（0 全部 / 1 仅容器 / 2 仅考古点 / 3 仅刷怪笼）
+        //   ⚠️ 在【渲染处】过滤而不是扫描处 —— 模式切换立即生效，无需等下一次 20 tick 扫描
+        final int treasureMode = ModKeyBindingEvents.getSkillModeClient(Skills.TREASURE_HUNTER);
+        final List<BlockPos> treasures = (treasureMode == Skills.TREASURE_MODE_ALL
+                || treasureMode == Skills.TREASURE_MODE_CONTAINER) ? CACHED_TREASURES : List.of();
+        final List<BlockPos> archaeology = (treasureMode == Skills.TREASURE_MODE_ALL
+                || treasureMode == Skills.TREASURE_MODE_ARCHAEOLOGY) ? CACHED_ARCHAEOLOGY : List.of();
+        final List<BlockPos> spawners = (treasureMode == Skills.TREASURE_MODE_ALL
+                || treasureMode == Skills.TREASURE_MODE_SPAWNER) ? CACHED_SPAWNERS : List.of();
+
         BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.DEBUG_LINES, DefaultVertexFormat.POSITION_COLOR);
-        // ===== 容器/考古点：金色双线框 =====
-        for (BlockPos pos : CACHED_TREASURES) {
+        // ===== 容器：金色双线框 =====
+        for (BlockPos pos : treasures) {
             // 双线框加粗：外框（扩 0.12 格，暗金）+ 内框（扩 0.03 格，亮金）→ 视觉粗线
             float x0 = pos.getX();
             float y0 = pos.getY();
@@ -181,7 +217,7 @@ public class ClientTreasureEvents {
                     INNER_R, INNER_G, INNER_B, OUTLINE_ALPHA);
         }
         // ===== 考古方块：青色双线框（样式区分，2026-08-27）=====
-        for (BlockPos pos : CACHED_ARCHAEOLOGY) {
+        for (BlockPos pos : archaeology) {
             float x0 = pos.getX();
             float y0 = pos.getY();
             float z0 = pos.getZ();
@@ -197,7 +233,7 @@ public class ClientTreasureEvents {
                     ARCH_INNER_R, ARCH_INNER_G, ARCH_INNER_B, OUTLINE_ALPHA);
         }
         // ===== 刷怪笼：品红色双线框（样式区分，2026-08-27）=====
-        for (BlockPos pos : CACHED_SPAWNERS) {
+        for (BlockPos pos : spawners) {
             float x0 = pos.getX();
             float y0 = pos.getY();
             float z0 = pos.getZ();
@@ -228,5 +264,91 @@ public class ClientTreasureEvents {
      */
     private static boolean isIrisShadowPass() {
         return IrisCompat.isShadowPass();
+    }
+
+    // ============ 已开容器过滤（★ 2026-10-11）============
+
+    /** 会话重置（由 {@link ClientSession#resetSession()} 登记调用）：已开容器属于「本次会话记忆」→ 清空。 */
+    public static void resetSession() {
+        OPENED_CONTAINERS.clear();
+        pendingOpen = null;
+        pendingOpenAt = 0L;
+    }
+
+    /**
+     * 右键方块（客户端）→ 只记下「待确认开箱目标」（★ 2026-10-11）。
+     *
+     * <p>⚠️ <b>不在这里直接落库</b>：右键不一定打开容器（手持方块会放置、潜行另有用语义）
+     * → 等容器界面<b>真的</b>打开时再由 {@link #onPlayerTick} 确认，把误判降到零。
+     * <p>信号可靠性：已确认 {@code MultiPlayerGameMode.performUseItemOn} 会调
+     * {@code CommonHooks.onRightClickBlock} → 本事件在<b>客户端也会触发</b>。
+     */
+    @SubscribeEvent
+    public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (!event.getLevel().isClientSide()) {
+            return; // 已开容器是客户端本地记忆，只处理客户端
+        }
+        if (event.getEntity() != Minecraft.getInstance().player) {
+            return; // 只认本地玩家
+        }
+        pendingOpen = GlobalPos.of(event.getLevel().dimension(), event.getPos().immutable());
+        pendingOpenAt = ClientSession.now();
+    }
+
+    /** 当前是否打开了容器界面（玩家背包 / 创造背包不算）—— 「开箱」的确认条件 */
+    private static boolean isContainerScreenOpen() {
+        net.minecraft.client.gui.screens.Screen screen = Minecraft.getInstance().screen;
+        return screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+                && !(screen instanceof net.minecraft.client.gui.screens.inventory.InventoryScreen);
+    }
+
+    /**
+     * 标记容器为「已打开」。
+     *
+     * <p>⚠️ 双箱子会<b>两半一起标记</b> —— 只标记点中的那一半，另一半还亮着，玩家会以为过滤没生效。
+     */
+    private static void markOpened(GlobalPos target) {
+        OPENED_CONTAINERS.add(target);
+        java.util.List<BlockPos> marked = new java.util.ArrayList<>();
+        marked.add(target.pos());
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level != null && mc.level.dimension().equals(target.dimension())) {
+            net.minecraft.world.level.block.state.BlockState state = mc.level.getBlockState(target.pos());
+            // ⚠️ getConnectedDirection 对【单个箱子】并不返回 null —— 源码是
+            //    `return TYPE == LEFT ? FACING.getClockWise() : FACING.getCounterClockWise();`
+            //    → 必须先排掉 SINGLE，否则单箱子会误标记一个邻居位置。
+            if (state.getBlock() instanceof net.minecraft.world.level.block.ChestBlock
+                    && state.getValue(net.minecraft.world.level.block.ChestBlock.TYPE)
+                    != net.minecraft.world.level.block.state.properties.ChestType.SINGLE) {
+                net.minecraft.core.Direction other =
+                        net.minecraft.world.level.block.ChestBlock.getConnectedDirection(state);
+                if (other != null) {
+                    BlockPos partner = target.pos().relative(other);
+                    // 再验一次邻居确实是箱子（防"左右半箱"状态与方块不一致的存档残留）
+                    if (mc.level.getBlockState(partner).getBlock()
+                            instanceof net.minecraft.world.level.block.ChestBlock) {
+                        OPENED_CONTAINERS.add(GlobalPos.of(target.dimension(), partner));
+                        marked.add(partner);
+                    }
+                }
+            }
+        }
+        // ★ 立即从高亮缓存移除（不等下一次周期扫描）—— 开箱即消失，与扫描间隔无关。
+        //   ⚠️ 只在过滤开启时移除：关闭时扫描会照常把它加回来，先移除会造成闪烁。
+        if (ModKeyBindingEvents.isTreasureFilterOnClient()) {
+            CACHED_TREASURES.removeAll(marked);
+        }
+    }
+
+    /** 该位置是否应因「已打开过」而从高亮中隐藏（过滤开关关闭时恒为 false） */
+    private static boolean isOpenedHidden(BlockPos pos) {
+        if (!ModKeyBindingEvents.isTreasureFilterOnClient()) {
+            return false;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            return false;
+        }
+        return OPENED_CONTAINERS.contains(GlobalPos.of(mc.level.dimension(), pos));
     }
 }

@@ -15,7 +15,7 @@ import org.zifeng.skilltree.data.PlayerSkillSavedData;
  * 木棍工具层操作（客户端 → 服务端，2026-09-08）：
  * <ul>
  *   <li>action=0 总开关切换（mode 忽略）：只把木棍手势占用/还原——不影响任何技能被动逻辑与已绑数据</li>
- *   <li>action=1 模式设置：把木棍模式设为 mode（0-5；客户端已按已解锁技能算好目标模式，
+ *   <li>action=1 模式设置：把木棍模式设为 mode（0..stickModeCount()-1，2026-10-11 共 7 态；客户端已按已解锁技能算好目标模式，
  *       服务端照单全收——⚠️ 2026-09-08 修复：旧版服务端固定 1-mode 只允许 BIND↔RANGE，
  *       导致切到 2-5（放置/挖掘/攻击/防护）后回发校准被弹回）</li>
  *   <li>action=2 <b>链接手势到当前主手物品类型</b>（★ 2026-10-09）：把「木棍手势」放开给手持的该类物品。
@@ -46,7 +46,7 @@ public record StickToolC2SPacket(int action, int mode) implements CustomPacketPa
                 if (packet.action() == 0) {
                     record.setStickToolOn(!record.isStickToolOn()); // 总开关取反
                 } else if (packet.action() == 1) {
-                    record.setStickToolMode(packet.mode()); // 目标模式（record 内部 clamp 0-5）
+                    record.setStickToolMode(packet.mode()); // 目标模式（record 内部按 stickModeCount 校验）
                 } else if (packet.action() == 2) {
                     // ★ 2026-10-09 把木棍手势链接到「当前主手物品的类型」
                     //   ⚠️ 服务端自读主手（权威），不接受客户端传来的物品 id。

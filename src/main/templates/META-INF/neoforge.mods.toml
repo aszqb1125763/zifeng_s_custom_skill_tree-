@@ -72,6 +72,19 @@ versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
 
+# ★ 2026-10-11 拼音搜索兼容（可选）：技能树搜索框在装了 Just Enough Characters 时支持拼音。
+#   未安装时搜索退化为「汉字 / 英文名 / 技能 ID 子串匹配」，功能正常，绝不崩游戏。
+#   ⚠️ 客户端模组（side = CLIENT）—— 服务端不需要装。
+#   ⚠️ versionRange 显式写出 [0,)（NeoForge 允许省略，但显式写更不容易踩坑）：
+#       Forge 侧漏写 versionRange 会被解析成空范围 '' → 即使 optional 也会硬崩启动，
+#       两版保持一致可避免将来移植时再踩。接受任何版本是因为我们的对接是反射 + 特性探测。
+[[dependencies."${mod_id}"]]
+modId = "jecharacters"
+type = "optional"
+versionRange = "[0,)"
+ordering = "AFTER"
+side = "CLIENT"
+
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares
 # that your mod requires GL version 3.2 or higher. Other features will be added. They are side aware so declaring this won't
 # stop your mod loading on the server for example.

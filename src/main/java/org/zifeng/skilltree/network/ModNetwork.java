@@ -32,12 +32,15 @@ public class ModNetwork {
         registrar.playToServer(ConverterRateC2SPacket.TYPE, ConverterRateC2SPacket.STREAM_CODEC, ConverterRateC2SPacket::handle);
         registrar.playToServer(WeatherModeC2SPacket.TYPE, WeatherModeC2SPacket.STREAM_CODEC, WeatherModeC2SPacket::handle);
         registrar.playToServer(StickToolC2SPacket.TYPE, StickToolC2SPacket.STREAM_CODEC, StickToolC2SPacket::handle); // 木棍工具层（2026-09-08）
+        registrar.playToServer(TreasureFilterC2SPacket.TYPE, TreasureFilterC2SPacket.STREAM_CODEC, TreasureFilterC2SPacket::handle); // 寻宝大师·已开容器过滤（2026-10-11）
         registrar.playToServer(ZoneC2SPacket.TYPE, ZoneC2SPacket.STREAM_CODEC, ZoneC2SPacket::handle); // 机械共鸣·操作区（2026-09-08）
         registrar.playToClient(GlobalStateS2CPacket.TYPE, GlobalStateS2CPacket.STREAM_CODEC, GlobalStateS2CPacket::handle);
         registrar.playToClient(SkillPointDeltaS2CPacket.TYPE, SkillPointDeltaS2CPacket.STREAM_CODEC, SkillPointDeltaS2CPacket::handle);
         // 磁铁屏蔽区（2026-09-07）：C2S 加/删区，S2C 回发当前区列表
         registrar.playToServer(MagnetExclusionC2SPacket.TYPE, MagnetExclusionC2SPacket.STREAM_CODEC, MagnetExclusionC2SPacket::handle);
         registrar.playToClient(MagnetExclusionS2CPacket.TYPE, MagnetExclusionS2CPacket.STREAM_CODEC, MagnetExclusionS2CPacket::handle);
+        // 挖掘防护区全局列表（★ 2026-10-11：客户端据此不显示破坏进度条）
+        registrar.playToClient(MiningProtectS2CPacket.TYPE, MiningProtectS2CPacket.STREAM_CODEC, MiningProtectS2CPacket::handle);
     }
 
     /** 服务端 → 指定玩家 */

@@ -41,7 +41,9 @@ public record AuraTargetC2SPacket(String skillId, int mode) implements CustomPac
                 // ★ 2026-09-30：战利品大爆发也是模式技能（4 态），原白名单漏了它 →
                 //    服务端直接忽略：切了没反应也没提示，玩家以为模式没生效。
                 boolean lootMode = Skills.LOOT_BOMB.equals(skillId);
-                if (!haul && !creatureTarget && !lootMode) {
+                // ★ 2026-10-11：寻宝大师也是模式技能（高亮类别 4 态）
+                boolean treasureMode = Skills.TREASURE_HUNTER.equals(skillId);
+                if (!haul && !creatureTarget && !lootMode && !treasureMode) {
                     return; // 其他技能无模式概念，忽略（不发提示不存档）
                 }
                 PlayerSkillSavedData data = PlayerSkillSavedData.get(player.serverLevel());
@@ -67,6 +69,20 @@ public record AuraTargetC2SPacket(String skillId, int mode) implements CustomPac
                     String icon = icons[Math.max(0, Math.min(3, packet.mode()))];
                     player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
                             "chat.zifeng_s_custom_skill_tree.loot_mode_switch", icon,
+                            Skills.getDisplayNameComponent(skillId),
+                            net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree." + modeKey)));
+                } else if (treasureMode) {
+                    // 寻宝大师：高亮类别 4 态（图标区分：🗺全部 / 📦仅容器 / 🏺仅考古点 / 👹仅刷怪笼）
+                    String[] icons = {"🗺", "📦", "🏺", "👹"};
+                    String modeKey = switch (packet.mode()) {
+                        case 1 -> "treasure_mode_container";
+                        case 2 -> "treasure_mode_archaeology";
+                        case 3 -> "treasure_mode_spawner";
+                        default -> "treasure_mode_all";
+                    };
+                    String icon = icons[Math.max(0, Math.min(3, packet.mode()))];
+                    player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                            "chat.zifeng_s_custom_skill_tree.treasure_mode_switch", icon,
                             Skills.getDisplayNameComponent(skillId),
                             net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree." + modeKey)));
                 } else {
