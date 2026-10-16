@@ -265,6 +265,22 @@ public class PlayerSkillRecord {
         return false;
     }
 
+    /**
+     * 目标是否落在任一防护区内 —— 按<b>碰撞箱相交</b>判定（★ 2026-10-16）。
+     *
+     * <p>与上面按方块格的版本相比，本版本不会漏掉「站在区边缘」「跳起」的生物
+     * ——见 {@link OperZone#intersects(net.minecraft.world.phys.AABB)} 的说明。
+     * <p>防护相关的新调用点请一律用本版本；方块格版本保留给「按格判定」的场景。
+     */
+    public boolean isInAnyProtectZone(String dim, net.minecraft.world.phys.AABB box) {
+        for (OperZone z : protectZones) {
+            if (z.dim().equals(dim) && z.intersects(box)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ============ 方块保护·多块列表（★ 2026-10-11：由单块改为多块，且不限数量） ============
     /**
      * 方块保护（{@code MINING_PROTECT}）的选区列表。

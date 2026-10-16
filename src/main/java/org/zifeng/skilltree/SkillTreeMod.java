@@ -64,6 +64,12 @@ public class SkillTreeMod {
         MinecraftForge.EVENT_BUS.register(UltimateEvents.class);
         // 奥术防护（2026-09-14）：魔法减伤/反射/虹吸/破法之刃/净化领域
         MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.event.ArcaneEvents.class);
+        // ★ 2026-10-16 防护区「完全免伤」兜底（庇护领域·防护选区内生物不受任何伤害）
+        //   走 LivingHurtEvent —— 与既有「全伤害免疫」（虚空之躯/全能精通）同一通道，
+        //   且覆盖玩家（LivingAttackEvent 对玩家不触发，见 ForgeHooks.onLivingAttack）。
+        //   ⚠️ 刻意注册在 UltimateEvents【之后】：让荆棘反伤 / 减伤计算等监听器先跑完，
+        //      本类最后清零，避免因取消事件而让它们的副作用逻辑失效。
+        MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.event.ProtectZoneGuardEvents.class);
         // ⚠️ 2026-09-09 Z-Link 迁移后 AuraEvents/ZoneSkillEvents 已无 @SubscribeEvent 方法 → 不再 register
         //    （逻辑已由 ZModules 模块接管；NeoForge 1.21.1 注册空类会直接崩，Forge 宽松但也应移除）
         MinecraftForge.EVENT_BUS.register(MagnetEvents.class);

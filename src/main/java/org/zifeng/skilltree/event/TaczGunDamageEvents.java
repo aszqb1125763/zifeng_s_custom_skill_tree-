@@ -90,6 +90,16 @@ public final class TaczGunDamageEvents {
             return;
         }
 
+        // ★ 2026-10-16 防护区完全免伤：目标落在任一防护区内 → 整套联动直接停手。
+        //   ⚠️ 必须放在【虚空诛灭秒杀之前】：voidSpearKill 的 forceFinish 走
+        //      setHealth + die，绕过 hurt()，受击兜底（ProtectZoneGuardEvents）拦不住它。
+        //   · 子弹自身的基础伤害不需要在这里处理 —— TaCZ 的 Pre 事件【不可取消】，
+        //     但子弹最终仍走 target.hurt()，由受击兜底统清零。
+        if (ZoneSkillEvents.inAnyProtectOf(ZoneSkillEvents.protectorsCached(level),
+                level.dimension().location().toString(), target)) {
+            return;
+        }
+
         // ★ 整个联动（附加光环伤害 + 修罗杀域的混沌附加 + 虚空诛灭的秒杀）都跟
         //   「杀戮弹幕」自己的开关走：关掉它就整套停用，不给"关了一半还在生效"的怪状态。
         final boolean linkOn = TaczSkills.auraLinkActive(player);

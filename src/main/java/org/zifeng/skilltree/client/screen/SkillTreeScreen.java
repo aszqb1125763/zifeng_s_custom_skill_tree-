@@ -480,6 +480,19 @@ public class SkillTreeScreen extends Screen {
     private final String[] catTitles = new String[CATEGORY_COUNT];
 
     /**
+     * 当前【有可见技能的类别号】列表（原顺序）—— 类别胶囊只按它渲染（★ 2026-10-13）。
+     *
+     * <p>为什么需要它：缺依赖模组时整列技能都会隐藏，此时该胶囊必须一并消失，
+     * 否则会留下一个「点进去一片空白」的死胶囊。
+     * <p>⚠️ 索引约定（渲染与命中判定都已按此改写）：
+     * {@link #catButtonX} / {@link #catButtonW} 用<b>显示序</b>（0..size-1），
+     * 而 {@link #catTitles} 用<b>类别号</b>（0..CATEGORY_COUNT-1）—— 两者不可混用。
+     *
+     * @see #refreshDisplayedCategories()
+     */
+    private final java.util.List<Integer> displayedCategories = new java.util.ArrayList<>();
+
+    /**
      * 字体行高（安全取）。
      * <p>⚠️ 2026-09-19 崩溃修复：`Screen.font` 要到 {@link #init()} 才被赋值，
      * 而 {@link #rebuildButtons()} 在<b>构造函数</b>里就会被调（updateData）——
@@ -1092,7 +1105,8 @@ public class SkillTreeScreen extends Screen {
                              net.minecraft.world.item.ItemStack iconStack,
                              net.minecraft.resources.ResourceLocation iconTex,
                              String name, int nameW, String effect, int effectW, String costText, int costW,
-                             String attrText, int attrW, int markW, int accent, boolean attrWarn) {
+                             String attrText, int attrW, int markW, int accent, boolean attrWarn,
+                             boolean depMissing) {
     }
 
     /** 颜色向白色混合（lighten）；t=0 原色，t=1 纯白 */
@@ -1319,8 +1333,16 @@ public class SkillTreeScreen extends Screen {
             0xFFAA55FF, 0xFF66CCFF, 0xFFD7D7D7, 0xFFE0B6C8, 0xFFC8A87C, 0xFF40E0D0, 0xFFFF8C42};
     /** 类别总数 */
     private static final int CATEGORY_COUNT = 12;
+    /** 木棍工具列的类别号（★ 2026-10-13 顺序整理：工具模块技能归到该列之下显示） */
+    private static final int CATEGORY_TOOL = 9;
 
-    /** 取第 i 个类别的技能列表 */
+    /**
+     * 第 i 个类别的技能<b>数据归属</b>（{@code Skills} 里的原始列表）。
+     *
+     * <p>⚠️ 界面显示请用 {@link #displayCategorySkills} —— 两者对木棍工具列不同
+     * （工具模块技能在显示上归到木棍工具列之下，数据上仍属原列）。
+     * 本方法只应被 {@link #displayCategorySkills} 调用。
+     */
     private static List<String> categorySkills(int i) {
         return switch (i) {
             case 0 -> Skills.MAGIC_SKILLS;
@@ -1337,6 +1359,123 @@ public class SkillTreeScreen extends Screen {
             case 11 -> Skills.GUN_SKILLS; // ★ 2026-10-11 枪械（TaCZ 兼容）
             default -> List.of(); // 越界（理论上不会）→ 空列，避免静默落到错误列
         };
+    }
+
+    /**
+     * 木棍工具「功能模块技能」—— 由 {@link Skills#skillForStickMode} 按<b>模式号</b>顺序推导
+     * （★ 2026-10-13 顺序整理）。
+     *
+     * <p>为什么推导而不是手写一份清单：木棍的每个工具模式各自对应一项技能。
+     * 以后新增模式只要在 {@code skillForStickMode} 里加一行，这里自动跟上，
+     * 不会出现「新模式有解锁技能、木棍工具列里却没显示」的漏配。
+     *
+     * <p>顺序即模式键的循环顺序：选区放置 → 选区挖掘 → 选区攻击 → 防护选区 →
+     * 方块标记（方块扫描）→ 方块保护。玩家按模式键往下翻，列的排列与之对应。
+     *
+     * <p>⚠️ <b>仅用于界面显示归类</b>：这些技能的 {@code getType}（上限 / 消耗 / 退点规则）
+     * 仍由它们在 {@link Skills} 里原本的列表决定。<b>绝不能</b>把它们真的搬进
+     * {@code Skills.TOOL_SKILLS} —— 那会改掉 getType，进而改掉技能点消耗，
+     * 让老存档的 totalSpent 对不上、退点金额算错。
+     */
+    private static final List<String> TOOL_MODULE_SKILLS = buildToolModuleSkills();
+
+    private static List<String> buildToolModuleSkills() {
+        List<String> out = new ArrayList<>();
+        // 顺序 = 模式号顺序（与模式键循环一致）。每个模式可能对应多项技能：
+        //   BIND 有 挪移术 / 搬运术 两项；其余模式各一项。
+        // ★ 2026-10-13：改用 Skills.stickModeUnlockers —— 它同时含【专有模块】与【联动技能】，
+        //   与工具卡 tooltip 的「已学功能模块」清单共用同一份数据。
+        for (int mode = 0; mode < Skills.stickModeCount(); mode++) {
+            for (String skill : Skills.stickModeUnlockers(mode)) {
+                if (!out.contains(skill)) {
+                    out.add(skill); // 去重：同一技能若将来被多个模式引用，也只列一次
+                }
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * 第 i 个类别在界面上的【显示】技能清单（★ 2026-10-13 顺序整理）。
+     *
+     * <p>与 {@link #categorySkills}（数据归属）唯一的差别：木棍工具的模块技能统一排到
+     * <b>木棍工具列</b>占位卡之下，并从原列（机械共鸣 / 特殊被动 / 光环）移出 ——
+     * 这样打开木棍工具列就是一份完整的「工具说明书」，原列也不再重复出现同一批技能。
+     *
+     * <p>⚠️ 因此<b>所有显示路径</b>（列表 / 搜索 / 类别色 / 前置所属类别提示）都必须走本方法；
+     * 直接调 {@link #categorySkills} 会拿到「尚未整理」的原始归属。
+     */
+    private static List<String> displayCategorySkills(int i) {
+        if (i == CATEGORY_TOOL) {
+            // 占位卡在最上（不是技能、不耗点），下面依次是各工具模式对应的技能
+            List<String> out = new ArrayList<>(Skills.TOOL_SKILLS.size() + TOOL_MODULE_SKILLS.size());
+            out.addAll(Skills.TOOL_SKILLS);
+            out.addAll(TOOL_MODULE_SKILLS);
+            return out;
+        }
+        List<String> raw = categorySkills(i);
+        List<String> out = new ArrayList<>(raw.size());
+        for (String s : raw) {
+            if (!TOOL_MODULE_SKILLS.contains(s)) {
+                out.add(s); // 已归到木棍工具列的项，从原列移出显示
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 该技能在当前环境<b>是否应该出现在技能列表里</b>（★ 2026-10-13）。
+     *
+     * <p>规则：依赖的兼容模组未安装 → 隐藏。
+     * <b>例外：已经学过的仍然显示</b> —— 旧版本允许未装模组时照常学并消耗技能点，
+     * 若一并隐藏，玩家会看到可用点数凭空少一截却查不出原因；
+     * 因此改为保留，并在卡片上用橙色标注「缺少 XXX 模组，暂不生效」。
+     *
+     * @see org.zifeng.skilltree.compat.ModDependencies
+     */
+    private boolean isSkillVisible(String skillId) {
+        return !org.zifeng.skilltree.compat.ModDependencies.isMissing(skillId)
+                || learnedSkills.getOrDefault(skillId, 0) > 0;
+    }
+
+    /** 第 i 类的【可见】技能列表（列表显示 / 搜索 / 胶囊保留判定 全部走它，避免各写一份过滤） */
+    private List<String> visibleCategorySkills(int i) {
+        // ★ 2026-10-13：先套【显示】归类（工具模块技能已归到木棍工具列之下）
+        List<String> raw = displayCategorySkills(i);
+        List<String> out = new ArrayList<>(raw.size());
+        for (String s : raw) {
+            if (isSkillVisible(s)) {
+                out.add(s);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 重算「有可见技能的类别」列表，并把失效的选中类别兜底到第一个可见类别。
+     *
+     * <p>★ 2026-10-13：某类别的兼容技能因缺模组全部隐藏时，该胶囊不再显示。
+     * <p>注意判据是「还有<b>任意</b>一项技能可见」，而不是「整列都依赖模组」——
+     * 只要有已学过的、或本来就是自有技能的项留下，胶囊就必须保留。
+     * 魔法增幅列正是这种混合列（26 项兼容 + 3 项自有「奥术防护」），
+     * 所以未装新生魔艺/铁魔法/诡术时它会变短，但不会消失。
+     */
+    private void refreshDisplayedCategories() {
+        displayedCategories.clear();
+        for (int i = 0; i < CATEGORY_COUNT; i++) {
+            // ★ 2026-10-13：用【显示】清单 —— 否则「某列的技能都搬去木棍工具列了」会被误判成
+            //   「该列还有技能」，从而留下一个点进去空白的死胶囊
+            for (String s : displayCategorySkills(i)) {
+                if (isSkillVisible(s)) {
+                    displayedCategories.add(i);
+                    break;
+                }
+            }
+        }
+        // 兜底：选中的类别整个消失了（例如玩家停在枪械列时卸掉 TaCZ）→ 回到第一个可见类别
+        if (!displayedCategories.contains(selectedCategory)) {
+            selectedCategory = displayedCategories.isEmpty() ? 0 : displayedCategories.get(0);
+        }
     }
 
     /**
@@ -1359,6 +1498,10 @@ public class SkillTreeScreen extends Screen {
     /** {@link #rebuildButtons} 的实际实现（保证在「设计空间」内执行） */
     private void rebuildButtonsInner() {
         buttons.clear();
+        // ★ 2026-10-13：先刷新「有可见技能的类别」并兜底选中项。
+        //   否则缺模组导致当前选中列整列消失时，这一轮会先按失效类别建出空列表，
+        //   要等下一次重建才恢复（表现为点开界面先闪一下空白）。
+        refreshDisplayedCategories();
         // 不在这里清空行视觉缓存：类别切换、搜索、窗口尺寸变化都会重排按钮，
         // 但技能数据本身未必变化。行缓存由 rowFingerprint 按数据版本懒更新，
         // 可避免无意义地重新计算整类技能。
@@ -1402,13 +1545,19 @@ public class SkillTreeScreen extends Screen {
         if (font == null) {
             return; // 字体未就绪（构造函数阶段）→ 等 init() 后再测宽
         }
+        // ★ 2026-10-13：先确定「哪些类别还有可见技能」——整列因缺模组隐藏的类别不参与布局。
+        //   注意 catTitles 仍按【类别号】缓存，catButtonX/W 按【显示序】——两者索引含义不同，别混。
+        refreshDisplayedCategories();
+        final java.util.List<Integer> cats = displayedCategories;
+        final int shown = cats.size();
         int total = 0;
-        for (int i = 0; i < CATEGORY_COUNT; i++) {
-            String title = catTitles[i] != null ? catTitles[i]
-                    : Component.translatable("ui.zifeng_s_custom_skill_tree." + CATEGORY_TITLE_KEYS[i]).getString();
-            catTitles[i] = title; // 缓存（只在此处解析，每帧不再查语言表）
-            catButtonW[i] = autoBoxW(CAT_BTN_PAD, 0, title);
-            total += catButtonW[i] + CAT_BTN_GAP;
+        for (int d = 0; d < shown; d++) {
+            final int cat = cats.get(d);
+            String title = catTitles[cat] != null ? catTitles[cat]
+                    : Component.translatable("ui.zifeng_s_custom_skill_tree." + CATEGORY_TITLE_KEYS[cat]).getString();
+            catTitles[cat] = title; // 缓存（只在此处解析，每帧不再查语言表）
+            catButtonW[d] = autoBoxW(CAT_BTN_PAD, 0, title);
+            total += catButtonW[d] + CAT_BTN_GAP;
         }
         catContentW = Math.max(0, total - CAT_BTN_GAP);
         int availW = catViewW();
@@ -1434,9 +1583,9 @@ public class SkillTreeScreen extends Screen {
         int centeredOffset = Math.max(0, (availW - catContentW) / 2);
         baseX = frameLeft() + FRAME_LINE + centeredOffset - catScrollX;
         int x = baseX;
-        for (int i = 0; i < CATEGORY_COUNT; i++) {
-            catButtonX[i] = x;
-            x += catButtonW[i] + CAT_BTN_GAP;
+        for (int d = 0; d < shown; d++) {
+            catButtonX[d] = x;
+            x += catButtonW[d] + CAT_BTN_GAP;
         }
     }
 
@@ -1973,19 +2122,22 @@ public class SkillTreeScreen extends Screen {
         enableScissorScaled(guiGraphics, frameLeft() + FRAME_LINE, catFrameTop() + FRAME_LINE,
                 frameRight() - FRAME_LINE, catFrameBottom() - FRAME_LINE);
         // ⚠️ 2026-09-19 性能优化：文本在建行时缓存 + 统一用默认的 gui 批次 fill —— 与「原版按钮」同一套做法。
-        for (int i = 0; i < CATEGORY_COUNT; i++) {
-            int x = catButtonX[i];
-            int w = catButtonW[i];
+        // ★ 2026-10-13：胶囊只画【有可见技能】的类别（映射见 refreshDisplayedCategories）
+        final java.util.List<Integer> cats = displayedCategories;
+        for (int d = 0; d < cats.size(); d++) {
+            final int cat = cats.get(d);
+            int x = catButtonX[d];
+            int w = catButtonW[d];
             if (x + w < frameLeft() || x > frameRight()) {
                 continue; // 横向滚动到框外的跳过
             }
-            String title = catTitles[i] != null ? catTitles[i] : "";
+            String title = catTitles[cat] != null ? catTitles[cat] : "";
             // ★ 2026-09-22 方案 B：框与字由同一个 AutoBox 决定宽度，不可能错位
             AutoBox box = new AutoBox(x, y, w, CAT_BTN_H, title);
-            boolean selected = (i == selectedCategory);
+            boolean selected = (cat == selectedCategory);
             boolean hovered = isMouseOverCategories(lastMouseX, lastMouseY) && box.contains(lastMouseX, lastMouseY);
             // ★ 2026-09-19：类别按钮改成【浅色圆角胶囊】（子贴片现在是浅色了，深色块会显重）
-            int accent = CATEGORY_COLORS[i];
+            int accent = CATEGORY_COLORS[cat];
             // ★ 2026-10-09 黑暗模式：未选中态的底/字随主题（选中态用类别色，本来就醒目，保持不变）
             int bg = selected ? darken(accent, 0.5f)
                     : (hovered ? SkillTreeTheme.catBgHover() : SkillTreeTheme.catBg());
@@ -2120,13 +2272,12 @@ public class SkillTreeScreen extends Screen {
             if (togglable && onRowY && lx >= kx && lx <= kx + KEY_BOX_WIDTH) {
                 boolean enabled = toggles.getOrDefault(button.skillId(), Boolean.TRUE);
                 var bound = org.zifeng.skilltree.client.SkillKeyBinds.getKey(button.skillId());
-                String boundText = bound != null ? t("tip_bound") + ": " + bound.getDisplayName().getString() : t("tip_unbound");
-                renderCrispTooltip(guiGraphics, java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_toggle", Skills.getDisplayNameComponent(button.skillId())),
-                                Component.literal(t("tip_current_status") + (enabled ? t("status_on") : t("status_off"))),
-                                Component.literal(boundText),
-                                Component.literal(t("tip_bind_hint")),
-                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
+                // ★ 2026-10-16 统一模板（作用 / 用法 / 绑定）
+                renderTooltipLines(guiGraphics, keyTip("key_toggle", button.skillId(),
+                                t("key_effect_toggle"),
+                                t("key_usage_toggle") + "\n" + t("tip_current_status")
+                                        + (enabled ? t("status_on") : t("status_off")),
+                                boundTextOf(bound)),
                         mouseX, mouseY + 12);
                 return;
             }
@@ -2135,92 +2286,46 @@ public class SkillTreeScreen extends Screen {
                 if (onRowY && lx >= k2x && lx <= k2x + KEY2_BOX_WIDTH) {
                     String skillId = button.skillId();
                     var bound = org.zifeng.skilltree.client.SkillKeyBinds.getLevelKey(skillId);
-                    String boundText = bound != null ? t("tip_bound") + ": " + bound.getDisplayName().getString() : t("tip_unbound");
-                    // 按技能独立描述（每个技能文案不同）
-                    java.util.List<Component> lines;
+                    // ★ 2026-10-16 统一模板：所有「第二列」提示都走 keyTip（作用 / 用法 / 绑定）。
+                    //   此前每个技能各自手拼行数组 —— 顺序、段名、绑定提示位置都不一致，
+                    //   玩家换个技能就得重新适应。现在只有「作用标题 + 用法文案」按技能不同。
+                    String titleKey = "key_mode";
+                    String effect = t("key_effect_mode");
+                    String usage;
                     if (Skills.AURA_DAMAGE.equals(skillId)) {
-                        String modeText = modeTextOf(skillId);
-                        lines = java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
-                                Component.literal(t("tip_aura_dmg_target") + "【" + modeText + "】"),
-                                Component.literal(t("tip_aura_mode_desc")),
-                                Component.literal(boundText),
-                                Component.literal(t("tip_bind_hint")),
-                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                        usage = t("tip_aura_dmg_target") + "【" + modeTextOf(skillId) + "】\n"
+                                + t("tip_aura_mode_desc");
                     } else if (Skills.AURA_SPEED.equals(skillId)) {
-                        String modeText = modeTextOf(skillId);
-                        lines = java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
-                                Component.literal(t("tip_aura_speed_target") + "【" + modeText + "】"),
-                                Component.literal(t("tip_aura_speed_desc")),
-                                Component.literal(boundText),
-                                Component.literal(t("tip_bind_hint")),
-                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                        usage = t("tip_aura_speed_target") + "【" + modeTextOf(skillId) + "】\n"
+                                + t("tip_aura_speed_desc");
                     } else if (Skills.AURA_HEAL.equals(skillId)) {
-                        String modeText = modeTextOf(skillId);
-                        lines = java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
-                                Component.literal(t("tip_aura_heal_target") + "【" + modeText + "】"),
-                                Component.literal(t("tip_aura_heal_desc")),
-                                Component.literal(boundText),
-                                Component.literal(t("tip_bind_hint")),
-                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                        usage = t("tip_aura_heal_target") + "【" + modeTextOf(skillId) + "】\n"
+                                + t("tip_aura_heal_desc");
                     } else if (Skills.isContainerHaul(skillId)) {
-                        // 子枫的搬运术：第二键 = 搬运模式循环（自动⇄手动）
-                        String haulMode = haulModeTextOf(skillId);
-                        lines = java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
-                                Component.literal(t("tip_haul_mode") + "【" + haulMode + "】"),
-                                Component.literal(t("tip_haul_mode_desc")),
-                                Component.literal(boundText),
-                                Component.literal(t("tip_bind_hint")),
-                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                        usage = t("tip_haul_mode") + "【" + haulModeTextOf(skillId) + "】\n"
+                                + t("tip_haul_mode_desc");
                     } else if (Skills.LOOT_BOMB.equals(skillId)) {
-                        // ★ 2026-09-30：战利品大爆发：第二键 = 4 态模式循环（全 / 仅堆叠 / 仅不堆叠 / 黑名单）
-                        String lootMode = lootModeTextOf(skillId);
-                        lines = java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
-                                Component.literal(t("tip_loot_mode") + "【" + lootMode + "】"),
-                                Component.literal(t("tip_loot_mode_desc")),
-                                Component.literal(boundText),
-                                Component.literal(t("tip_bind_hint")),
-                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                        usage = t("tip_loot_mode") + "【" + lootModeTextOf(skillId) + "】\n"
+                                + t("tip_loot_mode_desc");
                     } else if (Skills.TREASURE_HUNTER.equals(skillId)) {
-                        // ★ 2026-10-11 寻宝大师：第二键 = 4 态高亮类别循环（全部 / 仅容器 / 仅考古点 / 仅刷怪笼）
-                        String treasureMode = treasureModeTextOf(skillId);
-                        lines = java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
-                                Component.literal(t("tip_treasure_mode") + "【" + treasureMode + "】"),
-                                Component.literal(t("tip_treasure_mode_desc")),
-                                Component.literal(boundText),
-                                Component.literal(t("tip_bind_hint")),
-                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                        usage = t("tip_treasure_mode") + "【" + treasureModeTextOf(skillId) + "】\n"
+                                + t("tip_treasure_mode_desc");
                     } else if (Skills.isStickTool(skillId)) {
-                        // ★ 2026-10-11 木棍工具：第二键 = 在【已解锁模式】间循环（BIND/RANGE/放置/挖掘/攻击/防护/标记）。
-                        //   ⚠️ 之前落到最后的 else（"可调等级技能"文案）→ 描述完全不对，这里补专属分支。
-                        String stickMode = t(org.zifeng.skilltree.client.StickToolModes.modeLang(
-                                org.zifeng.skilltree.client.ModKeyBindingEvents.getStickToolModeClient()));
-                        lines = java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_mode", Skills.getDisplayNameComponent(skillId)),
-                                Component.literal(t("tip_stick_mode") + "【" + stickMode + "】"),
-                                Component.literal(t("tip_stick_mode_desc")),
-                                Component.literal(boundText),
-                                Component.literal(t("tip_bind_hint")),
-                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                        // 木棍工具：第二键 = 在【已解锁模式】之间循环
+                        usage = t("tip_stick_mode") + "【" + t(org.zifeng.skilltree.client.StickToolModes.modeLang(
+                                org.zifeng.skilltree.client.ModKeyBindingEvents.getStickToolModeClient())) + "】\n"
+                                + t("tip_stick_mode_desc");
                     } else {
-                        // 可调等级技能：显示当前生效/已学 + 操作说明（Shift=10级 Ctrl+Shift=100级 Alt反向）
+                        // 其余：可调等级技能 → 等级循环键
+                        titleKey = "key_level";
+                        effect = t("key_effect_level");
                         int learned = learnedSkills.getOrDefault(skillId, 0);
                         int active = activeLevels.getOrDefault(skillId, learned);
-                        lines = java.util.List.of(
-                                Component.translatable("ui.zifeng_s_custom_skill_tree.key_level", Skills.getDisplayNameComponent(skillId)),
-                                Component.literal(t("tip_current_active") + active + " / " + t("tip_learned") + learned),
-                                Component.literal(boundText),
-                                Component.literal(t("tip_key_steps")),
-                                Component.literal(t("tip_key_alt")),
-                                Component.literal(t("tip_bind_hint")),
-                                Component.literal(t("tip_clear_hint") + "(Backspace/Delete)"));
+                        usage = t("tip_current_active") + active + " / " + t("tip_learned") + learned + "\n"
+                                + t("tip_key_steps") + "\n" + t("tip_key_alt");
                     }
-                    renderCrispTooltip(guiGraphics, lines, mouseX, mouseY + 12);
+                    renderTooltipLines(guiGraphics, keyTip(titleKey, skillId, effect, usage, boundTextOf(bound)),
+                            mouseX, mouseY + 12);
                     return;
                 }
             }
@@ -2229,59 +2334,27 @@ public class SkillTreeScreen extends Screen {
                 if (onRowY && lx >= k3x && lx <= k3x + KEY3_BOX_WIDTH) {
                     String skillId = button.skillId();
                     var trig = org.zifeng.skilltree.client.SkillKeyBinds.getTriggerKey(skillId);
-                    String trigText = trig != null ? t("tip_bound") + ": " + trig.getDisplayName().getString() : t("tip_unbound");
+                    // ★ 2026-10-16 统一模板：触发键同样走 keyTip；只有「用法」一句按技能不同。
+                    String usage;
                     if (Skills.isContainerHaul(skillId)) {
-                        renderCrispTooltip(guiGraphics, java.util.List.of(
-                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
-                                        Component.literal(t("tip_haul_trigger")),
-                                        Component.literal(trigText),
-                                        Component.literal(t("tip_bind_hint")),
-                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
-                                mouseX, mouseY + 12);
+                        usage = t("tip_haul_trigger");
                     } else if (Skills.BLINK.equals(skillId)) {
-                        // 闪现（2026-09-07 规范改造）：触发键 = 按下向视线方向传送一次
-                        renderCrispTooltip(guiGraphics, java.util.List.of(
-                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
-                                        Component.literal(t("tip_blink_trigger")),
-                                        Component.literal(trigText),
-                                        Component.literal(t("tip_bind_hint")),
-                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
-                                mouseX, mouseY + 12);
+                        usage = t("tip_blink_trigger");
                     } else if (Skills.TREASURE_HUNTER.equals(skillId)) {
-                        // ★ 2026-10-11 寻宝大师：触发键 = 切换「已开容器过滤」开关
-                        renderCrispTooltip(guiGraphics, java.util.List.of(
-                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
-                                        Component.literal(t("tip_treasure_trigger")),
-                                        Component.literal(trigText),
-                                        Component.literal(t("tip_bind_hint")),
-                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
-                                mouseX, mouseY + 12);
+                        usage = t("tip_treasure_trigger");
                     } else if (Skills.BLOCK_SCAN.equals(skillId)) {
-                        // ★ 2026-10-11 方块扫描：触发键 = 主动扫描一次（标记的方块 id 同类全部高亮）
-                        renderCrispTooltip(guiGraphics, java.util.List.of(
-                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
-                                        Component.literal(t("tip_blockscan_trigger")),
-                                        Component.literal(trigText),
-                                        Component.literal(t("tip_bind_hint")),
-                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
-                                mouseX, mouseY + 12);
+                        usage = t("tip_blockscan_trigger");
                     } else if (Skills.isStickTool(skillId)) {
-                        // ★ 2026-10-11 木棍工具：触发键 = 把木棍手势链接到手持物品种类
-                        renderCrispTooltip(guiGraphics, java.util.List.of(
-                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
-                                        Component.literal(t("stick_tool_hint_link")),
-                                        Component.literal(trigText),
-                                        Component.literal(t("tip_bind_hint")),
-                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
-                                mouseX, mouseY + 12);
+                        usage = t("stick_tool_hint_link");
+                    } else if (Skills.MACHINE_ZONE_PLACE.equals(skillId)) {
+                        usage = t("tip_zone_place_trigger");
+                    } else if (Skills.MACHINE_ZONE_EXCAVATE.equals(skillId)) {
+                        usage = t("tip_zone_excavate_trigger");
                     } else {
-                        renderCrispTooltip(guiGraphics, java.util.List.of(
-                                        Component.translatable("ui.zifeng_s_custom_skill_tree.key_trigger", Skills.getDisplayNameComponent(skillId)),
-                                        Component.literal(trigText),
-                                        Component.literal(t("tip_bind_hint")),
-                                        Component.literal(t("tip_clear_hint") + "(Backspace/Delete)")),
-                                mouseX, mouseY + 12);
+                        usage = ""; // 兜底（isTriggerBindable 已覆盖全部触发型技能，理论不可达）
                     }
+                    renderTooltipLines(guiGraphics, keyTip("key_trigger", skillId,
+                            t("key_effect_trigger"), usage, boundTextOf(trig)), mouseX, mouseY + 12);
                     return;
                 }
             }
@@ -2429,8 +2502,6 @@ public class SkillTreeScreen extends Screen {
         if (Skills.isStickTool(skillId)) {
             boolean toolOn = org.zifeng.skilltree.client.ModKeyBindingEvents.isStickToolOnClient();
             int toolMode = org.zifeng.skilltree.client.ModKeyBindingEvents.getStickToolModeClient();
-            boolean magnet = org.zifeng.skilltree.client.ModKeyBindingEvents.isMagnetLearnedClientOnly();
-            boolean bindSkill = org.zifeng.skilltree.client.ModKeyBindingEvents.hasAnyStickToolSkillClient();
             java.util.List<TooltipLine> lines = new java.util.ArrayList<>();
             lines.add(new TooltipLine("[" + t("type_tool") + "] " + Skills.getDisplayNameComponent(skillId).getString(),
                     0xFFC8A87C, 1.15F));
@@ -2438,32 +2509,32 @@ public class SkillTreeScreen extends Screen {
             for (String line : Skills.getDescriptionComponent(skillId).getString().split("\\n")) {
                 lines.add(new TooltipLine(line, 0xFFDDDDDD, 1.0F));
             }
-            // 已学功能模块（决定各模式手势是否可用；6 模式按解锁技能勾选）
+            // 已学功能模块（决定各模式手势是否可用；按模式号顺序列出全部解锁技能）
+            // ★ 2026-10-13：改为统一取 Skills.stickModeUnlockers(m)。
+            //   原先 BIND / RANGE 是写死的特例分支（各自单独查一个布尔标记），
+            //   而「某模式由谁解锁」这份知识只应存在于 Skills 一处 ——
+            //   否则「木棍工具」列的归类会与本清单各自漂移（改了列、忘了清单）。
+            //   勾选 = 该模式的多项解锁技能【任一已学】即可用（BIND 两个绑技能满足其一即可）。
             lines.add(new TooltipLine(t("stick_tool_modules"), 0xFF888888, 1.0F));
             for (int m = 0; m < Skills.stickModeCount(); m++) {
-                if (m == Skills.STICK_MODE_BIND) { // 绑定模块=两绑技能
-                    String label = "  " + (bindSkill ? "✓ " : "✗ ") + Component.translatable(
-                            "skill.zifeng_s_custom_skill_tree.aura_loot_vacuum.name").getString() + " / "
-                            + Component.translatable("skill.zifeng_s_custom_skill_tree.container_haul.name").getString()
-                            + " (" + t("stick_tool_mod_bind") + ")";
-                    lines.add(new TooltipLine(label, bindSkill ? 0xFF55FF55 : 0xFF777777, 1.0F));
-                    continue;
+                java.util.List<String> unlockers = Skills.stickModeUnlockers(m);
+                if (unlockers.isEmpty()) {
+                    continue; // 无解锁技能的模式（理论上不会）
                 }
-                if (m == Skills.STICK_MODE_RANGE) { // RANGE=磁铁
-                    String label = "  " + (magnet ? "✓ " : "✗ ") + Component.translatable(
-                            "skill.zifeng_s_custom_skill_tree.aura_magnet.name").getString()
-                            + " (" + t("stick_tool_mod_range") + ")";
-                    lines.add(new TooltipLine(label, magnet ? 0xFF55FF55 : 0xFF777777, 1.0F));
-                    continue;
+                boolean anyLearned = false;
+                StringBuilder names = new StringBuilder();
+                for (String unlocker : unlockers) {
+                    if (names.length() > 0) {
+                        names.append(" / ");
+                    }
+                    names.append(Component.translatable(
+                            "skill.zifeng_s_custom_skill_tree." + unlocker + ".name").getString());
+                    anyLearned |= org.zifeng.skilltree.client.ModKeyBindingEvents
+                            .isSkillLearnedAnywhere(unlocker);
                 }
-                // 区块技能模式（放置/挖掘/攻击/防护）：勾选 = 对应技能已学
-                String zSkill = Skills.skillForStickMode(m);
-                boolean zLearned = zSkill != null && org.zifeng.skilltree.client.ModKeyBindingEvents
-                        .isSkillLearnedAnywhere(zSkill);
-                String zLabel = "  " + (zLearned ? "✓ " : "✗ ") + Component.translatable(
-                        "skill.zifeng_s_custom_skill_tree." + zSkill + ".name").getString()
+                String label = "  " + (anyLearned ? "✓ " : "✗ ") + names
                         + " (" + t(org.zifeng.skilltree.client.StickToolModes.modLang(m)) + ")";
-                lines.add(new TooltipLine(zLabel, zLearned ? 0xFF55FF55 : 0xFF777777, 1.0F));
+                lines.add(new TooltipLine(label, anyLearned ? 0xFF55FF55 : 0xFF777777, 1.0F));
             }
             lines.add(new TooltipLine(" ", 0xFF000000, 0.6F));
             lines.add(new TooltipLine(t("stick_tool_state") + "：" + t(toolOn ? "stick_tool_on" : "stick_tool_off"),
@@ -2613,10 +2684,14 @@ public class SkillTreeScreen extends Screen {
             }
         }
 
-        // 4. 模组缺失红字（MAGIC 且对应模组未装）
+        // 4. 模组缺失红字（对应模组未装 → 该技能暂时不生效）
+        //   ★ 2026-10-13：文案由「⚠ 未安装 XXX」改为「缺少 XXX 模组，暂不生效」——
+        //   未学过的缺模组技能已经被隐藏，现在还能看到的必然是「已学过但暂时无效」，
+        //   再说「未安装」会让人误以为根本没学过。
         String missingMod = missingModName(skillId);
         if (missingMod != null) {
-            lines.add(new TooltipLine(t("tip_no_mod") + missingMod, 0xFFFF5555, 0.95F));
+            lines.add(new TooltipLine(Component.translatable(
+                    "ui.zifeng_s_custom_skill_tree.dep_missing", missingMod).getString(), 0xFFFF5555, 0.95F));
         }
 
         // 5. 前置需求（金色标题 + 绿/红状态 + ★ 所属类别）
@@ -2688,6 +2763,11 @@ public class SkillTreeScreen extends Screen {
      * 故原「已学 X/Y 级 ·」前缀与「点数不足（需 X 点）」整句已移除。
      */
     private String buildStatusText(String skillId, Skills.SkillType type, int points, boolean enabled) {
+        // ★ 2026-10-13：已学过、但依赖模组当前缺失 → 优先说明「暂不生效」。
+        //   否则玩家会照着下面的「右键开关 · 滚轮调级」去操作，然后发现效果毫无变化。
+        if (points > 0 && missingModName(skillId) != null) {
+            return t("status_dep_inactive");
+        }
         if (points > 0) {
             return t("status_rbtn_toggle") + " · " + t("status_scroll");
         }
@@ -2740,36 +2820,225 @@ public class SkillTreeScreen extends Screen {
         if (lines.isEmpty()) {
             return;
         }
+        // ★ 2026-10-16 用户要求：长文案必须【自动折行】，且文案里的 \n 要真正生效。
+        //   旧实现把整串文字当一行画 —— 于是「快捷键描述太长」直接横向溢出，
+        //   而像 tip_blockscan_trigger 这种自带 \n 的文案，\n 被当成普通字符（画出乱码/丢字）。
+        //   统一在这里「先拆 \n、再按最大宽度折行」，所有 tooltip（技能描述 + 快捷键）一并受益。
+        lines = expandTooltipLines(lines);
+        if (lines.isEmpty()) {
+            return;
+        }
         int padX = 6, padY = 4;
         int[] layout = computeTooltipLayout(lines, mouseX, mouseY);
-        int x = layout[0], y = layout[1], maxWidth = layout[2], totalHeight = layout[3];
-        // 半透明背景 + 边框（guiOverlay：盖住第四图层按钮，但先于边框/面板提交 → 被它们盖住）
-        net.minecraft.client.renderer.RenderType overlay = net.minecraft.client.renderer.RenderType.guiOverlay();
-        guiGraphics.fill(overlay, x, y, x + maxWidth + padX * 2, y + totalHeight + padY * 2, 0xF0100010);
-        int border = 0xFF2E2E5E;
-        guiGraphics.fill(overlay, x, y, x + maxWidth + padX * 2, y + 1, border);
-        guiGraphics.fill(overlay, x, y + totalHeight + padY * 2 - 1, x + maxWidth + padX * 2, y + totalHeight + padY * 2, border);
-        guiGraphics.fill(overlay, x, y, x + 1, y + totalHeight + padY * 2, border);
-        guiGraphics.fill(overlay, x + maxWidth + padX * 2 - 1, y, x + maxWidth + padX * 2, y + totalHeight + padY * 2, border);
-        // 逐行绘制（独立字号/颜色）
-        int curY = y + padY;
-        for (TooltipLine line : lines) {
-            float s = line.scale();
-            guiGraphics.pose().pushPose();
-            guiGraphics.pose().translate(x + padX, curY, 0);
-            drawCrispScaledString(guiGraphics, line.text(), 0, 0, line.color(), s);
-            guiGraphics.pose().popPose();
-            curY += lh(s);
+        int x = layout[0], y = layout[1], maxWidth = layout[2];
+
+        // ★ 2026-10-16 修复「鼠标移动时每行文字上下浮动」（用户反馈）：
+        //   旧实现把 tooltip 留在【设计空间】里画（外层已 scale(r)，r 非整数），而每行文字
+        //   各自 round(tx + y*sy) 取整 —— 逐行独立舍入 + lh() 里的 ceil，导致相邻行的进位
+        //   时机不一致：鼠标一动，各行舍入不同步，行距就在 ±1px 间跳（看起来整块在浮动）。
+        //   现改为【整个 tooltip 一次性换到屏幕整数像素】（= 原版 tooltip 的做法）：
+        //     ① 位置只取整一次；② 行推进用【屏幕整数像素】累加；③ 背景高度由同一批整数求和，
+        //   于是「行距恒定、框与文字严丝合缝」，且字形落在整像素上（不会再吸附抖动）。
+        final double r = uiScale();
+        final int padPxX = (int) Math.round(padX * r);
+        final int padPxY = (int) Math.round(padY * r);
+        final int bx = (int) Math.round(x * r);
+        final int by = (int) Math.round(y * r);
+        final int[] steps = new int[lines.size()];
+        int textPx = 0;
+        for (int i = 0; i < lines.size(); i++) {
+            steps[i] = tooltipLineStepPx(lines.get(i).scale());
+            textPx += steps[i];
         }
+        final int boxW = (int) Math.round((maxWidth + padX * 2) * r);
+        final int boxH = padPxY * 2 + textPx;
+
+        final var pose = guiGraphics.pose();
+        pose.pushPose();
+        pose.setIdentity(); // 脱离界面缩放：以下全部按屏幕像素坐标
+        net.minecraft.client.renderer.RenderType overlay = net.minecraft.client.renderer.RenderType.guiOverlay();
+        guiGraphics.fill(overlay, bx, by, bx + boxW, by + boxH, 0xF0100010);
+        int border = 0xFF2E2E5E;
+        guiGraphics.fill(overlay, bx, by, bx + boxW, by + 1, border);
+        guiGraphics.fill(overlay, bx, by + boxH - 1, bx + boxW, by + boxH, border);
+        guiGraphics.fill(overlay, bx, by, bx + 1, by + boxH, border);
+        guiGraphics.fill(overlay, bx + boxW - 1, by, bx + boxW, by + boxH, border);
+        // 逐行绘制（独立字号/颜色）：基准 = 屏幕整数，行推进 = 屏幕整数累加
+        int curY = by + padPxY;
+        for (int i = 0; i < lines.size(); i++) {
+            TooltipLine line = lines.get(i);
+            pose.pushPose();
+            pose.translate(bx + padPxX, curY, 0);
+            drawCrispScaledString(guiGraphics, line.text(), 0, 0, line.color(), line.scale());
+            pose.popPose();
+            curY += steps[i];
+        }
+        pose.popPose();
     }
 
-    /** 快捷键框的原版 tooltip：文字走清晰绘制，避免非整数 pose 缩放把提示也糊掉。 */
-    private void renderCrispTooltip(GuiGraphics guiGraphics, java.util.List<Component> lines, int mouseX, int mouseY) {
-        java.util.List<TooltipLine> crisp = new java.util.ArrayList<>(lines.size());
-        for (Component line : lines) {
-            crisp.add(new TooltipLine(line.getString(), 0xFFFFFFFF, 1.0F));
+    /**
+     * tooltip 单行的<b>屏幕像素</b>步进高度（整数）—— 行距抖动的根治点。
+     *
+     * <p>原版 tooltip 的行推进就是「整数像素 × 行号」，本方法给它同一套口径。
+     * 之所以不用 {@link #lh(float)}（设计空间行高）：那个值要再 {@code ×r} 才能落到屏幕，
+     * 而 {@code r} 非整数时「逐行 ceil 再乘 r」会产生逐行不同步的舍入误差 —— 正是抖动来源。
+     *
+     * @param scale 该行字号（1.0 = 正文；标题 1.15；小字 0.8/0.9）
+     */
+    private int tooltipLineStepPx(float scale) {
+        return Math.round((font.lineHeight + TOOLTIP_LINE_GAP) * scale);
+    }
+
+    /**
+     * tooltip 文字的最大宽度（设计空间）——随界面宽度自适应。
+     *
+     * <p>取界面宽的 62%（上限 300、下限 120）：既不会窄到频繁折行，也不会宽到横向溢出。
+     * 设计空间宽度在渲染期已由 {@code render} 换算好，故直接读 {@link #width}。
+     */
+    private int tooltipMaxTextW() {
+        final int w = Math.max(1, width);
+        return Math.max(120, Math.min(300, (int) (w * 0.62)));
+    }
+
+    /**
+     * 把 tooltip 行「先按 {@code \n} 拆分、再按最大宽度折行」（★ 2026-10-16）。
+     *
+     * <p>为什么必须在排版前做：{@link #computeTooltipLayout} 要按折行后的宽度算框，
+     * 若先排版再折行，框会按「未折行的超宽文字」算 → 背景框比实际文字宽一大截。
+     *
+     * <p>折行策略：中文无空格 → 逐字符累加；英文/含空格 → 回退到最近的空格断开
+     * （避免把单词切成两半）。
+     */
+    private java.util.List<TooltipLine> expandTooltipLines(java.util.List<TooltipLine> lines) {
+        final int maxW = tooltipMaxTextW();
+        java.util.List<TooltipLine> out = new java.util.ArrayList<>(lines.size() + 6);
+        for (TooltipLine line : lines) {
+            final String text = line.text();
+            if (text == null || text.isEmpty()) {
+                out.add(line); // 空行（段间距）原样保留
+                continue;
+            }
+            for (String seg : text.split("\n", -1)) {
+                for (String piece : wrapToWidth(seg, line.scale(), maxW)) {
+                    out.add(new TooltipLine(piece, line.color(), line.scale()));
+                }
+            }
         }
-        renderTooltipLines(guiGraphics, crisp, mouseX, mouseY);
+        return out;
+    }
+
+    /**
+     * 把一段文本按【设计空间宽度】折成多行（★ 2026-10-16）。
+     *
+     * @param text  不含 {@code \n} 的单段文本
+     * @param scale 该行字号
+     * @param maxW  设计空间最大宽度（见 {@link #tooltipMaxTextW()}）
+     */
+    private java.util.List<String> wrapToWidth(String text, float scale, int maxW) {
+        java.util.List<String> out = new java.util.ArrayList<>(2);
+        if (text == null || text.isEmpty()) {
+            out.add("");
+            return out;
+        }
+        if (lw(text, scale) <= maxW) {
+            out.add(text); // 常见情形：不需要折行
+            return out;
+        }
+        final double r = uiScale();
+        final double toDesign = r <= 0 ? 1.0 : 1.0 / r; // 屏幕像素 → 设计空间
+        final StringBuilder cur = new StringBuilder();
+        double curW = 0;
+        for (int i = 0; i < text.length(); i++) {
+            // 代理对（部分 emoji）不能拆开，整体取一个「字」
+            int len = (Character.isHighSurrogate(text.charAt(i)) && i + 1 < text.length()) ? 2 : 1;
+            final String ch = text.substring(i, i + len);
+            i += len - 1;
+            final double chW = font.width(ch) * scale * toDesign;
+            if (curW + chW > maxW && cur.length() > 0) {
+                final int sp = cur.lastIndexOf(" ");
+                if (sp > 0 && sp >= cur.length() - 12) {
+                    // 英文/含空格：回退到最近的空格，避免把单词切成两半
+                    out.add(cur.substring(0, sp));
+                    final String rest = cur.substring(sp + 1) + ch;
+                    cur.setLength(0);
+                    cur.append(rest);
+                    curW = font.width(rest) * scale * toDesign;
+                } else {
+                    out.add(cur.toString());
+                    cur.setLength(0);
+                    cur.append(ch);
+                    curW = chW;
+                }
+            } else {
+                cur.append(ch);
+                curW += chW;
+            }
+        }
+        if (cur.length() > 0) {
+            out.add(cur.toString());
+        }
+        return out.isEmpty() ? java.util.List.of("") : out;
+    }
+
+    // ══════════ ★ 2026-10-16 快捷键 tooltip 统一模板 ══════════
+    //
+    // 【为什么需要】此前 15 处快捷键提示各自手拼行数组：顺序不一（有的状态在前、有的描述在前）、
+    //   段名不一、绑定/清空提示位置不一，玩家看不同技能要重新适应一遍。
+    //   现在所有快捷键提示一律经 keyTip() 生成，结构固定。
+    //
+    // 【模板（对齐技能描述的 3 段式）】
+    //   ⚡ 技能名 · 开关键
+    //
+    //   【作用】…（一句话说明这个键干什么）
+    //   【用法】…（怎么操作；可多行，自动折行）
+    //   【绑定】已绑定：K / 未绑定
+    //           点击进入绑定，按任意键设置 · 清空：Backspace/Delete
+
+    /** 【作用】段名 */
+    private static String secEffect() {
+        return t("key_sec_effect");
+    }
+
+    /** 【用法】段名 */
+    private static String secUsage() {
+        return t("key_sec_usage");
+    }
+
+    /** 【绑定】段名 */
+    private static String secBind() {
+        return t("key_sec_bind");
+    }
+
+    /**
+     * 组装快捷键 tooltip —— <b>所有</b>快捷键提示都必须经此生成（★ 2026-10-16 用户要求统一模板）。
+     *
+     * <p>结构见上方注释块；长文案由 {@link #expandTooltipLines} 自动折行，调用方直接用
+     * {@code \n} 分段即可，无需自己数宽度。
+     *
+     * @param titleKey 标题语言键后缀（{@code key_toggle} / {@code key_mode} / {@code key_level} / {@code key_trigger}）
+     * @param skillId  技能 id（标题里显示技能名）
+     * @param effect   ① 作用（一句话）
+     * @param usage    ② 用法（可用 {@code \n} 分段）
+     * @param bound    ③ 当前绑定状态文本（{@code 已绑定：X} / {@code 未绑定}）
+     */
+    private static java.util.List<TooltipLine> keyTip(String titleKey, String skillId,
+                                                      String effect, String usage, String bound) {
+        java.util.List<TooltipLine> out = new java.util.ArrayList<>(7);
+        out.add(new TooltipLine(Component.translatable("ui.zifeng_s_custom_skill_tree." + titleKey,
+                Skills.getDisplayNameComponent(skillId)).getString(), 0xFFFFFFFF, 1.0F));
+        out.add(new TooltipLine(" ", 0xFF000000, 0.5F));
+        out.add(new TooltipLine(secEffect() + effect, 0xFF8FD4FF, 1.0F));
+        out.add(new TooltipLine(secUsage() + usage, 0xFFDDDDDD, 1.0F));
+        out.add(new TooltipLine(secBind() + bound, 0xFFA8E08A, 1.0F));
+        // 固定尾行：绑定/清空操作（所有快捷键一致，玩家只需记一次）
+        out.add(new TooltipLine("   " + t("tip_bind_hint") + " · " + t("tip_clear_hint") + "Backspace/Delete",
+                0xFF888888, 0.9F));
+        return out;
+    }
+
+    /** 当前绑定状态文本（{@code 已绑定：X} / {@code 未绑定}）——统一措辞，避免各处写法不一 */
+    private static String boundTextOf(com.mojang.blaze3d.platform.InputConstants.Key key) {
+        return key != null ? t("tip_bound") + "：" + key.getDisplayName().getString() : t("tip_unbound");
     }
 
     /**
@@ -2979,8 +3248,9 @@ public class SkillTreeScreen extends Screen {
 
         // ② 左侧类别色条（3px，顶部/底部跟着圆角内缩）—— 横向扫一眼就能分出类别
         final int accent = v.accent();   // ★ 按本技能取色（搜索结果跨类别）
-        final int stripeColor = v.enabled() ? (v.learned() ? accent : (accent & 0x00FFFFFF) | 0x77000000)
-                : 0xFF7A7A7A;
+        final int stripeColor = v.depMissing() ? 0xFFFF8C00
+                : (v.enabled() ? (v.learned() ? accent : (accent & 0x00FFFFFF) | 0x77000000)
+                : 0xFF7A7A7A);
         // ★ 2026-09-20：搜索定位项 → 左侧色条加粗（3px → 5px）并提亮，配合白色边框形成"选中"观感
         if (searchHit) {
             fillRound(guiGraphics, x0 + 1, y0 + 1, x0 + 6, y0 + h - 1, 2, 0xFFFFFFFF);
@@ -3041,6 +3311,15 @@ public class SkillTreeScreen extends Screen {
                 guiGraphics.fill(sx + 1, sy + 1, sx + 3, sy + 3, 0xFFAEB6BE); // 内圈
                 guiGraphics.fill(sx + 1, sy + 1, sx + 2, sy + 2, 0xFFF0F3F5); // 高光十字
                 guiGraphics.fill(sx + 2, sy + 2, sx + 3, sy + 3, 0xFFF0F3F5);
+            }
+            // ★ 2026-10-13：缺依赖模组的已学技能 → 图标右上角橙色「!」角标。
+            //   这是卡片上最直观的一处标注（配合橙名 / 左侧橙条 / 属性区文案）。
+            if (v.depMissing()) {
+                int mx = iconX + 10;
+                int my = iconY - 2;
+                guiGraphics.fill(mx, my, mx + 7, my + 7, 0xFFFF8C00);
+                guiGraphics.fill(mx + 1, my + 1, mx + 6, my + 6, 0xFF3A2000);
+                drawCrispString(guiGraphics, "!", mx + 2, my + 1, 0xFFFFB347, false);
             }
             // 虚空系技能（虚空之矛/虚空之躯）：图标外圈金色边框（伤害吸收金边主题）
             if (Skills.AURA_VOID.equals(skillId) || Skills.ULT_VOID_BODY.equals(skillId)) {
@@ -3150,10 +3429,17 @@ public class SkillTreeScreen extends Screen {
             borderHover = accent;
         }
 
+        // ★ 2026-10-13：该技能是否缺少依赖模组。
+        //   能走到这里说明它一定【已学过】—— 未学过的缺模组技能在外层就被隐藏了。
+        //   所以这不是「不可学」，而是「当初装了模组学的、现在模组没了、暂时不生效」，
+        //   整行改用橙色警示（橙名 + 左侧橙条 + 图标角标 + 属性区文案），tooltip 另有完整说明。
+        final boolean noMod = missingModName(skillId) != null;
+
         // 文字颜色
         //   已学 = 白（贴片描边/左侧色条已经表达了「学没学」，文字不再重复变灰）
         //   未学 = 略暗；前置未满足 / 禁用 = 更暗
-        int nameColor = (!enabled || !prereqMet) ? 0xFF9A9A9A : (points > 0 ? 0xFFFFFFFF : 0xFFD8D8E8);
+        int nameColor = noMod ? 0xFFFFA83C
+                : ((!enabled || !prereqMet) ? 0xFF9A9A9A : (points > 0 ? 0xFFFFFFFF : 0xFFD8D8E8));
         int costColor = !prereqMet ? 0xFF7A7A7A : (canLearn ? 0xFFFFAA55 : 0xFFAAAAAA);
         int lvColor = !prereqMet ? 0xFF7A7A7A
                 : (isTool ? org.zifeng.skilltree.client.StickToolModes.colorOfMode(toolMode) : 0xFF55FF55);
@@ -3179,10 +3465,13 @@ public class SkillTreeScreen extends Screen {
         // 三行文本（沿用原有构建逻辑，这里只是改成「只在需要时构建」）
         double nextCost = recordNextCost(skillId);
         // ★ 属性加成文本（用户要求：名称与消耗之间显示「单技能增加属性」）
-        // ★ 2026-09-20 用户要求：未装对应模组（新生魔艺/铁魔法/Goety）时，属性区改为显示「⚠ 未装模组」
-        //   提示（这些技能必然不可学），否则玩家只看到空白，会误以为「这技能没有加成」。
+        // ★ 2026-09-20 用户要求：未装对应模组时，属性区改为显示提醒，否则玩家只看到空白，
+        //   会误以为「这技能没有加成」。
+        // ★ 2026-10-13：这里不再写「这些技能必然不可学」—— 那句已经过时。
+        //   未学过的缺模组技能现在会被直接隐藏，所以能渲染到这一行的必然是
+        //   「装了模组时学的、现在模组没了」的已学技能（见 #isSkillVisible）。
         //   只查一次缺模组结果，避免 skillAttrText 内部再查一遍。
-        final boolean attrNoMod = missingModName(skillId) != null;
+        final boolean attrNoMod = noMod; // 复用上面的判定，不再重复查一次
         String attrText = skillAttrText(skillId, points, attrNoMod);
         if (!attrText.isEmpty()) {
             // ★ 2026-09-21：按【收缩阶梯】的动态宽度裁切（原来写死 ATTR_AREA_W，
@@ -3202,7 +3491,7 @@ public class SkillTreeScreen extends Screen {
                 nameColor, costColor, lvColor, barFillR, barTickR, barColor,
                 isLevelBindable(skillId), Skills.isTriggerBindable(skillId), iconStack, iconTex,
                 texts.name(), lw(texts.name()), texts.effect(), lw(texts.effect()), costText, lw(costText),
-                attrText, attrW, markW, accent, attrNoMod);
+                attrText, attrW, markW, accent, attrNoMod, noMod);
     }
 
     /**
@@ -3557,36 +3846,17 @@ public class SkillTreeScreen extends Screen {
     }
 
     /**
-     * 其余模组兼容技能：返回缺失模组的中文名；模组已装或非兼容技能 → null。
-     * 新生魔艺（Ars Nouveau）/ 铁魔法（Iron's Spells）系列。
+     * 该技能当前是否缺少依赖模组 —— 缺则返回该模组的本地化名（如「铁魔法（Iron's Spells）」），否则 null。
+     *
+     * <p>★ 2026-10-13：判定已<b>集中</b>到 {@code compat.ModDependencies} ——
+     * 界面隐藏、胶囊隐藏、卡片标注三处必须共用同一份，否则早晚出现
+     * 「技能已隐藏、却还在提示缺模组」这类自相矛盾的状态。
+     * <p>本方法保留为薄委托：原有调用点（{@code canLearn} 的不可学判定、属性区红字、
+     * tooltip 提示、tooltip 数据指纹）一行都不用改。
+     * <p>※ 顺带补上了原本漏掉的 <b>AE2</b>（无限回路 / 寰宇法则列）。
      */
     private static String missingModName(String skillId) {
-        if (Skills.MANA_AMP.equals(skillId) || Skills.ARS_MANA_REGEN.equals(skillId)) {
-            return org.zifeng.skilltree.compat.ArsNouveauCompat.isLoaded() ? null : net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.mod_ars").getString();
-        }
-        if (Skills.IRON_MANA_AMP.equals(skillId) || Skills.IRON_MANA_REGEN.equals(skillId)
-                || Skills.IRON_CAST_TIME.equals(skillId) || Skills.IRON_COOLDOWN.equals(skillId)
-                || Skills.IRON_FIRE.equals(skillId) || Skills.IRON_ICE.equals(skillId) || Skills.IRON_LIGHTNING.equals(skillId)
-                || Skills.IRON_HOLY.equals(skillId) || Skills.IRON_ENDER.equals(skillId)
-                || Skills.IRON_BLOOD.equals(skillId) || Skills.IRON_EVOCATION.equals(skillId)
-                || Skills.IRON_NATURE.equals(skillId) || Skills.IRON_ELDRITCH.equals(skillId)) {
-            return org.zifeng.skilltree.compat.IronSpellsCompat.isLoaded() ? null : net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.mod_iron").getString();
-        }
-        // Goety（诡术，2026-09-20）：通用强度 / 通用灵魂折扣 / 9 流派精通，均需装 Goety 才能学
-        if (Skills.GOETY_POTENCY.equals(skillId) || Skills.GOETY_SOUL_DISCOUNT.equals(skillId)
-                || Skills.GOETY_ABYSS.equals(skillId) || Skills.GOETY_FROST.equals(skillId)
-                || Skills.GOETY_GEOMANCY.equals(skillId) || Skills.GOETY_NECROMANCY.equals(skillId)
-                || Skills.GOETY_NETHER.equals(skillId) || Skills.GOETY_STORM.equals(skillId)
-                || Skills.GOETY_VOID.equals(skillId) || Skills.GOETY_WILD.equals(skillId)
-                || Skills.GOETY_WIND.equals(skillId)) {
-            return org.zifeng.skilltree.compat.GoetyCompat.isLoaded() ? null : net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.mod_goety").getString();
-        }
-        // 枪械（★ 2026-10-11）：TaCZ 兼容技能，未装 TaCZ 则不可学
-        if (Skills.GUN_SKILLS.contains(skillId)) {
-            return org.zifeng.skilltree.compat.TaczSkills.isTaczLoaded() ? null
-                    : net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.mod_tacz").getString();
-        }
-        return null;
+        return org.zifeng.skilltree.compat.ModDependencies.missingName(skillId);
     }
 
     // ============ 属性面板 ============
@@ -4386,12 +4656,14 @@ public class SkillTreeScreen extends Screen {
     }
 
     /**
-     * 技能所属类别的索引（0~9）；未归类返回 -1。
+     * 技能所属类别的索引；未归类返回 -1。
      * <p>★ 搜索 / 每行类别色 / tooltip 前置分类提示 三处共用，避免各写一份遍历。
+     * <p>★ 2026-10-13：按【显示】归属返回 —— 木棍工具的模块技能要报「木棍工具」，
+     * 这样它们的行色、以及前置提示里的「（木棍工具）」都指向玩家实际看到的那一列。
      */
     private static int categoryIndexOf(String skillId) {
         for (int i = 0; i < CATEGORY_COUNT; i++) {
-            if (categorySkills(i).contains(skillId)) {
+            if (displayCategorySkills(i).contains(skillId)) {
                 return i;
             }
         }
@@ -4433,7 +4705,7 @@ public class SkillTreeScreen extends Screen {
      * <p>只缓存<b>最后一次</b>关键词就够：关键词只在按键时变，
      * 一次搜索引发的多次重复调用必然是同词。
      */
-    private static String searchCacheQuery = null;
+    private static String searchCacheKey = null;
     private static List<String> searchCacheResult = null;
 
     /**
@@ -4452,7 +4724,7 @@ public class SkillTreeScreen extends Screen {
     private static void clearSearchCaches() {
         SEARCH_TEXT_CACHE.clear();
         SEARCH_NAME_CACHE.clear(); // ★ 2026-10-11：显示名随语言变化，必须重取
-        searchCacheQuery = null;
+        searchCacheKey = null;
         searchCacheResult = null;
     }
 
@@ -4521,30 +4793,35 @@ public class SkillTreeScreen extends Screen {
     }
 
     /**
-     * 搜索结果：遍历全部 10 个类别，收集匹配的技能。
-     * <p>顺序 = 类别顺序（0~9）+ 类别内原顺序 → 稳定可预期，不随输入抖动。
-     * <p>带一层「上次关键词」缓存，见 {@link #searchCacheQuery}。
+     * 搜索结果：遍历全部类别，收集匹配的技能。
+     * <p>顺序 = 类别顺序 + 类别内原顺序 → 稳定可预期，不随输入抖动。
+     *
+     * <p>★ 2026-10-13：改为<b>实例方法</b>，且只遍历【可见】技能 ——
+     * 因缺模组而隐藏的兼容技能不该被搜出来（搜得到却点不了，比搜不到更糟）。
+     * <p>⚠️ 因此缓存键必须带上「已学技能集合」的指纹：
+     * 玩家刚学会某个兼容技能时它才由隐藏转为可见，若沿用旧的搜索结果会被继续挡住。
      */
-    private static List<String> searchResults(String q) {
-        if (q.equals(searchCacheQuery) && searchCacheResult != null) {
+    private List<String> searchResults(String q) {
+        String key = q + '\u0000' + learnedSkills.hashCode();
+        if (key.equals(searchCacheKey) && searchCacheResult != null) {
             return searchCacheResult;
         }
         List<String> out = new ArrayList<>();
         for (int i = 0; i < CATEGORY_COUNT; i++) {
-            for (String s : categorySkills(i)) {
+            for (String s : visibleCategorySkills(i)) {
                 if (matchesQuery(s, q)) {
                     out.add(s);
                 }
             }
         }
-        searchCacheQuery = q;
+        searchCacheKey = key;
         searchCacheResult = out;
         return out;
     }
 
     /** 当前列表数据源：搜索中 → 跨类别结果；否则 → 当前选中的类别 */
     private List<String> currentSkillSource() {
-        return isSearching() ? searchResults(searchQuery) : categorySkills(selectedCategory);
+        return isSearching() ? searchResults(searchQuery) : visibleCategorySkills(selectedCategory);
     }
 
     /**
@@ -4783,9 +5060,14 @@ public class SkillTreeScreen extends Screen {
         if (Skills.isStickTool(skillId)) {
             return "";
         }
-        // ★ 2026-09-20 用户要求：未装对应模组 → 属性区改为提示（这些技能在未装模组时必然 points=0）
+        // ★ 2026-09-20 用户要求：未装对应模组 → 属性区改为提示。
+        //   ★ 2026-10-13：注意这句「这些技能在未装模组时必然 points=0」已经<b>不成立</b>——
+        //   旧版本允许照常学，那些已学技能现在会保留显示（见 #isSkillVisible）。
+        //   所以提示必须说清【缺哪个模组】，而不只是「未装模组」：
+        //   玩家多半已经忘了自己是在装了模组时学的，只看到属性全空会很困惑。
         if (noMod) {
-            return t("attr_no_mod");
+            return Component.translatable("ui.zifeng_s_custom_skill_tree.attr_missing_dep",
+                    missingModName(skillId)).getString();
         }
         if (points <= 0) {
             return "";
@@ -5264,11 +5546,13 @@ public class SkillTreeScreen extends Screen {
             // ① 类别按钮行（分区框 2 内）：切换类别 → 回到顶部
             int catY = catFrameTop() + FRAME_LINE + LIST_TOP_GAP;
             if (isMouseOverCategories(mouseX, mouseY)) {
-                for (int i = 0; i < CATEGORY_COUNT; i++) {
+                final java.util.List<Integer> cats = displayedCategories; // ★ 2026-10-13：与渲染同一份映射
+                for (int d = 0; d < cats.size(); d++) {
                     if (mouseY >= catY && mouseY < catY + CAT_BTN_H
-                            && mouseX >= catButtonX[i] && mouseX < catButtonX[i] + catButtonW[i]) {
-                        if (selectedCategory != i) {
-                            selectedCategory = i;
+                            && mouseX >= catButtonX[d] && mouseX < catButtonX[d] + catButtonW[d]) {
+                        final int cat = cats.get(d);
+                        if (selectedCategory != cat) {
+                            selectedCategory = cat;
                         }
                         searchSelectedId = null;   // ★ 2026-09-20：切类别清掉搜索定位项
                         scrollY = 0;

@@ -77,6 +77,29 @@ public record OperZone(String dim, int ax, int ay, int az, int bx, int by, int b
                 && pos.getZ() >= minZ() && pos.getZ() <= maxZ();
     }
 
+    /**
+     * 实体碰撞箱是否与区<b>相交</b>（★ 2026-10-16）。
+     *
+     * <p><b>为什么不用 {@link #contains(BlockPos)}</b>：那个是「一格是否在区内」，
+     * 用它判生物等于只取<b>脚下方块一个点</b>。而生物有碰撞箱（宽 0.6 / 高 1.8 起，
+     * 铁傀儡、末影龙更大），于是：
+     * <ul>
+     *   <li>生物<b>站在区边缘</b>，脚在区外、身体一半在区内 → 判为「在区外」；</li>
+     *   <li>区只框了 1 格高、生物<b>跳起来</b> → 脚离开那一格，同样判为「在区外」。</li>
+     * </ul>
+     * 两种都会让玩家看到「我明明框住了，它还是被打」——即防护区"没防护到"的主因之一。
+     * 改用碰撞箱相交后，只要<b>身体有任何一部分在区内</b>就算被保护，符合玩家直觉。
+     *
+     * @param box 实体碰撞箱（{@code entity.getBoundingBox()}）
+     */
+    public boolean intersects(net.minecraft.world.phys.AABB box) {
+        // ⚠️ 方块格 [min, max] 占据的连续空间是 [min, max+1) —— 右/上/后边界要 +1，
+        //    否则最外一圈方块只有「小于边界」才算区内，边缘会少半格。
+        return box.maxX > minX() && box.minX < maxX() + 1
+                && box.maxY > minY() && box.minY < maxY() + 1
+                && box.maxZ > minZ() && box.minZ < maxZ() + 1;
+    }
+
     /** 遍历区内全部方块格（含边界两角；先 X 后 Y 后 Z） */
     public Iterable<net.minecraft.core.BlockPos> blockPositions() {
         return net.minecraft.core.BlockPos.betweenClosed(minX(), minY(), minZ(), maxX(), maxY(), maxZ());
