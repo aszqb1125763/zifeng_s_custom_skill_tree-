@@ -1,0 +1,147 @@
+package org.zifeng.skilltree;
+
+import com.mojang.logging.LogUtils;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.neoforge.common.NeoForge;
+import org.slf4j.Logger;
+import org.zifeng.skilltree.client.ClientRegistrar;
+import org.zifeng.skilltree.event.MagnetEvents;
+import org.zifeng.skilltree.event.SkillEvents;
+import org.zifeng.skilltree.event.UltimateEvents;
+import org.zifeng.skilltree.init.ModBlockEntities;
+import org.zifeng.skilltree.init.ModBlocks;
+import org.zifeng.skilltree.init.ModAttributes;
+import org.zifeng.skilltree.init.ModCapabilities;
+import org.zifeng.skilltree.init.ModCreativeTabs;
+import org.zifeng.skilltree.init.ModItems;
+import org.zifeng.skilltree.init.ModMenus;
+import org.zifeng.skilltree.network.ModNetwork;
+
+@Mod(SkillTreeMod.MOD_ID)
+public class SkillTreeMod {
+    public static final String MOD_ID = "zifeng_s_custom_skill_tree";
+    public static final Logger LOGGER = LogUtils.getLogger();
+
+    public SkillTreeMod(IEventBus modEventBus, ModContainer modContainer) {
+        ModBlocks.BLOCKS.register(modEventBus);
+        ModItems.ITEMS.register(modEventBus);
+        ModBlockEntities.BLOCK_ENTITIES.register(modEventBus);
+        ModMenus.MENUS.register(modEventBus);
+        ModCreativeTabs.TABS.register(modEventBus);
+        ModAttributes.ATTRIBUTES.register(modEventBus);
+        org.zifeng.skilltree.init.ModDamageTypes.DAMAGE_TYPES.register(modEventBus);
+
+        modEventBus.addListener(ModNetwork::register);
+        modEventBus.addListener(ModCapabilities::registerCapabilities);
+        modEventBus.addListener(SkillEvents::registerPlayerAttributes);
+        // Flux-Networks long 能量兼容（2026-08-25：未装 Flux 时安全跳过）
+        org.zifeng.skilltree.compat.FluxCompat.register(modEventBus);
+
+        // 自动熔炼黑名单指令（/hmd 添加、/delhmd 删除，2026-08-13 恢复）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.RegisterCommandsEvent event) ->
+                org.zifeng.skilltree.command.ModCommands.register(event.getDispatcher()));
+
+        // 玩家技能数据管理指令（/zifengskilltree reset | points set | points add，2026-09-04 1.3.7）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.RegisterCommandsEvent event) ->
+                org.zifeng.skilltree.command.SkillTreeAdminCommands.register(event.getDispatcher()));
+
+        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        // Config 热重载/加载后重挂在线玩家属性（2026-08-29：属性每点加成进 Config 后需即时生效）
+        modEventBus.addListener(Config::onConfigChanged);
+
+        NeoForge.EVENT_BUS.register(SkillEvents.class);
+        NeoForge.EVENT_BUS.register(UltimateEvents.class);
+        // 奥术防护（2026-09-14）：魔法减伤/反射/虹吸/破法之刃/净化领域
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.ArcaneEvents.class);
+        // ★ 2026-10-16 防护区「完全免伤」兜底（庇护领域·防护选区内生物不受任何伤害）
+        //   走 LivingIncomingDamageEvent —— 与既有「全伤害免疫」（虚空之躯/全能精通）同一通道。
+        //   ⚠️ 刻意注册在 UltimateEvents【之后】：让荆棘反伤 / 减伤计算等监听器先跑完，
+        //      本类最后清零，避免因取消事件而让它们的副作用逻辑失效。
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.ProtectZoneGuardEvents.class);
+        // ⚠️ 2026-09-09 Z-Link 迁移后 AuraEvents/ZoneSkillEvents 已无 @SubscribeEvent 方法，
+        //    NeoForge 注册空类会崩（has no @SubscribeEvent methods）→ 不再 register（逻辑已由 ZModules 模块接管）。
+        NeoForge.EVENT_BUS.register(MagnetEvents.class);
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.LockEvents.class);
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.LootVacuumEvents.class);
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.BlockMarkEvents.class); // ★ 2026-10-11 方块扫描·方块标记
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.MiningProtectEvents.class); // ★ 2026-10-11 挖掘防护（选区免挖/免炸）
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.ContainerHaulEvents.class);
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.GiftEvents.class);
+        // 垂钓（2026-10-03）：手动收杆走 ItemFishedEvent（自动垂钓在 Z-Link 模块里）
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.event.FishingEvents.class);
+        // 主系统 Tick 末合并推送（2026-08-28 架构升级：一 tick 内多次 markDirty → 末尾合并成一次）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) -> {
+            org.zifeng.skilltree.GlobalStateSync.onServerTickEnd();
+        });
+        // Z-Link 模块登记（2026-09-09）：集中登记所有功能模块（调度器按条件驱动/冬眠）。
+        // 【系统清单】每迁一个技能在此 +1 行；未登记 = 该技能仍走原事件（调度零影响）。
+        //   · 磁力光环（磁铁吸物/吸经验）—— 已迁 MagnetModule
+        //   · 杀戮光环·伤害（含虚空之矛/强化）—— 已迁 AuraDamageModule
+        //   · 治愈光环 —— 已迁 AuraHealModule
+        //   · 汲灵之环 —— 已迁 AuraXpModule
+        //   · 终极节点/常驻效果 tick 链 —— 已迁 UltimateTickModule（2026-09-09）
+        //   · 子枫的馈赠（时间/移动/飞行累计）—— 已迁 GiftModule（2026-09-09）
+        //   · 机械共鸣·选区攻击 —— 已迁 ZoneAttackModule（2026-09-09）
+        //   · 时之环/晴空环（全局 gamerule 锁定）—— 已迁 GlobalRuleModule（2026-09-09）
+        //   · 机械共鸣·选区作业（分批跳 tick）—— 已迁 ZoneWorkModule（2026-09-12）
+        //
+        // ⚠️ 2026-09-10 修复（严重 bug）：注册动作提取为可重复执行的 Runnable，
+        //    并在【服务器每次启动】时幂等重跑（registerAll 内部 putIfAbsent，重复安全）。
+        //    原因：旧实现只在 mod 构造器注册一次，而 onServerStop 会清空注册表 →
+        //    单人游戏"退出世界→重进世界"后注册表永久为空 → 8 个模块全不跑。
+        java.lang.Runnable zlinkRegister = () -> org.zifeng.skilltree.system.ZModules.registerAll(
+                org.zifeng.skilltree.system.MagnetModule.INSTANCE,
+                org.zifeng.skilltree.system.AuraDamageModule.INSTANCE,
+                org.zifeng.skilltree.system.AuraHealModule.INSTANCE,
+                org.zifeng.skilltree.system.AuraXpModule.INSTANCE,
+                org.zifeng.skilltree.system.UltimateTickModule.INSTANCE,
+                org.zifeng.skilltree.system.GiftModule.INSTANCE,
+                org.zifeng.skilltree.system.ZoneAttackModule.INSTANCE,
+                org.zifeng.skilltree.system.GlobalRuleModule.INSTANCE,
+                // 机械共鸣·选区作业（分批跳 tick 处理）—— 2026-09-12 1.4.1 新增
+                org.zifeng.skilltree.system.ZoneWorkModule.INSTANCE,
+                // 垂钓·全自动垂钓（倒计时产鱼）—— 2026-10-03 新增
+                org.zifeng.skilltree.system.FishingAutoModule.INSTANCE);
+        zlinkRegister.run(); // 首次登记（构造期）
+        org.zifeng.skilltree.system.ZModules.setHealAction(zlinkRegister); // 注册表异常时的自愈动作
+        // 双保险：服务器启动时再幂等登记一次（自愈任何意外清空）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.server.ServerStartedEvent event) -> zlinkRegister.run());
+        // Z-Link 模块调度器（2026-09-09 骨架 v1）：每服务器 tick 末驱动一次全部已登记模块
+        // （条件不满足的模块自动冬眠，零开销；未登记模块时整个调度直接 return）。
+        // ⚠️ 2026-09-10 修复（链接玩家，不分维度）：旧实现传 server.overworld() 后 ZModules 内部
+        //    取 ServerLevel.players() —— 那只返回【主世界】的玩家 → 玩家离开主世界（下界/末地/模组维度）
+        //    后 8 个模块全部冬眠（飞行不授予、馈赠不累计、磁铁不吸物…严重 bug）。
+        //    现改为直接传 server（驱动源 = 全服在线玩家，与原版 tickChildren 同款）。
+        // ⚠️ 记录 tick 起点（NeoForge 拆成 Pre/Post）：选区作业在 Post（tick 末尾）运行，
+        //    用 Pre 记录的时间算「本 tick 还剩多少时间」→ 自适应预算（TickClock / ZONE_MSP_LIMIT_MS）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Pre event) ->
+                org.zifeng.skilltree.system.TickClock.markTickStart());
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) -> {
+            net.minecraft.server.MinecraftServer server = event.getServer();
+            if (server != null) {
+                org.zifeng.skilltree.system.ZModules.onServerTick(server);
+            }
+        });
+        // Z-Link 玩家登出清理（2026-09-09）：广播模块清理该玩家临时状态（防跨服残留）
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) -> {
+            if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp) {
+                org.zifeng.skilltree.system.ZModules.onPlayerLogout(sp);
+            }
+        });
+        // Z-Link 服务器停止清理（2026-09-09）：广播模块清理全局状态 + 清空注册表
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.server.ServerStoppedEvent event) -> {
+            org.zifeng.skilltree.system.ZModules.onServerStop();
+            org.zifeng.skilltree.system.TickClock.reset(); // tick 时钟一并清空（防跨存档残留旧时间戳）
+        });
+
+        // ⚠️ 26.1.2：FMLLoader.getDist() 已不是静态可用 → 改用 FMLEnvironment.getDist()（同为 FML 加载期常量）
+        if (FMLEnvironment.getDist().isClient()) {
+            ClientRegistrar.register(modEventBus);
+        }
+        LOGGER.info("[{}] 模组加载完成！", MOD_ID);
+    }
+}

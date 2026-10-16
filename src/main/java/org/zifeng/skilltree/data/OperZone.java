@@ -1,0 +1,152 @@
+package org.zifeng.skilltree.data;
+
+/**
+ * 木棍工具·操作区（2026-09-08，单人生效，存玩家 PlayerSkillRecord）：
+ * 机械共鸣区块技能（放置/挖掘/攻击/防护）各自框选的一块区域。
+ * 维度 + AABB 两角（a/b 不要求顺序，读取用 min/max 归一化）；单边 ≤ {@link #MAX_SIDE_ZONE} 格。
+ */
+public record OperZone(String dim, int ax, int ay, int az, int bx, int by, int bz) {
+    /**
+     * 选区单边最大跨度（相邻两角坐标差上限：{@code max - min <= MAX_SIDE}）。
+     * <p><b>区块技能与磁铁屏蔽区共用本常量</b>——两处客户端本地校验 + 服务端权威校验都必须用它，
+     * 避免改一处漏一处导致「客户端能框、服务端拒绝」的分歧。
+     * <p>⚠️ 2026-09-12（1.4.1）由 <b>64 提升到 256</b>（用户需求）。
+     * 注意：大选区由 {@code ZoneWorkModule} 分 tick 处理（不再单帧卡死），
+     * 远超阈值时客户端会提示可能卡顿（见 {@code ZoneSelectionInputHandler}）。
+     * <p>⚠️ 2026-09-19：本常量现已<b>只用于磁铁屏蔽区</b>；选区技能改用
+     * {@link #MAX_SIDE_ZONE}（512）——参见下方注释。
+     */
+    public static final int MAX_SIDE = 256;
+
+    /**
+     * <b>选区技能</b>单边最大跨度（2026-09-19 新增，与磁铁屏蔽区分离）。
+     *
+     * <p><b>为何要拆开</b>：本 record 同时承载【磁铁屏蔽区】与【选区技能】两种用途，
+     * 而它们对“多大算合理”的诉求完全不同：
+     * <ul>
+     *   <li>磁铁屏蔽区：排除区，开得越大磁铁失效范围越大 → 不适宜放大（保持 256）</li>
+     *   <li>选区技能：玩家主动开挖，越大越好 → 提升到 512（用户需求）</li>
+     * </ul>
+     * 两者共用同一个常量时，提高上限会连带放开磁铁（非预期）。
+     *
+     * <p><b>512 为什么能跑得住</b>：{@code ZoneSkillEvents} 把选区按 X-Z 平面切成
+     * 批次边长 {@code zoneBatchSide}（默认 256）的块逐批处理（批内仍是「整柱自上而下」），
+     * 因此单批规模与原来的 256³ 同量级，内存与单 tick 负载不随总选区面积增长。
+     *
+     * <p>⚠️ 引用本常量的地方（客户端本地校验 / 服务端权威校验 / 调整尺寸）必须同步，
+     * 否则会出现「客户端能框、服务端拒绝」。
+     */
+    public static final int MAX_SIDE_ZONE = 512;
+
+    public int minX() {
+        return Math.min(ax, bx);
+    }
+
+    public int minY() {
+        return Math.min(ay, by);
+    }
+
+    public int minZ() {
+        return Math.min(az, bz);
+    }
+
+    public int maxX() {
+        return Math.max(ax, bx);
+    }
+
+    public int maxY() {
+        return Math.max(ay, by);
+    }
+
+    public int maxZ() {
+        return Math.max(az, bz);
+    }
+
+    /** 点是否落在区内（含边界） */
+    public boolean contains(String zoneDim, double x, double y, double z) {
+        return dim.equals(zoneDim)
+                && x >= minX() && x <= maxX() + 1
+                && y >= minY() && y <= maxY() + 1
+                && z >= minZ() && z <= maxZ() + 1;
+    }
+
+    /** 方块格是否落在区内（含边界；调用方自行校验维度） */
+    public boolean contains(net.minecraft.core.BlockPos pos) {
+        return pos.getX() >= minX() && pos.getX() <= maxX()
+                && pos.getY() >= minY() && pos.getY() <= maxY()
+                && pos.getZ() >= minZ() && pos.getZ() <= maxZ();
+    }
+
+    /**
+     * 实体碰撞箱是否与区<b>相交</b>（★ 2026-10-16）。
+     *
+     * <p><b>为什么不用 {@link #contains(BlockPos)}</b>：那个是「一格是否在区内」，
+     * 用它判生物等于只取<b>脚下方块一个点</b>。而生物有碰撞箱（宽 0.6 / 高 1.8 起，
+     * 铁傀儡、末影龙更大），于是：
+     * <ul>
+     *   <li>生物<b>站在区边缘</b>，脚在区外、身体一半在区内 → 判为「在区外」；</li>
+     *   <li>区只框了 1 格高、生物<b>跳起来</b> → 脚离开那一格，同样判为「在区外」。</li>
+     * </ul>
+     * 两种都会让玩家看到「我明明框住了，它还是被打」——即防护区"没防护到"的主因之一。
+     * 改用碰撞箱相交后，只要<b>身体有任何一部分在区内</b>就算被保护，符合玩家直觉。
+     *
+     * @param box 实体碰撞箱（{@code entity.getBoundingBox()}）
+     */
+    public boolean intersects(net.minecraft.world.phys.AABB box) {
+        // ⚠️ 方块格 [min, max] 占据的连续空间是 [min, max+1) —— 右/上/后边界要 +1，
+        //    否则最外一圈方块只有「小于边界」才算区内，边缘会少半格。
+        return box.maxX > minX() && box.minX < maxX() + 1
+                && box.maxY > minY() && box.minY < maxY() + 1
+                && box.maxZ > minZ() && box.minZ < maxZ() + 1;
+    }
+
+    /** 遍历区内全部方块格（含边界两角；先 X 后 Y 后 Z） */
+    public Iterable<net.minecraft.core.BlockPos> blockPositions() {
+        return net.minecraft.core.BlockPos.betweenClosed(minX(), minY(), minZ(), maxX(), maxY(), maxZ());
+    }
+
+    /**
+     * 按「面 + 带符号步进」微调选区（2026-09-12 1.4.1，木棍滚轮微调用）。
+     *
+     * <p><b>面语义 = 该面朝【外】移动</b>（区域变大）：
+     * {@code WEST→minX 减小}、{@code EAST→maxX 增大}、{@code DOWN→minY 减小}、
+     * {@code UP→maxY 增大}、{@code NORTH→minZ 减小}、{@code SOUTH→maxZ 增大}。
+     * <p>例：站在区域西侧看向东侧 → 射线命中 {@code WEST} 面（正对你的近面）→
+     * 滚轮向上一格 = {@code delta=+1} = {@code minX -= 1}（该面远离你，区域变大）。
+     *
+     * @param face  要调整的面（由射线命中判定；传 null 返回 null）
+     * @param delta 带符号步进格数：正 = 向外扩，负 = 向内缩（0 也返回 null）
+     * @return 调整后的新区（已归一化）；<b>null = 非法</b>：会翻转（min>max）或单边超 {@link #MAX_SIDE_ZONE}
+     */
+    public OperZone adjust(net.minecraft.core.Direction face, int delta) {
+        if (face == null || delta == 0) {
+            return null;
+        }
+        int nMinX = minX(), nMinY = minY(), nMinZ = minZ();
+        int nMaxX = maxX(), nMaxY = maxY(), nMaxZ = maxZ();
+        switch (face) {
+            case WEST -> nMinX -= delta;
+            case EAST -> nMaxX += delta;
+            case DOWN -> nMinY -= delta;
+            case UP -> nMaxY += delta;
+            case NORTH -> nMinZ -= delta;
+            case SOUTH -> nMaxZ += delta;
+            default -> {
+                return null;
+            }
+        }
+        if (nMinX > nMaxX || nMinY > nMaxY || nMinZ > nMaxZ) {
+            return null; // 会翻转 → 至少保留 1 格
+        }
+        if (nMaxX - nMinX > MAX_SIDE_ZONE || nMaxY - nMinY > MAX_SIDE_ZONE || nMaxZ - nMinZ > MAX_SIDE_ZONE) {
+            return null; // 超单边上限（选区专用常量：adjust 仅被选区调整调用）
+        }
+        return new OperZone(dim, nMinX, nMinY, nMinZ, nMaxX, nMaxY, nMaxZ);
+    }
+
+    /** 实体碰撞箱 AABB（区域外扩 1 格，实体中心/体积容差） */
+    public net.minecraft.world.phys.AABB aabb() {
+        return new net.minecraft.world.phys.AABB(minX() - 1.0, minY() - 1.0, minZ() - 1.0,
+                maxX() + 2.0, maxY() + 2.0, maxZ() + 2.0);
+    }
+}

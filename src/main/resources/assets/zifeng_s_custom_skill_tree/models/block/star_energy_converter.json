@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "down": "zifeng_s_custom_skill_tree:block/star_energy_converter_bottom",
+    "up": "zifeng_s_custom_skill_tree:block/star_energy_converter_top",
+    "north": "zifeng_s_custom_skill_tree:block/star_energy_converter_front",
+    "east": "zifeng_s_custom_skill_tree:block/star_energy_converter_side",
+    "south": "zifeng_s_custom_skill_tree:block/star_energy_converter_side",
+    "west": "zifeng_s_custom_skill_tree:block/star_energy_converter_side",
+    "particle": "zifeng_s_custom_skill_tree:block/star_energy_converter_front"
+  }
+}

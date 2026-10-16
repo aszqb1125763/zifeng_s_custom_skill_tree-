@@ -1,0 +1,315 @@
+package org.zifeng.skilltree.client;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.neoforged.bus.api.SubscribeEvent;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * 技能点左下角 HUD（2026-08-25 动画版）：
+ * <ul>
+ *   <li>三类行：通用变动（⚡技能点）、馈赠（🎁/⏳）、转换机（⚡星能转换机），
+ *       全部 1 秒无更新即消失</li>
+ *   <li>覆盖动画（符合常规 UX）：新值到来时——旧行淡出下沉 + 新行从上方滑入放大
+ *       （scale 0.8→1.0 + 位移，300ms 缓动），颜色同步从高亮过渡到常色</li>
+ *   <li>总技能点绿色常驻，锚定固定位置</li>
+ * </ul>
+ */
+public class SkillPointHudRenderer {
+
+    /** 单行状态（值 + 出现时间 + 是否刚更新过） */
+    private static final class Line {
+        double value;
+        long time;      // 最后一次更新（毫秒）
+        boolean fresh;  // 刚更新（动画播放中）
+
+        Line(double value) {
+            this.value = value;
+            this.time = System.currentTimeMillis();
+            this.fresh = true;
+        }
+    }
+
+    /** 来源 → 行状态（覆盖式：同来源更新覆盖，无更新 1 秒消失） */
+    private static final Map<String, Line> lines = new LinkedHashMap<>();
+
+    /** 总技能点（绿色常驻） */
+    private static double totalSkillPoints = 0;
+
+    /** 位置偏移（持久化） */
+    private static int hudOffsetX = 0;
+    private static int hudOffsetY = 0;
+    /** 基准点 */
+    private static final int BASE_X = 4 + 10;
+    private static final int BASE_Y_OFFSET = -115 + 70 + 15;
+
+    /** 技能点 HUD 的 GUI 层 ID（2026-09-11：改用 layered draw，避免被其他 HUD 模组覆盖） */
+    private static final net.minecraft.resources.Identifier LAYER_ID =
+            net.minecraft.resources.Identifier.fromNamespaceAndPath(
+                    org.zifeng.skilltree.SkillTreeMod.MOD_ID, "skill_point_hud");
+
+    /** 行消失时长：1 秒（馈赠/通用） */
+    private static final long LIFETIME_MS = 1000;
+    /** 转换机行消失时长：5 秒（恒定速率，5 秒无技能点增加才隐藏，2026-08-25） */
+    private static final long CONVERTER_LIFETIME_MS = 5000;
+    /** 覆盖动画时长：400ms（2026-08-25 流畅版） */
+    private static final long ANIM_MS = 400;
+
+    static {
+        org.zifeng.skilltree.client.SkillKeyBinds.load();
+        hudOffsetX = org.zifeng.skilltree.client.SkillKeyBinds.getHudOffsetX();
+        hudOffsetY = org.zifeng.skilltree.client.SkillKeyBinds.getHudOffsetY();
+    }
+
+    private static final int COLOR_GIFT = 0xFFE0B6C8;
+    private static final int COLOR_CONVERTER = 0xFF9AC8FF;
+    private static final int COLOR_TOTAL = 0xFF55FF55;
+    private static final int COLOR_DECREASE = 0xFFFF5555;
+
+    /** 服务端速率包（馈赠/转换专属行） */
+    public static void updateRates(double total, Map<String, Double> newRates) {
+        totalSkillPoints = total;
+        long now = System.currentTimeMillis();
+        for (Map.Entry<String, Double> e : newRates.entrySet()) {
+            if (e.getValue() <= 0) {
+                continue;
+            }
+            boolean converter = e.getKey().startsWith("converter:");
+            Line line = lines.get(e.getKey());
+            if (line == null) {
+                // 转换机：无动画常驻；馈赠：初始出现（带动画）
+                lines.put(e.getKey(), new Line(e.getValue()));
+                if (converter) {
+                    lines.get(e.getKey()).fresh = false; // 转换机不播放出现动画
+                }
+            } else {
+                if (converter) {
+                    // 转换机：仅更新值（恒定速率，平滑更新不闪动）
+                    line.value = e.getValue();
+                    line.time = now;
+                } else {
+                    // ⚠️ 馈赠（2026-08-25）：同源 1 秒内累加（大范围秒杀连续触发显示累计），
+                    //    超过 1 秒新值覆盖（单次激活）
+                    if (now - line.time < 1000) {
+                        line.value += e.getValue(); // 1 秒内合并
+                    } else {
+                        line.value = e.getValue(); // 覆盖
+                    }
+                    line.time = now;
+                    line.fresh = true;
+                }
+            }
+        }
+    }
+
+    /** 技能数据包同步（通用变动：仅扣点显示，增加由专属行覆盖） */
+    public static void updateTotal(double total) {
+        // 首次同步建立基准
+        if (totalSkillPoints <= 0 && Math.abs(total) > 1e-9 && lines.isEmpty()) {
+            totalSkillPoints = total;
+            return;
+        }
+        double delta = total - totalSkillPoints;
+        if (delta < -1e-9) {
+            // 扣点：通用行显示（红色）
+            putLine("point:", delta);
+        } else if (delta > 1e-9) {
+            // 增加：专属行已显示，不重复；清通用行
+            lines.remove("point:");
+        }
+        totalSkillPoints = total;
+    }
+
+    /** 通用行（扣点）更新 */
+    private static void putLine(String source, double value) {
+        long now = System.currentTimeMillis();
+        Line line = lines.get(source);
+        if (line == null) {
+            lines.put(source, new Line(value));
+        } else {
+            line.value += value; // 通用行同 1 秒内合并
+            line.time = now;
+            line.fresh = true;
+        }
+    }
+
+    public static void onDisconnect() {
+        totalSkillPoints = 0;
+        lines.clear();
+    }
+
+    /**
+     * 技能点 HUD 显示开关（★ 2026-09-22 改为读 {@link SkillKeyBinds} —— 唯一数据源）。
+     *
+     * <p>⚠️ 此前这里自有的静态字段既不写盘也不读盘，重启后回到默认 {@code true}
+     * → 用户报的「HUD 关掉后重进游戏又出现了」。
+     */
+    public static void setVisible(boolean visible) {
+        org.zifeng.skilltree.client.SkillKeyBinds.setHudVisible(visible);
+    }
+
+    public static boolean isVisible() {
+        return org.zifeng.skilltree.client.SkillKeyBinds.isHudVisible();
+    }
+
+    public static int getHudOffsetX() {
+        return hudOffsetX;
+    }
+
+    public static int getHudOffsetY() {
+        return hudOffsetY;
+    }
+
+    public static void adjustOffsetX(int delta) {
+        hudOffsetX = Math.max(-800, Math.min(800, hudOffsetX + delta));
+        saveOffset();
+    }
+
+    public static void adjustOffsetY(int delta) {
+        hudOffsetY = Math.max(-400, Math.min(400, hudOffsetY + delta));
+        saveOffset();
+    }
+
+    /** 重置位置偏移（X/Y 归零） */
+    public static void resetOffset() {
+        hudOffsetX = 0;
+        hudOffsetY = 0;
+        saveOffset();
+    }
+
+    private static void saveOffset() {
+        org.zifeng.skilltree.client.SkillKeyBinds.setHudOffset(hudOffsetX, hudOffsetY);
+    }
+
+    /**
+     * MOD 总线：把技能点 HUD 注册为一个 GUI 层（2026-09-11）。
+     * <p><b>层级</b>：注册在 {@link net.neoforged.neoforge.client.gui.VanillaGuiLayers#EXPERIENCE_LEVEL}
+     * （第 13 层）之上——高于所有血条相关层与 ClassicBar 这类血条 mod，
+     * 但<b>低于聊天栏</b>（{@code CHAT} 第 22 层），符合"不超过聊天栏"的要求。
+     * <p>⚠️ 之前用 {@code RenderGuiEvent.Post} 会被其他用 layered draw 的 HUD 模组覆盖。
+     */
+    public static void registerGuiLayers(net.neoforged.neoforge.client.event.RegisterGuiLayersEvent event) {
+        event.registerAbove(net.neoforged.neoforge.client.gui.VanillaGuiLayers.EXPERIENCE_LEVEL, LAYER_ID,
+                (guiGraphics, deltaTracker) -> renderHud(guiGraphics));
+    }
+
+    public static void renderHud(GuiGraphicsExtractor gui) {
+        if (!isVisible()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.screen != null) {
+            return;
+        }
+        // ⚠️ 旁观模式不显示 HUD（2026-09-06：旁观别人时技能点数据不属于自己，避免误导）
+        if (mc.player.isSpectator()) {
+            return;
+        }
+        int height = mc.getWindow().getGuiScaledHeight();
+        int x = BASE_X + hudOffsetX;
+        int totalY = height + BASE_Y_OFFSET + hudOffsetY;
+        long now = System.currentTimeMillis();
+
+        // 1. 清理过期行（馈赠/通用 1 秒；转换机 5 秒无增加隐藏）
+        lines.entrySet().removeIf(e -> {
+            boolean converter = e.getKey().startsWith("converter:");
+            long limit = converter ? CONVERTER_LIFETIME_MS : LIFETIME_MS;
+            return now - e.getValue().time > limit;
+        });
+
+        // 2. 总技能点（绿色固定，先画——速率行向上堆叠不推它）
+        gui.text(mc.font, net.minecraft.network.chat.Component.translatable("ui.zifeng_s_custom_skill_tree.hud_skill_point").getString()
+                + String.format("%.1f", totalSkillPoints), x, totalY, COLOR_TOTAL, false);
+
+        // 3. 速率行从总数行往上排列（动画：新值滑入放大）
+        int rateY = totalY - 10;
+        // ★ 2026-09-20 性能：单位后缀是**字面常量**，原本却写在循环体里逐行重取
+        //   （5 行速率 = 15 次 translatable().getString() / 帧）。提到循环外后只剩 2 次/帧，
+        //   HUD 是常驻渲染，全天候受益。
+        final String unitPerSec = net.minecraft.network.chat.Component.translatable(
+                "ui.zifeng_s_custom_skill_tree.unit_per_sec").getString();
+        final String unitPt = net.minecraft.network.chat.Component.translatable(
+                "ui.zifeng_s_custom_skill_tree.unit_pt").getString();
+        for (Map.Entry<String, Line> e : lines.entrySet()) {
+            Line line = e.getValue();
+            String source = e.getKey();
+            String displayName;
+            boolean converter = source.startsWith("converter:");
+            boolean point = source.startsWith("point:");
+            if (converter) {
+                displayName = net.minecraft.network.chat.Component.translatable("hud.zifeng_s_custom_skill_tree.converter").getString();
+            } else if (point) {
+                displayName = net.minecraft.network.chat.Component.translatable("hud.zifeng_s_custom_skill_tree.skill_point").getString();
+            } else if (source.startsWith("gift:")) {
+                displayName = "🎁" + org.zifeng.skilltree.skill.Skills.getDisplayNameComponent(source.substring(5)).getString();
+            } else {
+                displayName = source;
+            }
+            String text;
+            int color;
+            // ★ 2026-09-21 修复同步缺口：这里原本又重复取了一遍翻译（perSec / pt），
+            //   等于把上面「提到循环外」的优化白做了（5 行速率 = 10 次 translatable/帧）。
+            //   直接用循环外的 unitPerSec / unitPt —— 与 1.20.1 对齐。
+            if (converter) {
+                text = displayName + " +" + String.format("%.3f", line.value) + unitPerSec;
+                color = COLOR_CONVERTER;
+            } else if (point) {
+                String sign = line.value >= 0 ? "+" : "";
+                text = displayName + " " + sign + String.format("%.1f", line.value) + unitPt;
+                color = line.value >= 0 ? COLOR_CONVERTER : COLOR_DECREASE;
+            } else {
+                text = displayName + " +" + String.format("%.0f", line.value) + unitPt;
+                color = COLOR_GIFT;
+            }
+
+            // 覆盖动画（2026-08-25 流畅版）：400ms easeOutQuart —— 滑入 + 放大 + 淡入 + 高亮色渐变
+            float anim = 1.0f;
+            if (line.fresh) {
+                long age = now - line.time;
+                if (age < ANIM_MS) {
+                    anim = (float) age / ANIM_MS; // 0→1
+                } else {
+                    line.fresh = false; // 动画结束
+                }
+            }
+            // easeOutQuart（比 cubic 更柔和的减速，结尾不突兀）
+            float t = 1.0f - anim;
+            float ease = 1.0f - t * t * t * t;
+            // 位移：从 12px 滑入（前 40% 完成大部分移动，结尾细微）
+            int slideX = (int) (12 * (1.0f - ease));
+            // 缩放：0.92 → 1.0（轻微放大，不夸张）
+            float scale = 0.92f + 0.08f * ease;
+            // 透明度淡入：0 → 255（前 30% 快速淡入，避免生硬）
+            float alphaT = Math.min(1.0f, anim / 0.3f);
+            int alpha = (int) (255 * alphaT);
+            // 颜色过渡：动画期高亮 → 常色（同步渐变）
+            int bright = source.startsWith("converter:") ? 0xFFFFFFFF : 0xFFFF9AC8;
+            int baseColor = anim < 1.0f ? lerpColor(color, bright, ease) : color;
+            int curColor = (alpha << 24) | (baseColor & 0xFFFFFF);
+
+            gui.pose().pushMatrix();
+            gui.pose().translate(x + slideX, rateY);
+            // ⚠️ 26.1.2：GUI 姿态是 2D 的 Matrix3x2fStack（不再是 3D PoseStack）→ scale 只有 2 参
+            gui.pose().scale(scale, scale);
+            gui.text(mc.font, text, 0, 0, curColor, false);
+            gui.pose().popMatrix();
+            rateY -= 10;
+            if (rateY < 10) {
+                break;
+            }
+        }
+
+        // 4. 凤凰涅槃图腾行（2026-09-08：图标从经验条上方移到技能点 HUD 模块正下方，随模块显隐/偏移）
+        org.zifeng.skilltree.client.ReviveHudRenderer.renderInto(gui, x, totalY + 12);
+    }
+
+    private static int lerpColor(int from, int to, float t) {
+        int a = (int) (((from >> 24 & 0xFF) + ((to >> 24 & 0xFF) - (from >> 24 & 0xFF)) * t));
+        int r = (int) (((from >> 16 & 0xFF) + ((to >> 16 & 0xFF) - (from >> 16 & 0xFF)) * t));
+        int g = (int) (((from >> 8 & 0xFF) + ((to >> 8 & 0xFF) - (from >> 8 & 0xFF)) * t));
+        int b = (int) ((from & 0xFF) + ((to & 0xFF) - (from & 0xFF)) * t);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+}

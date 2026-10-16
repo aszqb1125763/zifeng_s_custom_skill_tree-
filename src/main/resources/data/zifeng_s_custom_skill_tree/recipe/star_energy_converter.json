@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "FFF",
+    "FSF",
+    "FRF"
+  ],
+  "key": {
+    "F": "minecraft:furnace",
+    "S": "minecraft:bookshelf",
+    "R": "minecraft:redstone_block"
+  },
+  "result": {
+    "id": "zifeng_s_custom_skill_tree:star_energy_converter",
+    "count": 1
+  }
+}

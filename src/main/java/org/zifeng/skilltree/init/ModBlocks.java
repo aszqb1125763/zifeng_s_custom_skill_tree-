@@ -1,0 +1,48 @@
+package org.zifeng.skilltree.init;
+
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.material.MapColor;
+import net.neoforged.neoforge.registries.DeferredBlock;
+import net.neoforged.neoforge.registries.DeferredRegister;
+import org.zifeng.skilltree.SkillTreeMod;
+import org.zifeng.skilltree.block.CreativeEnergyBlock;
+import org.zifeng.skilltree.block.SkillPointConverterBlock;
+
+public class ModBlocks {
+    public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(SkillTreeMod.MOD_ID);
+
+    /**
+     * 技能点转换机：FE 能量 → 技能点。硬度=黑曜石25%（12.5），防爆 1200，需铁镐以上挖掘，红石可关闭，工作发光。
+     * ⚠️ 注册名保持 star_energy_converter（旧注册名）：1.2.3 曾更名 skill_point_converter 导致旧存档方块消失，
+     *    注册名是存档级标识，绝不能改（显示名"技能点转换机"在 lang 文件）。
+     *
+     * <p>★ 26.1.2：必须改用 {@code registerBlock(name, 构造器, 属性调整器)} 而不是
+     * {@code register(name, () -> new X(Properties.of()...))}。
+     * 原因是新版 {@link BlockBehaviour.Properties} <b>要求显式设置 id</b>
+     * （{@code BlockBehaviour.Properties#setId}，源码 1347 行）：方块构造时
+     * {@code effectiveDrops()} 会据 id 推导战利品表键，缺 id 直接
+     * {@code NullPointerException: Block id not set}（实测崩服）。
+     * {@code registerBlock} 内部就是 {@code properties.setId(ResourceKey.create(Registries.BLOCK, key))}，
+     * 这也是 NeoForge MDK 的推荐写法。
+     */
+    public static final DeferredBlock<SkillPointConverterBlock> STAR_ENERGY_CONVERTER = BLOCKS.registerBlock(
+            "star_energy_converter",
+            SkillPointConverterBlock::new,
+            props -> props
+                    .mapColor(MapColor.METAL)
+                    .strength(12.5F, 1200.0F) // 硬度黑曜石25%，爆炸抗性与黑曜石同级（防爆）
+                    .requiresCorrectToolForDrops() // 需正确工具（铁镐以上，needs_iron_tool tag）
+                    .lightLevel(state -> state.getValue(SkillPointConverterBlock.LIT) ? 14 : 0) // 工作发光
+                    .sound(SoundType.METAL));
+
+    /** 创造能量方块（测试无限能源） */
+    public static final DeferredBlock<CreativeEnergyBlock> CREATIVE_ENERGY = BLOCKS.registerBlock(
+            "creative_energy_block",
+            CreativeEnergyBlock::new,
+            props -> props
+                    .mapColor(MapColor.COLOR_RED)
+                    .strength(2.0F)
+                    .sound(SoundType.METAL)
+                    .lightLevel(state -> 15));
+}
