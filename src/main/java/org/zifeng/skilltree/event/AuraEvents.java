@@ -385,17 +385,17 @@ public class AuraEvents {
         //    事件的直杀也不触发——根本不进目标列表）。防护者列表触发 tick 只算一次。
         ServerLevel serverLevel0 = player.serverLevel();
         java.util.List<PlayerSkillRecord> protectors = serverLevel0 != null
-                ? ZoneSkillEvents.activeProtectors(serverLevel0) : java.util.Collections.emptyList();
+                ? ZoneSkillEvents.protectorsCached(serverLevel0) : java.util.Collections.emptyList();
         String dim = player.level().dimension().location().toString();
         List<Entity> targets = new java.util.ArrayList<>();
         targets.addAll(player.level().getEntitiesOfClass(LivingEntity.class, box,
                 target -> isTargetValid(player, target, mode)
-                        && !ZoneSkillEvents.inAnyProtectOf(protectors, dim, target.blockPosition())));
+                        && !ZoneSkillEvents.inAnyProtectOf(protectors, dim, target)));
         // DE 守卫水晶特判：GuardianCrystalEntity 直接继承 Entity（非 LivingEntity），单独扫一次补进目标
         if (empower) { // 只有学了光环·强化（能打水晶）才扫
             targets.addAll(player.level().getEntitiesOfClass(Entity.class, box,
                     target -> isDraconicCrystal(target) && isTargetValid(player, target, mode)
-                            && !ZoneSkillEvents.inAnyProtectOf(protectors, dim, target.blockPosition())));
+                            && !ZoneSkillEvents.inAnyProtectOf(protectors, dim, target)));
         }
         if (targets.isEmpty()) {
             return;

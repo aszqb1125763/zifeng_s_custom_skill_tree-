@@ -587,7 +587,13 @@ public final class Skills {
         return 8;
     }
 
-    /** 木棍工具模式 → 解锁该模式的技能 ID（返回 null=不依赖技能的常驻模式如 BIND/RANGE 由各自绑技能判定） */
+    /**
+     * 木棍工具模式 → 该模式<b>独有的解锁技能</b>（1:1 的「专有模块」，该技能的唯一作用就是解锁本模式）。
+     *
+     * <p>{@code BIND} / {@code RANGE} 没有专有模块，返回 {@code null} —— 它们由
+     * {@link #linkedSkillsForStickMode} 里的<b>联动技能</b>解锁（技能主体是独立效果，
+     * 木棍只是操作入口）。想一次拿到「本模式的全部解锁技能」请用 {@link #stickModeUnlockers}。
+     */
     public static String skillForStickMode(int mode) {
         return switch (mode) {
             case STICK_MODE_ZONE_PLACE -> MACHINE_ZONE_PLACE;
@@ -598,6 +604,52 @@ public final class Skills {
             case STICK_MODE_MINE_PROTECT -> MINING_PROTECT; // ★ 2026-10-11：挖掘防护
             default -> null;
         };
+    }
+
+    /**
+     * 木棍模式 → <b>联动解锁技能</b>（★ 2026-10-13）。
+     *
+     * <p>与 {@link #skillForStickMode}（<b>专有模块</b>：技能的唯一作用就是解锁一个模式）相对，
+     * 这里的技能<b>主体是独立效果</b>，木棍只是它的操作入口：
+     * <ul>
+     *   <li>{@code BIND} 绑容器 ← 子枫挪移术 / 子枫的搬运术
+     *       —— 掉落直传容器、开箱搬运都是常驻效果，只有「绑定目标容器」这个动作用木棍完成</li>
+     *   <li>{@code RANGE} 磁铁屏蔽区 ← 吸星大法
+     *       —— H 键磁力吸取才是主体，屏蔽区只是它的例外配置</li>
+     * </ul>
+     *
+     * <p>登记它们的目的是<b>界面归类</b>：让玩家在「木棍工具」列就能看到这些模式由谁解锁。
+     * 它们的 {@link #getType 类别}（光环）与上限 / 消耗规则<b>完全不受影响</b> ——
+     * 这里只影响「在哪个列显示」，不搬动任何数据列表。
+     */
+    public static List<String> linkedSkillsForStickMode(int mode) {
+        return switch (mode) {
+            case STICK_MODE_BIND -> List.of(AURA_LOOT_VACUUM, CONTAINER_HAUL);
+            case STICK_MODE_RANGE -> List.of(AURA_MAGNET);
+            default -> List.of();
+        };
+    }
+
+    /**
+     * 木棍模式 → 它的<b>全部解锁技能</b>（专有模块 + 联动技能），顺序 = 模式号顺序。
+     *
+     * <p>★ 界面「木棍工具」列与工具卡 tooltip 的「已学功能模块」清单共用它 ——
+     * 「某模式由谁解锁」只保留这一份数据，两边不会各自漂移。
+     * <p>注意一个模式可能对应多项技能（BIND 由 挪移术 / 搬运术 任一解锁）。
+     */
+    public static List<String> stickModeUnlockers(int mode) {
+        String sole = skillForStickMode(mode);
+        List<String> linked = linkedSkillsForStickMode(mode);
+        if (sole == null) {
+            return linked;
+        }
+        if (linked.isEmpty()) {
+            return List.of(sole);
+        }
+        List<String> out = new ArrayList<>(1 + linked.size());
+        out.add(sole);
+        out.addAll(linked);
+        return out;
     }
 
     /** 是否木棍工具·区块类技能（放置/挖掘/攻击/防护/挖掘防护；各自解锁一个工具模式，2026-09-08） */

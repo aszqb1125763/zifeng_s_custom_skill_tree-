@@ -473,12 +473,12 @@ public final class ZoneSkillEvents {
             return;
         }
         // 扫区内目标（目标过滤同杀戮光环：敌我/所有由目标模式决定；跳过【全服任意布防者】防护区内生物——区域内不判定）
-        java.util.List<PlayerSkillRecord> protectors = activeProtectors(level);
+        java.util.List<PlayerSkillRecord> protectors = protectorsCached(level);
         String dim = level.dimension().location().toString();
         List<LivingEntity> targets = level.getEntitiesOfClass(LivingEntity.class,
                 zone.aabb(),
                 target -> AuraEvents.isTargetValid(player, target, record.getAuraTargetMode(Skills.AURA_DAMAGE))
-                        && !inAnyProtectOf(protectors, dim, target.blockPosition()));
+                        && !inAnyProtectOf(protectors, dim, target));
         if (targets.isEmpty()) {
             return;
         }
@@ -537,20 +537,84 @@ public final class ZoneSkillEvents {
         return false;
     }
 
+    /**
+     * 目标<b>实体</b>是否位于给定防护者列表内 —— 按碰撞箱相交判定（★ 2026-10-16）。
+     *
+     * <p>取代旧的「传 {@code target.blockPosition()}」写法：那个只取脚下方块一个点，
+     * 生物站在区边缘或跳起时会漏判（玩家看到的「框住了还是被打」）。
+     */
+    public static boolean inAnyProtectOf(java.util.List<PlayerSkillRecord> protectors,
+                                         String dim, net.minecraft.world.entity.Entity target) {
+        if (target == null) {
+            return false;
+        }
+        net.minecraft.world.phys.AABB box = target.getBoundingBox();
+        for (PlayerSkillRecord rec : protectors) {
+            if (rec.isInAnyProtectZone(dim, box)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 防护者列表的<b>短周期缓存</b>（★ 2026-10-16）。
+     *
+     * <p>为什么需要：2026-10-16 起防护区不再只作用于「光环的目标筛选」（每光环间隔跑一次），
+     * 还接管了<b>受击兜底</b>（{@code LivingAttackEvent} / {@code LivingIncomingDamageEvent}）
+     * —— 那是全服<b>每一次伤害</b>都会触发的高频路径，而 {@link #activeProtectors}
+     * 每次都要遍历全服在线玩家 + 逐个查玩家存档。
+     *
+     * <p>缓存 10 tick（0.5 秒）：防护区只在玩家框选时变化，0.5 秒延迟无感；
+     * 代价从「每次受击一次全服遍历」降到「每 0.5 秒一次」。
+     */
+    private static final int PROTECTOR_CACHE_TICKS = 10;
+    private static long protectorCacheStamp = Long.MIN_VALUE;
+    private static ServerLevel protectorCacheLevel = null;
+    private static java.util.List<PlayerSkillRecord> protectorCache = java.util.Collections.emptyList();
+
+    /** 取防护者列表（带 10 tick 缓存；受击兜底等高频路径用这个） */
+    public static java.util.List<PlayerSkillRecord> protectorsCached(ServerLevel level) {
+        if (level == null) {
+            return java.util.Collections.emptyList();
+        }
+        long now = level.getGameTime();
+        if (level == protectorCacheLevel && now - protectorCacheStamp < PROTECTOR_CACHE_TICKS) {
+            return protectorCache;
+        }
+        protectorCache = activeProtectors(level);
+        protectorCacheLevel = level;
+        protectorCacheStamp = now;
+        return protectorCache;
+    }
+
+    /** 手动失效缓存（防护区刚被增/删/改时调用，让改动立刻对受击兜底生效） */
+    public static void invalidateProtectorCache() {
+        protectorCacheStamp = Long.MIN_VALUE;
+        protectorCacheLevel = null;
+    }
+
     /** 便捷版（少数调用点）：直接查目标是否位于任何在线布防者的防护区内 */
     public static boolean isInAnyProtectZoneGlobal(ServerLevel level, net.minecraft.world.entity.Entity target) {
         if (level == null || target == null || target.level() == null) {
             return false;
         }
         String dim = target.level().dimension().location().toString();
-        return inAnyProtectOf(activeProtectors(level), dim, target.blockPosition());
+        return inAnyProtectOf(protectorsCached(level), dim, target);
     }
 
-    // ⚠️ 2026-09-08 用户定稿：防护区【只屏蔽杀戮光环伤害】——杀戮光环全部伤害通道
-    //   （普通/混沌连击/虚空秒杀直杀等）都从 dealAuraDamageToOne 一个口子走，而该口子上游
-    //   的目标扫描已按全服防护区过滤（auraAttack / zoneAttack 的 isInAnyProtectZone 剔除），
-    //   源头屏蔽即已完整覆盖。不再设受击事件兜底：否则会误拦怪物/环境/普通玩家近战等
-    //   非杀戮光环来源（与"只屏蔽杀戮光环"相悖）。
+    // ⚠️ 防护区的两层防线（★ 2026-10-16 变更，取代 2026-09-08「只屏蔽杀戮光环」的旧定稿）：
+    //   ①【源头筛选】光环 / 选区攻击的目标扫描先剔除区内生物（auraAttack / zoneAttack 的
+    //      inAnyProtectOf）—— 省算力：压根不进目标列表，就不会有伤害、粒子和死亡结算。
+    //   ②【受击兜底】{@code ProtectZoneGuardEvents} 在受击事件入口把区内生物的所有伤害清零。
+    //      为什么必须有：①只覆盖了走「目标扫描」的两条通道，而下面这些都会绕过去 ——
+    //        · 横扫千军（ULT_SWEEP）：对主目标【周围】的实体逐个 hurt() 直伤；
+    //        · 枪械杀戮弹幕（TaCZ）：子弹已经命中了才在事件里加伤害，没有「扫描」这一步，
+    //          且虚空诛灭的 forceFinish 走 setHealth+die，连 hurt() 都不经过；
+    //        · 其它模组/原版对区内生物造成的伤害。
+    //      用户 2026-10-16 明确要求「区内生物不受任何伤害」→ 用兜底覆盖全部来源
+    //      （含怪物攻击、摔落、岩浆、窒息），不再只限杀戮光环。
+    //   两层的关系：①是优化（少算），②是正确性（兜住）—— 去掉①只是变慢，去掉②就会漏。
 
     // ============ 作业推进（分批跳 tick 核心） ============
 
