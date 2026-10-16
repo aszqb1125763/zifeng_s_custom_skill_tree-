@@ -98,7 +98,23 @@ Zifeng Skill Tree（子枫的百宝箱）
    `KeyMapping.Category` 用 Identifier，翻译键自动生成为
    `key.category.<命名空间>.<路径>`（旧的 `key.categories.*` 已废弃）。已补 4 语系。
 
-⑤ 其余批量迁移（均以 26.1.2 反编译源码为准，非猜测）
+⑤ **`ItemStack` 构造要求物品组件已绑定** —— 静态初始化器里创建会**启动即崩**（已修）
+   26.1.2 的 `ItemStack` 构造会**立即读取物品的默认组件**
+   （`ItemStack.java:253` → `Holder.Reference#components()`），而组件要等
+   `DataComponentInitializers.PendingComponents#apply()` 才绑定（客户端侧由
+   `RegistryDataCollector#updateComponents()` 在「加入世界 / 收到注册表数据」时触发）。
+   因此客户端停在**主菜单**（尚未进世界）时组件尚未绑定，此刻 `new ItemStack(...)` 抛
+   `NullPointerException: Components not bound yet`；又因发生在 `<clinit>` 里而被包装成
+   `ExceptionInInitializerError` → 实测**启动即在主菜单崩溃**。
+   - 已修：`ReviveHudRenderer` 的不死图腾图标从「`static final ItemStack`」改为
+     **首次绘制时惰性创建**，并用官方 `Holder#areComponentsBound()` 精确判断
+     （而非猜「世界是否已加载」），另加异常兜底 —— HUD 装饰性图标绝不该崩游戏。
+   - 排查结论：全工程仅此一处静态 `ItemStack`。`StickToolHudRenderer` 虽每帧 `new ItemStack`，
+     但有 `mc.level == null` 前置守卫，安全；`ModCreativeTabs` 的 `.icon(供应商)` 与
+     `output.accept(...)` 均为世界内才求值，安全。
+   - **经验**：26.1.2 下不要在任何静态初始化器 / 模组构造期创建 `ItemStack`。
+
+⑥ 其余批量迁移（均以 26.1.2 反编译源码为准，非猜测）
    `ResourceLocation`→`Identifier`（140 处）、`GuiGraphics`→`GuiGraphicsExtractor`（73）、
    NBT 访问器 Optional 化（`getXOr`/`getListOrEmpty` 等 107）、
    `ServerPlayer#serverLevel()`→`level()`（106）、`drawString`→`text`（45）、
