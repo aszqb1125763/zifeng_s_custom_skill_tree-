@@ -30,9 +30,9 @@ public class ClientRegistrar {
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientVisionEvents.class);
         // 御风止步：飞行无惯性（2026-08-27，客户端输入驱动）
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientFlightEvents.class);
-        // 寻宝大师：64格内战利品容器/考古点发光轮廓（2026-08-27，RenderLevelStageEvent）
+        // 寻宝大师：64格内战利品容器/考古点发光轮廓（2026-08-27；★ 26.1.2 改用 SubmitCustomGeometryEvent）
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientTreasureEvents.class);
-        // 方块扫描：已标记方块 id 的同类方块高亮（★ 2026-10-11，主动扫描 + RenderLevelStageEvent）
+        // 方块扫描：已标记方块 id 的同类方块高亮（★ 2026-10-11，主动扫描；★ 26.1.2 改用 SubmitCustomGeometryEvent）
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientBlockScanEvents.class);
         // 技能点 HUD（2026-09-11）：改用 GUI 层注册（MOD 总线），层级在聊天栏之下、血条类层之上。
         // ⚠️ 必须从 GAME 总线的 register(...) 中移除——该类已无 @SubscribeEvent 方法，
