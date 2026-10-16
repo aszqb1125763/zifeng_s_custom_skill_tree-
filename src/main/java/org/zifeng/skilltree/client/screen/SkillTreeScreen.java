@@ -1960,21 +1960,33 @@ public class SkillTreeScreen extends Screen {
     }
 
     /**
-     * 开启裁剪（★ 缩放感知）。
+     * 开启裁剪（★ 26.1.2 语义变化：现在<b>会套用 pose</b>，直接传「设计空间」坐标即可）。
      *
-     * <p>⚠️ 1.21.1 的 {@code GuiGraphicsExtractor.enableScissor} 同样<b>不套用 pose</b>
-     * （字节码确认：直接拿参数构造 ScreenRectangle，再由 {@code applyScissor} 用
-     * {@code Window.getGuiScale()} 换算成物理像素）→ 整体缩放后会错位，
-     * 所以这里手动乘 r 换回屏幕逻辑坐标。
+     * <h4>⚠️ 为什么必须去掉手动乘 r（实测 bug：缩放后类别栏被裁切 / 屏幕外技能仍可点）</h4>
+     * 1.21.1 的 {@code GuiGraphics#enableScissor} <b>不套用 pose</b>：它直接拿参数建
+     * {@code ScreenRectangle}，再由 {@code applyScissor} 用 {@code Window#getGuiScale()} 换算成
+     * 物理像素 —— 所以那时必须手动乘 r 才能跟上整体缩放，本方法原名 {@code enableScissorScaled} 即由此而来。
+     * <p>但 <b>26.1.2 改成会套用 pose</b>（{@code GuiGraphicsExtractor.java:151}）：
+     * <pre>{@code
+     * public void enableScissor(int x0, int y0, int x1, int y1) {
+     *     ScreenRectangle rectangle = new ScreenRectangle(x0, y0, x1 - x0, y1 - y0)
+     *             .transformAxisAligned(this.pose);   // ← 关键：跟着当前 pose 缩放
+     *     this.scissorStack.push(rectangle);
+     * }
+     * }</pre>
+     * 而两个调用点都位于 {@code extractRenderState} 的 {@code pose.scale(r, r)} <b>之内</b>，
+     * 所以再手动乘一次 r 就会让缩放生效两次（等效乘 r²）：
+     * <ul>
+     *   <li>{@code r < 1}（缩小）→ 裁剪区被压小 → <b>类别栏胶囊被切掉</b>、
+     *       且<b>渲染裁剪区小于命中判定区</b> → 列表下方的技能「看不见却还能点」</li>
+     *   <li>{@code r > 1}（放大）→ 裁剪区过大 → 内容溢出分区框</li>
+     * </ul>
+     * 因此这里<b>原样透传设计空间坐标</b>，把缩放交给 {@code enableScissor} 自己套 pose。
+     * <p>另注：{@code ScreenRectangle} 是在 push 时立刻按当时 pose 算好并<b>存下来</b>的，
+     * 之后再 {@code translate} 也不会改变已建立的裁剪框 —— 正是「滚动内容被固定在视口内」所需。
      */
-    private void enableScissorScaled(GuiGraphicsExtractor guiGraphics, int x1, int y1, int x2, int y2) {
-        final double r = uiScale();
-        if (r == 1.0) {
-            guiGraphics.enableScissor(x1, y1, x2, y2);
-        } else {
-            guiGraphics.enableScissor((int) Math.floor(x1 * r), (int) Math.floor(y1 * r),
-                    (int) Math.ceil(x2 * r), (int) Math.ceil(y2 * r));
-        }
+    private void enableScissorLayout(GuiGraphicsExtractor guiGraphics, int x1, int y1, int x2, int y2) {
+        guiGraphics.enableScissor(x1, y1, x2, y2);
     }
 
     /** 界面主体渲染（在缩放变换与设计空间内执行；★ 2026-09-21 从 render 拆出） */
@@ -2083,7 +2095,7 @@ public class SkillTreeScreen extends Screen {
         renderCategoryRow(guiGraphics);
 
         // ---------- ③ 技能行列表（左对齐；★ 用剪裁框限制在技能行分区框内）----------
-        enableScissorScaled(guiGraphics, frameLeft() + FRAME_LINE, listTop(),
+        enableScissorLayout(guiGraphics, frameLeft() + FRAME_LINE, listTop(),
                 frameRight() - FRAME_LINE, listBottom());
         guiGraphics.pose().pushMatrix();
         guiGraphics.pose().translate(rowLeft(), listTop() - scrollY);
@@ -2119,7 +2131,7 @@ public class SkillTreeScreen extends Screen {
      */
     private void renderCategoryRow(GuiGraphicsExtractor guiGraphics) {
         int y = catFrameTop() + FRAME_LINE + LIST_TOP_GAP;
-        enableScissorScaled(guiGraphics, frameLeft() + FRAME_LINE, catFrameTop() + FRAME_LINE,
+        enableScissorLayout(guiGraphics, frameLeft() + FRAME_LINE, catFrameTop() + FRAME_LINE,
                 frameRight() - FRAME_LINE, catFrameBottom() - FRAME_LINE);
         // ⚠️ 2026-09-19 性能优化：文本在建行时缓存 + 统一用默认的 gui 批次 fill —— 与「原版按钮」同一套做法。
         // ★ 2026-10-13：胶囊只画【有可见技能】的类别（映射见 refreshDisplayedCategories）

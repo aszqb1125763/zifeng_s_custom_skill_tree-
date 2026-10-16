@@ -114,7 +114,29 @@ Zifeng Skill Tree（子枫的百宝箱）
      `output.accept(...)` 均为世界内才求值，安全。
    - **经验**：26.1.2 下不要在任何静态初始化器 / 模组构造期创建 `ItemStack`。
 
-⑥ 其余批量迁移（均以 26.1.2 反编译源码为准，非猜测）
+⑦ **`enableScissor` 现在会套用 pose** —— 手动补偿缩放会导致**裁剪框错位**（已修，实测复现）
+   1.21.1 的 `GuiGraphics#enableScissor` **不套用 pose**（直接拿参数建 `ScreenRectangle`，
+   再由 `applyScissor` 用 `Window#getGuiScale()` 换算物理像素）；
+   **26.1.2 改成会套用**（`GuiGraphicsExtractor.java:151`）：
+   ```java
+   public void enableScissor(int x0, int y0, int x1, int y1) {
+       ScreenRectangle rectangle = new ScreenRectangle(x0, y0, x1 - x0, y1 - y0)
+               .transformAxisAligned(this.pose);   // ← 跟着当前 pose 缩放
+       this.scissorStack.push(rectangle);
+   }
+   ```
+   而技能树界面整体在 `pose.scale(r, r)` 之内渲染（`r` = 设置面板的「界面尺寸」倍率）。
+   移植时保留了 1.21.1 的做法（手动乘 `r`）→ 缩放生效**两次**（等效 `r²`）：
+   - `r < 1`（缩小）→ 裁剪框被压小 → **类别栏胶囊被切掉**；
+     且**渲染裁剪区小于命中判定区** → 列表下方技能「看不见却还能点」
+   - `r > 1`（放大）→ 裁剪框过大 → 内容溢出分区框
+   实测数值（设计空间裁剪框 194 宽）：`r=0.667` 时旧代码窄 **33.5%**、`r=1.5` 时宽 **50.1%**；
+   `r=1`（未缩放）时两者完全一致 —— 故只在缩放时暴露。
+   - 已修：`enableScissorScaled` → `enableScissorLayout`，**原样透传设计空间坐标**，
+     把缩放交给 `enableScissor` 自己套 pose。`ScreenRectangle` 在 push 时即按当时 pose 算好并存下，
+     之后再 `translate` 不会改变已建立的裁剪框 —— 正是「滚动内容固定在视口内」所需。
+
+⑧ 其余批量迁移（均以 26.1.2 反编译源码为准，非猜测）
    `ResourceLocation`→`Identifier`（140 处）、`GuiGraphics`→`GuiGraphicsExtractor`（73）、
    NBT 访问器 Optional 化（`getXOr`/`getListOrEmpty` 等 107）、
    `ServerPlayer#serverLevel()`→`level()`（106）、`drawString`→`text`（45）、
