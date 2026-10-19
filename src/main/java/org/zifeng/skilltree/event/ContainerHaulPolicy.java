@@ -1,6 +1,7 @@
 package org.zifeng.skilltree.event;
 
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -261,10 +262,12 @@ public final class ContainerHaulPolicy {
         if (container instanceof BlockEntity be) {
             try {
                 Block block = be.getBlockState().getBlock();
-                if (!BuiltInRegistries.BLOCK.containsKey(block)) {
+                // getKey 未注册时返回 null（不能用 containsKey，它要的是 ResourceKey 而不是 Block 值）
+                ResourceLocation key = BuiltInRegistries.BLOCK.getKey(block);
+                if (key == null) {
                     return null;
                 }
-                return BuiltInRegistries.BLOCK.getKey(block).toString();
+                return key.toString();
             } catch (Throwable t) {
                 return null;
             }

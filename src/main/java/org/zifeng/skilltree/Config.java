@@ -3,6 +3,7 @@ package org.zifeng.skilltree;
 import net.neoforged.neoforge.common.ModConfigSpec;
 import org.zifeng.skilltree.skill.Skills;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -820,6 +821,62 @@ public class Config {
                             .getOrCreatePlayer(p.getUUID());
             org.zifeng.skilltree.skill.SkillEffects.applyAll(p, rec);
             p.setHealth(Math.max(0.5F, p.getMaxHealth() * ratio));
+        }
+    }
+
+    // ============ 搬运术·指令式黑白名单（2026-10-19 新增） ============
+    // 与手填 toml 的 containerHaulExtraWhitelist / containerHaulBlacklist 是【同一份】数据：
+    // 本组方法只是这两个 ConfigValue 的运行时编辑器，add/remove 后立即生效并落盘，重启不丢。
+    // 通配符语法同 ContainerHaulPolicy.matches（* 任意长度、? 单字符、不分大小写）。
+
+    /** 往搬运白名单加一条；已存在返回 false（不重复）。落盘失败仅告警，内存仍生效。 */
+    public static boolean addHaulWhitelist(String pattern) {
+        return mutateHaulList(CONTAINER_HAUL_EXTRA_WHITELIST, pattern, true);
+    }
+    /** 从搬运白名单移除一条；不存在返回 false。 */
+    public static boolean removeHaulWhitelist(String pattern) {
+        return mutateHaulList(CONTAINER_HAUL_EXTRA_WHITELIST, pattern, false);
+    }
+    /** 往搬运黑名单加一条；已存在返回 false。黑名单优先级高于白名单，无法被覆盖。 */
+    public static boolean addHaulBlacklist(String pattern) {
+        return mutateHaulList(CONTAINER_HAUL_BLACKLIST, pattern, true);
+    }
+    /** 从搬运黑名单移除一条；不存在返回 false。 */
+    public static boolean removeHaulBlacklist(String pattern) {
+        return mutateHaulList(CONTAINER_HAUL_BLACKLIST, pattern, false);
+    }
+
+    /** 统一增删逻辑：trim → 大小写不敏感比对 → 改 ConfigValue → 落盘。 */
+    private static boolean mutateHaulList(ModConfigSpec.ConfigValue<List<? extends String>> cv, String raw, boolean add) {
+        if (raw == null) return false;
+        String pattern = raw.trim();
+        if (pattern.isEmpty()) return false;
+        List<String> cur = new ArrayList<>(cv.get());
+        boolean existed = cur.stream().anyMatch(p -> p.equalsIgnoreCase(pattern));
+        boolean changed;
+        if (add) {
+            changed = !existed;
+            if (changed) cur.add(pattern);
+        } else {
+            changed = cur.removeIf(p -> p.equalsIgnoreCase(pattern));
+        }
+        if (changed) {
+            cv.set(List.copyOf(cur));
+            try {
+                SPEC.save(); // 落盘（NeoForge 无 ModConfig.save，用 SPEC.save）
+            } catch (Exception e) {
+                SkillTreeMod.LOGGER.warn("[搬运名单] 落盘失败（内存已生效，重启会丢失）：{}", e.toString());
+            }
+        }
+        return changed;
+    }
+
+    // 触发搬运术指令类加载（其内部静态块会把 /zifenghaul 注册到 NeoForge 事件总线）。
+    // 放在 Config 静态初始化里，确保 mod 加载时即完成注册；不依赖 neoforge 的 api 注解模块（JarJar 嵌套，难进编译 classpath）。
+    static {
+        try {
+            Class.forName("org.zifeng.skilltree.command.HaulListCommands");
+        } catch (Throwable ignored) {
         }
     }
 }
