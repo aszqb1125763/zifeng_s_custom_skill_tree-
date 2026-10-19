@@ -19,7 +19,8 @@ import org.zifeng.skilltree.skill.Skills;
  *   <li>自动（0）：打开容器瞬间自动转移所有物品</li>
  *   <li>手动（1）：打开容器后按「功能触发键」手动转移（第三类快捷键，容器 GUI 打开时也可按）</li>
  * </ul>
- * <p>转移源 = 玩家当前打开的菜单中【非玩家背包】的槽位（外部容器槽）。
+ * <p>转移源 = 玩家当前打开的菜单中，<b>被正向判定为「存储容器内容」</b>的槽位
+ * （判定见 {@link ContainerHaulPolicy}：原版 BE 容器 / 末影箱 / 已知存储模组 / 配置白名单）。
  * 转移目标 = 绑定容器（insertIntoBoundRaw：仅要求绑定存在，不要求挪移术开启）。
  */
 public final class ContainerHaulEvents {
@@ -123,8 +124,25 @@ public final class ContainerHaulEvents {
     }
 
     /**
-     * 遍历打开的菜单槽位：跳过玩家背包槽（container == player 背包）与 AE2 设备槽位，
-     * 其余视为外部容器槽，把物品逐格 insertIntoBoundRaw 塞进绑定容器。
+     * 遍历打开的菜单槽位，把「存储容器的内容」逐格 insertIntoBoundRaw 塞进绑定容器。
+     *
+     * <p>★★ 2026-10-18 改判定模型（修「机器里的零件被搬走」）：
+     * <b>从「排除法」翻转为「肯定法」</b>。
+     *
+     * <p><b>根因：</b>旧规则是「除玩家背包 / AE / Curios 外的所有槽位都搬」——
+     * 这是一条<b>否定式</b>规则，本质上要求我们把「世界上所有不是容器的槽位」穷举出来，
+     * 而模组是无界的：每装一个新模组，它的升级卡槽、能量单元槽、模具槽、进度槽、
+     * 输入输出缓冲槽都会自动落进「除…之外」这个口子里被搬走。
+     * 补黑名单只能一个个追，永远追不完，且每次都是「玩家的物品先没了才发现」。
+     *
+     * <p><b>改法：</b>把「搬什么」改成<b>正向证明</b>——只有能证明「这个槽位装的是某个存储容器的内容」
+     * 才搬（原版纯存储方块 / 已知存储模组 / 模组 BE 容器 / 配置白名单，见 {@link ContainerHaulPolicy}）。
+     * 证明不了一律跳过。这样做的代价是「未知模组的存储容器不搬」（可通过配置白名单补），
+     * 换来的是「未知模组的机器不会被拆」—— 安全失败，方向正确。
+     * <p>⚠️ 原版只默认搬「箱子/陷阱箱/木桶」：漏斗、投掷器、发射器、熔炉、烟熏炉、酿造台、合成器
+     * 这类<b>功能性方块</b>默认不搬（搬走等于拆自动化）；潜影盒、末影箱这类<b>随身转移容器</b>
+     * 默认也不搬（自动掏空不是玩家预期），但都能在 {@code containerHaulExtraWhitelist} 里放行。
+     * <p>旧的 AE / Curios 判定没有被删，它们降级为「黑名单 + 兜底闸门」，依旧生效。
      *
      * <p>★★ 2026-09-30 重写（修「搬运精妙容器会随机销毁物品」，双版本）：
      * <b>不再拿 slot.getItem() 的活引用去插入，也不再用 slot.set() 清源槽。</b>
@@ -164,23 +182,18 @@ public final class ContainerHaulEvents {
             if (slot == null) {
                 continue;
             }
-            // 跳过玩家背包槽（主物品栏/快捷栏/盔甲/副手都属于 player 的背包 Container）
-            if (slot.container == player.getInventory()) {
-                continue;
-            }
-            // ⚠️ 2026-09-12（1.4.1）跳过 AE2 设备槽位：驱动器里的存储元件、设备上的升级卡、
-            //    接口/样板供应器的配置与样板——这些是「设备自身零件」，不是可搬运的容器内容。
-            //    否则打开 AE 驱动器 GUI 时，元件会被搬进绑定网络并清空源槽（元件直接消失）。
-            if (isAeDeviceSlot(slot)) {
-                continue;
-            }
-            // ⚠️ 2026-10-10 跳过【玩家自身槽位】（饰品栏 Curios）—— 否则会把玩家身上的饰品搬走。
-            //    详见 {@link #isPlayerSideSlot}。
-            if (isPlayerSideSlot(slot)) {
-                continue;
-            }
             ItemStack stack = slot.getItem();
             if (stack == null || stack.isEmpty()) {
+                continue;
+            }
+            // ★ 2026-10-18：唯一的「搬不搬」判定入口（肯定法 + 黑名单 + AE/Curios 兜底 + 槽位语义）
+            if (!ContainerHaulPolicy.shouldHaul(player, menu, slot)) {
+                if (ContainerHaulPolicy.debugEnabled()) {
+                    // 调试开关打开时逐槽打印，方便定位「为什么这个槽没搬」/「为什么那个槽搬了」
+                    org.zifeng.skilltree.SkillTreeMod.LOGGER.info(
+                            "[搬运术·调试] 跳过：{}（menu={}）",
+                            ContainerHaulPolicy.describe(menu, slot), menu.getClass().getName());
+                }
                 continue;
             }
             // ★ 2026-09-30：必须用副本 —— 目标容器空槽时会直接把传入对象存下，
@@ -236,8 +249,9 @@ public final class ContainerHaulEvents {
      * `CellPartitionSlot` 等），均位于 {@code appeng.menu.slot} 包下；
      * 另部分槽（如 ME 终端的网络物品视图）用原版 {@code Slot} 但背后容器是 AE2 内部容器。
      * 因此用<b>包名前缀</b>判定（纯反射、零依赖，且不会误伤其他模组的普通容器槽）。
+     * <p>⚠️ 2026-10-18：可见性由 private 放开到包内，供 {@link ContainerHaulPolicy} 作为黑名单兜底调用。
      */
-    private static boolean isAeDeviceSlot(Slot slot) {
+    static boolean isAeDeviceSlot(Slot slot) {
         try {
             // ① 槽位类本身是 AE2 的（appeng.menu.slot.RestrictedInputSlot 等）
             if (slot.getClass().getName().startsWith("appeng.")) {
@@ -301,8 +315,9 @@ public final class ContainerHaulEvents {
      *
      * <p>⚠️ 判定失败（异常）时返回 false —— 保持旧行为（不阻止搬运），
      * 不因兼容代码出错而让搬运术整体失效。
+     * <p>⚠️ 2026-10-18：可见性由 private 放开到包内，供 {@link ContainerHaulPolicy} 作为黑名单兜底调用。
      */
-    private static boolean isPlayerSideSlot(Slot slot) {
+    static boolean isPlayerSideSlot(Slot slot) {
         if (slot == null) {
             return false;
         }

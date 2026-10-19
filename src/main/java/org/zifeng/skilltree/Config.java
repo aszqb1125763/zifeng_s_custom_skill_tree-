@@ -3,6 +3,8 @@ package org.zifeng.skilltree;
 import net.neoforged.neoforge.common.ModConfigSpec;
 import org.zifeng.skilltree.skill.Skills;
 
+import java.util.List;
+
 /**
  * Common config (COMMON, hot-reloadable in-game).
  * 通用配置（可在游戏内热重载）。
@@ -659,6 +661,54 @@ public class Config {
                 .defineInRange("zoneBatchSide", 256, 32, 512);
         builder.pop();
 
+        // ── 搬运术来源判定（2026-10-18 新增）：把「排除法」翻成「肯定法」的配套配置 ──
+        builder.comment("Container Haul: which containers may be hauled (added 2026-10-18).\n"
+                        + "OLD BUG: hauling used to mean \"everything in the opened menu except the player inventory / AE2 / Curios\",\n"
+                        + "so any mod's machine parts (upgrade cards, energy cells, molds, buffers) got sucked out of the machine.\n"
+                        + "NOW: nothing is hauled unless it is positively identified as a storage container's content.\n"
+                        + "搬运术来源判定：哪些容器允许被搬（2026-10-18 新增）。")
+                .push("containerHaul");
+        CONTAINER_HAUL_STRICT = builder
+                .comment("Strict mode (default true).\n"
+                        + "true  = only haul containers positively identified as storage:\n"
+                        + "        - vanilla: chest / trapped chest / barrel ONLY\n"
+                        + "        - modded: any block using the vanilla Container pipeline, plus known storage mods\n"
+                        + "        Functional vanilla blocks (hopper / dropper / dispenser / furnace / smoker / brewing stand /\n"
+                        + "        crafter...) and transport containers (shulker boxes / ender chest) are NOT hauled by default -\n"
+                        + "        add them to the whitelist below if you want them. Unknown mods are SKIPPED (safe).\n"
+                        + "false = legacy behaviour: haul every non-player slot except the blacklist (may destroy machines).\n"
+                        + "严格模式（默认开）：只搬能被证明是「存储容器」的东西。\n"
+                        + "原版只默认搬 箱子/陷阱箱/木桶；漏斗、投掷器、发射器、熔炉、烟熏炉、酿造台、合成器等功能性方块，\n"
+                        + "以及潜影盒、末影箱这类「玩家用来转移物品」的容器，默认都不搬（可在下面白名单放行）。\n"
+                        + "未识别的模组一律跳过。关掉 = 退回旧行为（除黑名单全搬），有拆机器的风险，仅建议排错时使用。")
+                .define("containerHaulStrict", true);
+        CONTAINER_HAUL_EXTRA_WHITELIST = builder
+                .comment("Extra whitelist (whitelist wins over the vanilla defaults above): menu class / slot class /\n"
+                        + "container class / block id patterns. '*' = any length, matched case-insensitively, e.g.\n"
+                        + "  \"minecraft:ender_chest\"        -> allow the ender chest\n"
+                        + "  \"minecraft:*shulker_box*\"      -> allow all 17 shulker boxes\n"
+                        + "  \"minecraft:hopper\"             -> allow the hopper\n"
+                        + "  \"com.example.mystorage.*\"      -> allow a whole mod's containers\n"
+                        + "Tip: with containerHaulDebug=true the server log prints the exact pattern to paste here for\n"
+                        + "every unrecognised container you open.\n"
+                        + "额外白名单（优先级高于下面的原版默认规则）：菜单/槽位/容器类名或方块 ID，支持 * 通配（不分大小写）。\n"
+                        + "例：\"minecraft:ender_chest\" 放行末影箱；\"minecraft:*shulker_box*\" 放行全部 17 种潜影盒；\n"
+                        + "\"minecraft:hopper\" 放行漏斗；\"com.example.mystorage.*\" 放行某个模组的全部容器。\n"
+                        + "提示：把 containerHaulDebug 打开后打开一次那个容器，日志里会直接给出该填的写法。")
+                .defineListAllowEmpty("containerHaulExtraWhitelist", List.<String>of(), o -> o instanceof String);
+        CONTAINER_HAUL_BLACKLIST = builder
+                .comment("Extra blacklist: same syntax as the whitelist, but it always wins over everything.\n"
+                        + "AE2 / Refined Storage / Curios are hard-coded blacklisted (their slots are device parts or\n"
+                        + "network views, so hauling them destroys the device).\n"
+                        + "额外黑名单（永不搬运）：语法同白名单，但优先级最高、白名单也覆盖不了。\n"
+                        + "AE2 / RS / Curios 已内置为硬黑名单（槽里是设备零件或网络视图，搬走即损坏设备）。")
+                .defineListAllowEmpty("containerHaulBlacklist", List.<String>of(), o -> o instanceof String);
+        CONTAINER_HAUL_DEBUG = builder
+                .comment("Log every container-haul slot decision to the server log (default false, for troubleshooting).\n"
+                        + "打印搬运术每个槽位的判定过程到服务器日志（默认关，排错用）。")
+                .define("containerHaulDebug", false);
+        builder.pop();
+
         // ── 配置迁移版本（内部用，勿手改）：用于强制同步我们改过的问题默认值 ──
         CONFIG_VERSION = builder
                 .comment("INTERNAL - do not edit. Config migration version used to force-sync defaults we changed.\n内部配置迁移版本【请勿手动修改】，用于强制同步我们修改过的默认值")
@@ -715,6 +765,16 @@ public class Config {
     public static final ModConfigSpec.IntValue ZONE_MSP_LIMIT_MS;
     /** 选区分批：单批次 X-Z 平面边长（格），Y 全高不分批（2026-09-19 新增） */
     public static final ModConfigSpec.IntValue ZONE_BATCH_SIDE;
+
+    // ============ 搬运术来源判定（2026-10-18 新增，修「机器零件被搬走」） ============
+    /** 严格模式：true=只搬被正向证明是存储容器的槽位（默认）；false=旧行为（除黑名单全搬） */
+    public static final ModConfigSpec.BooleanValue CONTAINER_HAUL_STRICT;
+    /** 额外白名单：菜单/槽位/容器类名或方块 ID 前缀（结尾 * = 前缀匹配） */
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> CONTAINER_HAUL_EXTRA_WHITELIST;
+    /** 额外黑名单：语法同白名单；优先级高于白名单，无法被覆盖 */
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> CONTAINER_HAUL_BLACKLIST;
+    /** 逐槽调试日志开关（默认关） */
+    public static final ModConfigSpec.BooleanValue CONTAINER_HAUL_DEBUG;
 
     /**
      * Called on config reload/load: re-applies all attribute modifiers to online players
