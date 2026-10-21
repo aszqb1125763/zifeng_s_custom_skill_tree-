@@ -741,6 +741,13 @@ public class AuraEvents {
                 target.die(voidSource);
             }
         }
+        // ④ 延迟死亡型 Boss 补掉落（2026-10-21）
+        //    盖亚守护者这类 Boss 的掉落挂在「延迟死亡」的后续 tick 上，被硬杀时实体当场消失、
+        //    掉落表从未被抽取 → 白杀。命中配置 hardKillLoot.manualLootGrant 时按战利品表补发。
+        //    ⚠️ 只在硬杀通道调用（普通 hurt() 打死走原版掉落，不能重复补）。
+        if (!target.isAlive()) {
+            org.zifeng.skilltree.compat.HardKillLootGrant.grantIfConfigured(player, target);
+        }
         // 虚空传送门粒子已删除（2026-08-15 测试）
     }
 
