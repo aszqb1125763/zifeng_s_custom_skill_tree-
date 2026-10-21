@@ -128,8 +128,16 @@ public class SettingsSubScreen extends SkillSubScreen {
         renderGuiScaleRow(gui, mouseX, mouseY);
         renderDarkModeRow(gui, mouseX, mouseY); // ★ 2026-10-09 黑暗模式行
         // 底部提示（★ 2026-09-21：去掉投影）
-        gui.text(parent.font(), t("settings_gui_hint"),
-                panelX + PAD, panelY + panelH - 11, C_HINT, false);
+        // ★ 2026-10-21：手动模式且当前值已超过「本窗口实际能生效的上限」时，改为显示真实上限 ——
+        //   避免滑块拖到 +100 却看不出任何变化（死区）。数值与 SkillTreeScreen#uiScale() 同源。
+        final int cap = SkillTreeScreen.maxEffectiveGuiOffset();
+        final int pct = getScalePct();
+        final boolean overCap = !org.zifeng.skilltree.client.SkillKeyBinds.isSkillTreeGuiAdaptive() && pct > cap;
+        final String hint = overCap
+                ? String.format(t("settings_gui_cap"), (cap >= 0 ? "+" : "") + cap)
+                : t("settings_gui_hint");
+        gui.text(parent.font(), hint, panelX + PAD, panelY + panelH - 11,
+                overCap ? 0xFFFFAA55 : C_HINT, false);
         // 面板可能刚被拖动过 → 同步输入框位置（否则会与自绘底色脱节）
         repositionNumBox();
         // 数字输入框（最后画，压在自绘底色之上）

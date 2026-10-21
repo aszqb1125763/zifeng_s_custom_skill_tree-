@@ -887,6 +887,11 @@ public class UltimateEvents {
         if (sp == null) {
             return;
         }
+        // ★ 2026-10-21：玩家死亡【整个跳过】—— 战利品大爆发/挪移术只服务打怪，
+        //   否则 PvP 里杀一次人就能把对方遗物翻倍、或直接吸进绑定容器（刷物品漏洞）。
+        if (event.getEntity() instanceof net.minecraft.world.entity.player.Player) {
+            return;
+        }
         PlayerSkillRecord record = getRecord(sp);
         // 防刷物品（2026-08-26）：读取该生物死亡瞬间的装备栏快照（玩家给予的装备），
         // 战利品爆炸/掉落倍率跳过这些装备来源的物品，只放大战利品表掉落。取后移除防泄漏。
@@ -1659,6 +1664,47 @@ public class UltimateEvents {
             }
         }
         drops.addAll(extra);
+    }
+
+    /**
+     * 供「硬杀补掉落」复用：把一批已经生成好的掉落物按【战利品大爆发】规则放大
+     * （模式过滤 / 黑名单 / 数量倍率），与 {@link #onLivingDrops} 同一套规则。
+     * <p>⚠️ 新增的额外掉落会追加到传入列表末尾，调用方负责生成实体。
+     */
+    public static void applyLootBombToDrops(ServerPlayer sp,
+                                            java.util.List<net.minecraft.world.entity.item.ItemEntity> drops) {
+        if (drops == null || drops.isEmpty()) {
+            return;
+        }
+        PlayerSkillRecord record = getRecord(sp);
+        final int lootMode = record.getAuraTargetMode(Skills.LOOT_BOMB);
+        final int bombLevel = SkillEffects.isEffectAllowedFor(sp, record, Skills.MACHINE_LOOT_BOMB)
+                && record.isEnabled(Skills.LOOT_BOMB) ? record.getActiveLevel(Skills.LOOT_BOMB) : 0;
+        if (bombLevel <= 0) {
+            return;
+        }
+        final int maxMult = org.zifeng.skilltree.Config.LOOT_BOMB_MAX_MULTIPLIER.get();
+        final int bombMult = Math.min(maxMult, 1 + bombLevel);
+        if (lootMode == Skills.LOOT_MODE_BLACKLIST) {
+            drops.removeIf(it -> it != null && !it.getItem().isEmpty() && record.isLootBlacklisted(it.getItem()));
+        }
+        if (bombMult > 1 && !drops.isEmpty()) {
+            java.util.List<net.minecraft.world.entity.item.ItemEntity> targets = new java.util.ArrayList<>();
+            for (net.minecraft.world.entity.item.ItemEntity it : drops) {
+                if (it == null || it.getItem().isEmpty()) {
+                    continue;
+                }
+                if (!lootModeAllows(record, lootMode, it.getItem())) {
+                    continue;
+                }
+                targets.add(it);
+            }
+            final int before = targets.size();
+            applyDropMultiplier(targets, sp, bombMult);
+            for (int i = before; i < targets.size(); i++) {
+                drops.add(targets.get(i));
+            }
+        }
     }
 
     /** 方块掉落倍率（ItemStack 版；v1-2 收编对齐 1.20.1 公共 API，供选区挖掘等 stack 列表调用方使用）：

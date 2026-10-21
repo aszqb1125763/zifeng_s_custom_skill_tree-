@@ -85,6 +85,41 @@ public final class ContainerHaulEvents {
 
     // ============ 核心：把菜单中的外部容器槽位物品搬进绑定容器 ============
 
+
+    /**
+     * 该菜单是否为「存储类容器」（2026-10-21 新增）。
+     *
+     * <p>用户反馈：搬运术以前把<b>所有</b>非玩家背包槽都当存储搬，于是机器的输入/输出/升级槽、
+     * 工作台的合成格都会被搬空。现在改成<b>菜单白名单</b>：只有类名（含父类）命中
+     * {@link org.zifeng.skilltree.Config#HAUL_STORAGE_MENUS} 里任一前缀的菜单才搬（默认：箱子/木桶/潜移盒/漏斗/
+     * 发射器/合成器 + 精妙存储/背包 + 抽屉 + 铁箱）。
+     *
+     * <p>为什么用「菜单类」而不是「槽位类」：槽位类各家不同、还会随版本改，
+     * 但菜单类基本一个容器一个类，且能通过父类匹配覆盖子类；同时天然排除所有机器 GUI。
+     */
+    private static boolean isStorageMenu(AbstractContainerMenu menu) {
+        final java.util.List<? extends String> prefixes;
+        try {
+            prefixes = org.zifeng.skilltree.Config.HAUL_STORAGE_MENUS.get();
+        } catch (Exception e) {
+            return false; // 配置未加载
+        }
+        if (prefixes == null || prefixes.isEmpty()) {
+            return false;
+        }
+        Class<?> c = menu.getClass();
+        while (c != null && c != Object.class) {
+            final String name = c.getName();
+            for (String p : prefixes) {
+                if (p != null && !p.isBlank() && name.startsWith(p.trim())) {
+                    return true;
+                }
+            }
+            c = c.getSuperclass();
+        }
+        return false;
+    }
+
     /**
      * 判断打开的菜单其源容器是否就是玩家绑定的容器（2026-09-07）。
      * ⚠️ 若打开的就是绑定容器，转移 = 自搬：物品从自身槽取出→插回同一容器
@@ -155,6 +190,11 @@ public final class ContainerHaulEvents {
      */
     private static void transferFromMenu(ServerPlayer player, PlayerSkillRecord record, AbstractContainerMenu menu) {
         if (menu == null || player == null) {
+            return;
+        }
+        // ★ 2026-10-21：只搬【存储类容器】—— 机器 / 工作台 / 合成台的槽位一律不搬
+        //（用户实测：以前会把机器的输入/输出/升级槽一起搬走）
+        if (!isStorageMenu(menu)) {
             return;
         }
         boolean anyMoved = false;

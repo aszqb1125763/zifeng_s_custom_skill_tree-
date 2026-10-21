@@ -49,6 +49,9 @@ public class SkillTreeMod {
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.RegisterCommandsEvent event) ->
                 org.zifeng.skilltree.command.SkillTreeAdminCommands.register(event.getDispatcher()));
 
+        // 硬杀补掉落：死亡兜底（不依赖具体击杀通道，2026-10-21）
+        NeoForge.EVENT_BUS.addListener(org.zifeng.skilltree.compat.HardKillLootEvents::onDeath);
+
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         // Config 热重载/加载后重挂在线玩家属性（2026-08-29：属性每点加成进 Config 后需即时生效）
         modEventBus.addListener(Config::onConfigChanged);

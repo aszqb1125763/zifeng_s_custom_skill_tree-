@@ -364,6 +364,19 @@ public class SkillTreeScreen extends Screen {
     private String tooltipCacheSkillId = null;
     private int tooltipCacheFingerprint = Integer.MIN_VALUE;
     private java.util.List<TooltipLine> tooltipCacheLines = null;
+
+    // ========================================================================
+    // 帧内延迟文字队列（★ 2026-10-21 性能优化）
+    //   fill → RenderType.gui()，drawString → 文字批次；MultiBufferSource.BufferSource
+    //   在切换 RenderType 时会立刻 endBatch()（= 一次真正的 draw call），而且文字批次
+    //   不合并（每串字各一次）。原来每行「填充→按键格文字→填充→名称/属性/消耗」
+    //   来回切 5~7 次 × 可见行数 → 每帧几十次多余 draw call。现在整层填充先画完，
+    //   文字统一在本层末尾一次性画（视觉完全一致：行与行不重叠）。
+    // ========================================================================
+    private final java.util.List<TextDraw> pendingText = new java.util.ArrayList<>();
+
+    /** 一条待绘制的文字（坐标 = 调用时的设计空间坐标，仍由当时的 pose 决定最终位置） */
+    private record TextDraw(String text, int x, int y, int color, boolean centered) {}
     /** 按键设置窗口：当前正在设置按键的技能（null = 窗口关闭）；窗口与技能界面同一图层 */
     private String keyBindSkillId = null;
     /** 按键设置窗口：是否正在监听按键输入（点击"设置"后为 true） */
@@ -1133,6 +1146,7 @@ public class SkillTreeScreen extends Screen {
     /** 帧开始：推进帧序号（帧内缓存据此判断是否需要重新计算） */
     private void beginFrame() {
         frameStamp++;
+        pendingText.clear();
     }
 
     /**
@@ -1814,6 +1828,28 @@ public class SkillTreeScreen extends Screen {
         // offset=0 仍然必须使用 3/S 抵消原版 GUI Scale；只有 S=3 时才恰好等于 1。
         return s <= 0 ? 1.0 : (3.0 * z) / s;
     }
+    /**
+     * 当前窗口下「界面尺寸」实际能生效的最大偏移（+N）。
+     *
+     * <p>★ 2026-10-21（放大上限方案：<b>动态上限 + 可见提示</b>，而不是把全局上限砍到 +15~+20）：
+     * {@link #uiScale()} 会按窗口物理宽度把 z 钳到 {@code 屏宽 / (3 × 最小可用设计宽)}，
+     * 因此在具体某台机器上「滑块拉到 +100」很可能早就封顶了 —— 1920 宽窗口只到 +58、
+     * 1366 宽窗口只到 +12，再往上就是死区（拖了没反应）。
+     * 这里把那个封顶点算出来交给设置面板显示：玩家知道「到这儿就是本窗口的极限」，
+     * 而大窗口依旧能吃到更高的值 —— 比一刀切降上限更不伤宽屏。
+     *
+     * @return 钳制在 [-50, 100] 内的整数偏移；无窗口时返回 100
+     */
+    static int maxEffectiveGuiOffset() {
+        final net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc == null || mc.getWindow() == null) {
+            return 100;
+        }
+        // 与 uiScale() 里的 maxZByWidth 同一公式、同一下限 0.5
+        final double maxZ = mc.getWindow().getWidth() / (3.0 * MIN_VIABLE_DESIGN_W);
+        final int cap = (int) Math.floor(100.0 * (Math.max(0.5, maxZ) - 1.0));
+        return Math.max(-50, Math.min(100, cap));
+    }
 
     /**
      * 把设计空间里的文字画到屏幕逻辑坐标上，避开外层 {@code pose.scale(r)}。
@@ -1826,6 +1862,31 @@ public class SkillTreeScreen extends Screen {
      * 本界面底色多为浅色（搜索框、浅色胶囊按钮、子贴片），而原版投影是右下 (+1,+1)
      * 的深色硬边字，压在浅底上会变成清清楚楚的「第二层字」——看上去像重影。
      */
+    /**
+     * 把一条文字排进本帧的延迟队列（不绘制）。
+     *
+     * <p>★ 2026-10-21 性能优化（配合 {@link #flushPendingText}）：见字段 {@link #pendingText} 的说明。
+     * 坐标语义与 {@link #drawCrispString} 完全一致，只是推迟到本层末尾再画。
+     */
+    private void queueText(String text, int x, int y, int color, boolean centered) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        pendingText.add(new TextDraw(text, x, y, color, centered));
+    }
+
+    /** 画完并清空本帧队列（必须在与 {@link #queueText} 相同的 pose / 裁剪框内调用） */
+    private void flushPendingText(GuiGraphicsExtractor guiGraphics) {
+        if (pendingText.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < pendingText.size(); i++) {
+            final TextDraw d = pendingText.get(i);
+            drawCrispString(guiGraphics, d.text(), d.x(), d.y(), d.color(), d.centered());
+        }
+        pendingText.clear();
+    }
+
     private void drawCrispString(GuiGraphicsExtractor guiGraphics, String text, int x, int y, int color, boolean centered) {
         if (text == null || text.isEmpty()) {
             return;
@@ -2115,6 +2176,9 @@ public class SkillTreeScreen extends Screen {
             renderSkillButton(guiGraphics, button, panelMouseX, panelMouseY, mouseOverList,
                     keyBinds, levelBinds, triggerBinds);
         }
+        // ★ 2026-10-21 性能：可见行的填充/图标已全部提交，文字统一在这里一次性画完
+        //   （原来每行内「填充↔文字」来回切批次，每帧几十次多余 draw call）
+        flushPendingText(guiGraphics);
         guiGraphics.pose().popMatrix();
         guiGraphics.disableScissor();
 
@@ -3360,7 +3424,7 @@ public class SkillTreeScreen extends Screen {
                     0, 0, MARK_SIZE, MARK_SIZE, MARK_SIZE, MARK_SIZE);
             nameX += v.markW();
         }
-        drawCrispString(guiGraphics, v.name(), nameX, textY, v.nameColor(), false);
+        queueText(v.name(), nameX, textY, v.nameColor(), false);
 
         // ---- ①b 属性加成（★ 2026-09-20 用户要求：改为「右对齐到消耗列之前」，间距 5px）----
         //   之前是「紧贴名字、左对齐」→ 每行属性起点随名字长短乱跳（实测左缘在 73~109 之间），
@@ -3368,18 +3432,18 @@ public class SkillTreeScreen extends Screen {
         if (v.attrW() > 0) {
             // ★ 2026-09-20：未装模组提示用警告红（与 tooltip 的未安装提示同色）；其余属性沿用类别色提亮
             int attrColor = v.attrWarn() ? 0xFFFF5555 : lighten(v.accent(), 0.5f);
-            drawCrispString(guiGraphics, v.attrText(), x0 + attrRight() - v.attrW(), textY, attrColor, false);
+            queueText(v.attrText(), x0 + attrRight() - v.attrW(), textY, attrColor, false);
         }
 
         // ---- ② 下一级消耗（★ 2026-09-20 改为右对齐：右边界 = R_COST_X + R_COST_W）----
-        drawCrispString(guiGraphics, v.costText(),
+        queueText(v.costText(),
                 x0 + costX() + R_COST_W - v.costW(), textY, v.costColor(), false);
 
         // ---- ③ 等级进度条（★ 胶囊 + 类别色；宽度弹性随窗口变化；鼠标悬停其上才响应滚轮调级）----
         renderLevelBar(guiGraphics, x0 + barX(), y0 + (h - R_BAR_H2) / 2, barW(), v);
 
         // ---- ④ 等级文字（★ 2026-09-20：移到消耗数字后面；区内右对齐）----
-        drawCrispString(guiGraphics, v.effect(),
+        queueText(v.effect(),
                 x0 + lvX() + R_LV_W - v.effectW(), textY, v.lvColor(), false);
 
         // 禁用（开关关闭）时给图标加半透明暗色遮罩
@@ -3560,7 +3624,7 @@ public class SkillTreeScreen extends Screen {
             color = 0xFF888888;
         }
         text = clipToWidth(text, w - 4);
-        drawCrispString(guiGraphics, text, x + w / 2, y + (h - font.lineHeight) / 2, color, true);
+        queueText(text, x + w / 2, y + (h - font.lineHeight) / 2, color, true);
     }
 
     /**
