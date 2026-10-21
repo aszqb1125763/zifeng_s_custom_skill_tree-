@@ -248,7 +248,13 @@ public class ClientTreasureEvents {
                     x0 + 1.04F, y0 + 1.04F, z0 + 1.04F,
                     SPAWNER_INNER_R, SPAWNER_INNER_G, SPAWNER_INNER_B, OUTLINE_ALPHA);
         }
-        BufferUploader.drawWithShader(buffer.buildOrThrow());
+        // ★ 2026-10-19 崩溃修复：三份缓存非全空，但按显示模式过滤后可能全部为空
+        //   （例：只扫到考古点 + 切到「仅容器」模式）→ 缓冲零顶点
+        //   buildOrThrow() 会抛 IllegalStateException: BufferBuilder was empty → 客户端 FATAL。
+        com.mojang.blaze3d.vertex.MeshData mesh = buffer.build();
+        if (mesh != null) {
+            BufferUploader.drawWithShader(mesh);
+        }
 
         com.mojang.blaze3d.systems.RenderSystem.enableDepthTest(); // 恢复深度测试，不影响后续渲染
         com.mojang.blaze3d.systems.RenderSystem.enableCull();

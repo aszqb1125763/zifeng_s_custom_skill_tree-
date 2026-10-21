@@ -1032,7 +1032,14 @@ public class ClientBlockScanEvents {
             addLine(buffer, mat, faceBuf[i], faceBuf[i + 1], faceBuf[i + 2],
                     faceBuf[i + 3], faceBuf[i + 4], faceBuf[i + 5]);
         }
-        BufferUploader.drawWithShader(buffer.buildOrThrow());
+        // ★ 2026-10-19 崩溃修复：视锥剔除后可能一条线段都没提交（全部在视野外 / 背对扫描区）
+        //   → 缓冲零顶点，buildOrThrow() 抛 IllegalStateException: BufferBuilder was empty
+        //   → 客户端 FATAL 崩溃（日志 ClientBlockScanEvents.onRenderLevel:1035）。
+        //   build() 在空时返回 null，并且无论空不空都会复位 BufferBuilder 状态 → 空时跳过绘制。
+        com.mojang.blaze3d.vertex.MeshData mesh = buffer.build();
+        if (mesh != null) {
+            BufferUploader.drawWithShader(mesh);
+        }
 
         com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();
         com.mojang.blaze3d.systems.RenderSystem.enableCull();

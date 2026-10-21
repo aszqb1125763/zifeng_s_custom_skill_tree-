@@ -3,6 +3,8 @@ package org.zifeng.skilltree;
 import net.neoforged.neoforge.common.ModConfigSpec;
 import org.zifeng.skilltree.skill.Skills;
 
+import java.util.List;
+
 /**
  * Common config (COMMON, hot-reloadable in-game).
  * 通用配置（可在游戏内热重载）。
@@ -172,6 +174,18 @@ public class Config {
 
     /** Chaos damage: armor-piercing true damage ratio on aura hits (0.2 = 20% of main damage). 混沌伤害比例 */
     public static final ModConfigSpec.DoubleValue AURA_CHAOS_DAMAGE_RATIO;
+
+    /**
+     * 硬杀补掉落：实体ID;战利品表ID 列表（默认植物魔法盖亚守护者 I/II）。
+     * <p>延迟死亡型 Boss 被瞬秒时不会正常掉落，命中此表则按战利品表补发（留空 = 关闭）。
+     */
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> HARD_KILL_LOOT_GRANT;
+
+    /**
+     * 搬运术：允许搬运的「存储类容器」菜单类名前缀（2026-10-21 用户要求）。
+     * <p>机器 / 工作台 / 合成台等不在列表里的 GUI 一律不搬。
+     */
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> HAUL_STORAGE_MENUS;
 
 
     // ============ Ultimate nodes (hot-reloadable) / 终极节点（可热重载） ============
@@ -437,6 +451,44 @@ public class Config {
         AURA_CHAOS_DAMAGE_RATIO = builder
                 .comment("Chaos damage: armor-piercing true damage ratio on aura hits (0.2 = 20% of main damage; Draconic Evolution chaos).\n混沌伤害比例")
                 .defineInRange("auraChaosDamageRatio", 0.2, 0.0, 1.0);
+        builder.pop();
+
+        // ============ 硬杀补掉落（2026-10-21） ============
+        builder.comment("Hard-kill loot compensation / 硬杀补掉落\n"
+                        + "Bosses with delayed death (e.g. Botania Gaia Guardian) drop nothing when instantly killed.\n"
+                        + "延迟死亡型 Boss（如植物魔法盖亚守护者）被瞬秒时不会正常掉落。\n"
+                        + "Format / 格式: \"entity id;loot table id\". Multiple entries for one entity are allowed:\n"
+                        + "同一实体可配多条；实体有 isHardMode() 时，困难模式优先选 _2 结尾的表，普通模式优先其余。\n"
+                        + "Example / 例: botania:doppleganger;botania:gaia_guardian 与 botania:doppleganger;botania:gaia_guardian_2")
+                .push("hardKillLoot");
+        HARD_KILL_LOOT_GRANT = builder
+                .comment("Entries (entity id;loot table id). Empty list disables it.\n实体→战利品表映射（留空 = 关闭）")
+                .defineListAllowEmpty("manualLootGrant",
+                        List.of("botania:doppleganger;botania:gaia_guardian",
+                                "botania:doppleganger;botania:gaia_guardian_2"),
+                        o -> o instanceof String);
+        builder.pop();
+
+        // ============ 搬运术：只搬存储类容器（2026-10-21） ============
+        builder.comment("Container Haul: only menus whose class name (or a superclass) starts with one of these prefixes are hauled.\n"
+                        + "Machines / workbenches are ignored. Add your storage mod's menu class prefix to enable it.\n"
+                        + "搬运术：只有菜单类名（含父类）匹配下列前缀的容器才会被搬运；机器/工作台/合成台一律不搬。\n"
+                        + "要支持别的存储模组，把它的菜单类名前缀加进来即可。")
+                .push("containerHaul");
+        HAUL_STORAGE_MENUS = builder
+                .comment("Menu class prefixes. Empty list = haul nothing.\n菜单类名前缀（留空 = 完全不搬）")
+                .defineListAllowEmpty("storageMenus",
+                        List.of("net.minecraft.world.inventory.ChestMenu",
+                                "net.minecraft.world.inventory.ShulkerBoxMenu",
+                                "net.minecraft.world.inventory.HopperMenu",
+                                "net.minecraft.world.inventory.DispenserMenu",
+                                "net.minecraft.world.inventory.CrafterMenu",
+                                "net.p3pp3rf1y.sophisticated",
+                                "com.buuz135.functionalstorage",
+                                "com.jaquadro.minecraft.storagedrawers",
+                                "com.tom.storagemod",
+                                "com.progwml6.ironchest"),
+                        o -> o instanceof String);
         builder.pop();
 
         builder.comment("Magnet: vacuum XP & item drops (toggle with H). Changes apply immediately.\n磁铁效果")
