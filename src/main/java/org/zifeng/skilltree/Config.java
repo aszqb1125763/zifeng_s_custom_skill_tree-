@@ -434,8 +434,8 @@ public class Config {
         builder.comment("Slaughter Aura: attack radius & frequency. Changes apply immediately.\n杀戮光环：攻击半径与频率")
                 .push("aura");
         AURA_ATTACK_RADIUS = builder
-                .comment("Auto-attack radius (blocks, default 20).\n自动攻击半径")
-                .defineInRange("attackRadius", 20.0, 1.0, 128.0);
+                .comment("Auto-attack radius (blocks, default 50).\n自动攻击半径")
+                .defineInRange("attackRadius", 50.0, 1.0, 128.0);
         VOID_AURA_RADIUS = builder
                 .comment("Void Spear: aura attack radius boost (blocks, default 50, one-shot range).\n虚空之矛光环半径")
                 .defineInRange("voidAuraRadius", 50.0, 1.0, 128.0);

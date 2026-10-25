@@ -10,6 +10,7 @@ import org.zifeng.skilltree.client.screen.SkillPointConverterScreen;
 public class ClientRegistrar {
 
     public static void register(IEventBus modEventBus) {
+        modEventBus.addListener(ClientRegistrar::onRegisterEntityRenderers);
         modEventBus.addListener(ModKeyBindings::registerKeyBindings);
         modEventBus.addListener(SkillPointConverterScreen::registerScreens);
         // GAME 总线客户端事件手动注册（确保触发）
@@ -24,6 +25,8 @@ public class ClientRegistrar {
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientFlightEvents.class);
         // 寻宝大师：64格内战利品容器/考古点发光轮廓（2026-08-27，RenderLevelStageEvent）
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientTreasureEvents.class);
+        // 杀戮光环·飞剑（2026-10-21）：剑阵 + 贝塞尔飞剑 + 10 格冲击波
+        NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.renderer.AuraSwordRenderer.class);
         // 方块扫描：已标记方块 id 的同类方块高亮（★ 2026-10-11，主动扫描 + RenderLevelStageEvent）
         NeoForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientBlockScanEvents.class);
         // 技能点 HUD（2026-09-11）：改用 GUI 层注册（MOD 总线），层级在聊天栏之下、血条类层之上。
@@ -51,5 +54,11 @@ public class ClientRegistrar {
             org.zifeng.skilltree.client.ZoneExclusionClientState.onDisconnect(); // 机械共鸣选区第一角重置（防跨服残留）
             org.zifeng.skilltree.client.ClientGlobalState.reset(); // 2026-08-28：全局状态缓存重置（防跨服残留）
         });
+    }
+
+    /** 实体渲染器注册（MOD 总线） */
+    private static void onRegisterEntityRenderers(net.neoforged.neoforge.client.event.EntityRenderersEvent.RegisterRenderers event) {
+        event.registerEntityRenderer(org.zifeng.skilltree.init.ModEntities.AURA_SWORD.get(),
+                org.zifeng.skilltree.client.renderer.AuraSwordEntityRenderer::new);
     }
 }
