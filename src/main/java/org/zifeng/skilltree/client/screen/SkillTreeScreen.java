@@ -5948,10 +5948,24 @@ public class SkillTreeScreen extends Screen {
         if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_R && Screen.hasControlDown()) {
             // 找到鼠标悬停的技能（第一图层 UI 区域不响应，避免透过面板重置）
             SkillButton skillButton = findHoveredSkillButton(lastMouseX, lastMouseY);
-            if (skillButton != null && !isOverUI(lastMouseX, lastMouseY)) {
-                String skillId = skillButton.skillId();
+            if (skillButton == null || isOverUI(lastMouseX, lastMouseY)) {
+                // ★ 2026-10-22 排查提示：原来静默 return，玩家不知道是“没指到技能”
+                if (minecraft != null && minecraft.player != null) {
+                    minecraft.player.displayClientMessage(
+                            net.minecraft.network.chat.Component.literal("⇄ 请把鼠标指向要重置的技能再按 Ctrl+R")
+                                    .withStyle(net.minecraft.ChatFormatting.GRAY), true);
+                }
+                return true;
+            }
+            String skillId = skillButton.skillId();
                 if (learnedSkills.getOrDefault(skillId, 0) <= 0) {
-                    // 未学的技能无法重置
+                    // ★ 2026-10-22 排查提示：原来静默 return，玩家不知道是“客户端认为未学习”
+                    if (minecraft != null && minecraft.player != null) {
+                        minecraft.player.displayClientMessage(
+                                net.minecraft.network.chat.Component.literal("⇄ 客户端认为该技能未学习：")
+                                        .append(Skills.getDisplayNameComponent(skillId))
+                                        .withStyle(net.minecraft.ChatFormatting.RED), true);
+                    }
                     return true;
                 }
                 org.zifeng.skilltree.network.ModNetwork.sendToServer(new ResetSkillC2SPacket(skillId));
@@ -5960,9 +5974,7 @@ public class SkillTreeScreen extends Screen {
                 learnedSkills.remove(skillId);
                 toggles.remove(skillId);
                 activeLevels.remove(skillId);
-                rebuildButtons();
-                return true;
-            }
+            rebuildButtons();
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);

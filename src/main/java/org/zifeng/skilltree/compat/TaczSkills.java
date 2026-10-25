@@ -178,6 +178,14 @@ public final class TaczSkills {
         return levelOf(shooter, Skills.GUN_INFINITE_AMMO) > 0;
     }
 
+    /** 枪械·不过热（2026-10-22）：学习后 TaCZ 枪械不再累积过热 */
+    public static boolean hasNoHeat(LivingEntity shooter) {
+        if (!(shooter instanceof net.minecraft.world.entity.player.Player)) {
+            return false;
+        }
+        return levelOf(shooter, Skills.GUN_NO_HEAT) > 0;
+    }
+
     // ══════════════════ 属性强化（★ 2026-10-11 第二版） ══════════════════
 
     /**

@@ -36,6 +36,7 @@ public class SkillTreeMod {
         ModBlocks.BLOCKS.register(modEventBus);
         ModItems.ITEMS.register(modEventBus);
         ModBlockEntities.BLOCK_ENTITIES.register(modEventBus);
+        org.zifeng.skilltree.init.ModEntities.ENTITIES.register(modEventBus);
         ModMenus.MENUS.register(modEventBus);
         ModCreativeTabs.TABS.register(modEventBus);
         ModAttributes.ATTRIBUTES.register(modEventBus);

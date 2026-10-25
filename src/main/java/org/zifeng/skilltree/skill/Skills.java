@@ -517,6 +517,8 @@ public final class Skills {
      * <p>〈前置：杀戮光环 1 级〉—— 本列唯一一条连到<b>别的列</b>的联动。
      */
     public static final String GUN_AURA_LINK = "gun_aura_link";
+    /** 枪械·不过热（2026-10-22）：TaCZ 枪械不再累积过热，可无限连射 */
+    public static final String GUN_NO_HEAT = "gun_no_heat";
 
     /**
      * ⚠️ LEGACY（★ 2026-10-11 第三版：三件套已被 {@link #GUN_AURA_LINK} 取代，技能树中不再出现）：
@@ -542,7 +544,7 @@ public final class Skills {
             GUN_DAMAGE, GUN_PIERCE, GUN_ACCURACY, GUN_RECOIL,
             GUN_ADS_SPEED, GUN_DRAW_SPEED, GUN_MOVE_SPEED,
             // ── 杀戮光环联动（前置：杀戮光环 1 级，跨界联动光环列）──
-            GUN_AURA_LINK);
+            GUN_AURA_LINK, GUN_NO_HEAT);
 
     /** 枪械列每级固定加成（换弹速度缩减比例 / 弹匣容量比例 / 弹夹固定加成） */
     public static final double GUN_RELOAD_REDUCTION_PER_LEVEL = 0.05;
@@ -968,7 +970,7 @@ public final class Skills {
     public static int getAuraMaxPoints(String skillId) {
         return switch (skillId) {
             case AURA_DAMAGE -> 100; // 2026-09-14 等级压缩：原 1000
-            case AURA_SPEED -> 20;
+            case AURA_SPEED -> 8; // 2026-10-22 用户要求：上限 8 级（飞剑 = 1+等级，8 级满 8 把）
             case AURA_HEAL -> 50;
             case AURA_MAGNET -> 1;
             case AURA_LOCK -> 1; // 一次性解锁（1000 技能点）
@@ -1028,7 +1030,8 @@ public final class Skills {
      * （含 7 项属性强化）。
      */
     public static int getGunMaxPoints(String skillId) {
-        return (GUN_INFINITE_AMMO.equals(skillId) || GUN_AURA_LINK.equals(skillId)) ? 1 : 100;
+        return (GUN_INFINITE_AMMO.equals(skillId) || GUN_AURA_LINK.equals(skillId)
+                || GUN_NO_HEAT.equals(skillId)) ? 1 : 100;
     }
 
     /** 枪械：第 n 级消耗（★ 2026-10-11）：无限子弹一次性 500；杀戮弹幕一次性 1000；其余线性 10/20/.../1000 */
@@ -1038,6 +1041,9 @@ public final class Skills {
         }
         if (GUN_AURA_LINK.equals(skillId)) {
             return 1000L; // 一次性解锁：此项承接了原「混沌弹/魔法弹/真伤弹」三条 100 级线的定位
+        }
+        if (GUN_NO_HEAT.equals(skillId)) {
+            return 2000L; // 不过热：一次性解锁
         }
         return (long) (currentLevel + 1) * 10L;
     }
@@ -1765,6 +1771,7 @@ public final class Skills {
             // ★ 2026-10-11 第三版：本列唯一的【跨列联动】—— 直接要求杀戮光环 1 级
             //   （原「伤害提升 → 混沌弹 → 魔法弹 → 真伤弹」的列内互锁链已随三件套删除）
             case GUN_AURA_LINK -> List.of(Map.entry(AURA_DAMAGE, 1));              // 杀戮弹幕 ← 杀戮光环 1
+            case GUN_NO_HEAT -> List.of();                                          // 不过热：无前置
             default -> List.of(); // 机械之星/宇宙的青睐/夜视/饱食/村庄英雄/接触距离/发光/战利品爆炸/工具不毁/掉落/经验/时间洗礼无前置
         };
     }
@@ -1919,6 +1926,7 @@ public final class Skills {
             case GUN_RECOIL -> Items.SLIME_BALL;               // 后坐力抑制：黏液球（缓冲）
             case GUN_ADS_SPEED -> Items.SPYGLASS;              // 快速开镜：望远镜（瞄准镜）
             case GUN_DRAW_SPEED -> Items.CROSSBOW;             // 快速切枪：弩（切换迅速）
+            case GUN_NO_HEAT -> Items.BLAZE_POWDER;           // 不过热：烈焰粉（散热）
             case GUN_MOVE_SPEED -> Items.FEATHER;              // 持枪疾行：羽毛（轻快）
             case GUN_AURA_LINK -> Items.END_CRYSTAL;           // 杀戮弹幕：末地水晶（弹头里蕴含的杀戮能量）
             case MINING_PROTECT -> Items.BEDROCK;              // ★ 2026-10-11 挖掘防护：基岩（无法破坏）

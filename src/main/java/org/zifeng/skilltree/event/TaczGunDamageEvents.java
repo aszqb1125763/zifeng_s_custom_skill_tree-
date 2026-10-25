@@ -151,4 +151,36 @@ public final class TaczGunDamageEvents {
             }
         }
     }
+
+    /**
+     * 枪械·不过热（2026-10-22）：每次开枪把热量归零 + 解除过热锁定。
+     * <p>本类已在 {@code SkillTreeMod} 里用 {@code isTaczLoaded()} 条件注册，
+     * 所以这里直接引用 TaCZ 事件类型是安全的（未装 TaCZ 时整个类不会被加载）。
+     */
+    @SubscribeEvent
+    public static void onGunShoot(com.tacz.guns.api.event.common.GunShootEvent event) {
+        if (!(event.getShooter() instanceof net.minecraft.world.entity.player.Player player)) {
+            return;
+        }
+        if (!org.zifeng.skilltree.compat.TaczSkills.hasNoHeat(player)) {
+            return;
+        }
+        zeroHeat(event.getGunItemStack());
+    }
+
+    /** 把枪械热量归零 + 解除过热锁定（热量存在 ItemStack NBT 里） */
+    private static void zeroHeat(net.minecraft.world.item.ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+        try {
+            final com.tacz.guns.api.item.IGun gun = com.tacz.guns.api.item.IGun.getIGunOrNull(stack);
+            if (gun != null) {
+                gun.setHeatAmount(stack, 0.0F);
+                gun.setOverheatLocked(stack, false);
+            }
+        } catch (Throwable ignored) {
+            // TaCZ 版本差异时静默降级
+        }
+    }
 }

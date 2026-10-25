@@ -95,6 +95,12 @@ public class PlayerRingLayer extends RenderLayer<AbstractClientPlayer, PlayerMod
     public void render(PoseStack poseStack, MultiBufferSource bufferSource, int packedLight,
                        AbstractClientPlayer player, float limbSwing, float limbSwingAmount,
                        float partialTicks, float ageInTicks, float netHeadYaw, float headPitch) {
+        // ★ 2026-10-21：星空整盘暂停用 —— 它是一整块不透明盘，会遮挡地形，
+        //   光环视觉改由 AuraSwordRenderer 的「飞剑 + 细环」承担。
+        //   想恢复：把下面这行 return 删掉即可。
+        if (true) {
+            return;
+        }
         // 渲染条件：只绑定杀戮光环（伤害/速度任一开启 = 杀戮光环单独开关），与磁力光环无关
         boolean auraOn = ModKeyBindingEvents.isAuraAttackEnabled();
         if (!auraOn) {

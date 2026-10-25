@@ -47,6 +47,14 @@ public final class TaczGunSkillEvents {
         if (player == null || player.level() == null) {
             return;
         }
+        // ★ 2026-10-22 枪械·不过热（不依赖 Mixin 的兜底方案）：
+        //   每 tick 把主手枪械的热量归零并解除过热锁定。
+        //   热量存在枪的 ItemStack NBT 里（IGun.getHeatAmount/setHeatAmount），
+        //   所以这里直接写 NBT，能同时压住服务端判定与客户端热量条（同步覆盖）。
+        // ★ 2026-10-22 用户方案：每 10 tick 兜底归零一次（配合开枪事件，双保险）
+        if (TaczSkills.hasNoHeat(player) && player.tickCount % 10 == 0) {
+            zeroHeat(player.getMainHandItem());
+        }
         if (player.tickCount % REFRESH_INTERVAL_TICKS != 0) {
             return; // 错峰：每个玩家按自己的 tickCount 刷新，避免同一 tick 集中重算
         }
@@ -55,5 +63,21 @@ public final class TaczGunSkillEvents {
             return;
         }
         org.zifeng.skilltree.compat.TaczCacheRefresher.refresh(player, held);
+    }
+
+    /** 把枪械热量归零 + 解除过热锁定（热量存在 ItemStack NBT 里） */
+    private static void zeroHeat(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+        try {
+            final com.tacz.guns.api.item.IGun gun = com.tacz.guns.api.item.IGun.getIGunOrNull(stack);
+            if (gun != null) {
+                gun.setHeatAmount(stack, 0.0F);
+                gun.setOverheatLocked(stack, false);
+            }
+        } catch (Throwable ignored) {
+            // TaCZ 版本差异时静默降级
+        }
     }
 }

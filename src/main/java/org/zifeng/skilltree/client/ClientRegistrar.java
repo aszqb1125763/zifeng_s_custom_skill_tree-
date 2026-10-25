@@ -29,6 +29,10 @@ public class ClientRegistrar {
         MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientFlightEvents.class);
         // 寻宝大师：64格内战利品容器/考古点发光轮廓（2026-08-27，RenderLevelStageEvent）
         MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientTreasureEvents.class);
+        // 杀戮光环·飞剑视觉（2026-10-21：8 把剑环绕 + 攻击时发射 + 地面冲击环，纯客户端零实体）
+        MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.renderer.AuraSwordRenderer.class);
+        // 杀戮光环·飞剑实体渲染器（2026-10-21：真实体飞剑，画一把竖立的钻石剑）
+        modEventBus.addListener(ClientRegistrar::onRegisterEntityRenderers);
         // 方块扫描：已标记方块 id 的同类方块高亮（★ 2026-10-11，主动扫描 + RenderLevelStageEvent）
         MinecraftForge.EVENT_BUS.register(org.zifeng.skilltree.client.ClientBlockScanEvents.class);
         // 技能点变动左下角 HUD 提示（2026-08-25：不刷聊天栏，显示在聊天栏下方）
@@ -54,5 +58,12 @@ public class ClientRegistrar {
             org.zifeng.skilltree.client.ZoneExclusionClientState.onDisconnect(); // 机械共鸣选区第一角重置（防跨服残留）
             org.zifeng.skilltree.client.ClientGlobalState.reset(); // 2026-08-28：全局状态缓存重置（防跨服残留）
         });
+    }
+
+    /** 实体渲染器注册（MOD 总线：EntityRenderersEvent.RegisterRenderers） */
+    private static void onRegisterEntityRenderers(
+            net.minecraftforge.client.event.EntityRenderersEvent.RegisterRenderers event) {
+        event.registerEntityRenderer(org.zifeng.skilltree.init.ModEntities.AURA_SWORD.get(),
+                org.zifeng.skilltree.client.renderer.AuraSwordEntityRenderer::new);
     }
 }

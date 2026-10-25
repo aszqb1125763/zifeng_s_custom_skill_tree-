@@ -155,6 +155,18 @@ public class ModNetwork {
                 .decoder(MiningProtectS2CPacket::decode)
                 .consumerMainThread(MiningProtectS2CPacket::handle)
                 .add();
+        // 杀戮光环·飞剑发射脉冲（2026-10-21）：S2C 纯视觉
+        CHANNEL.messageBuilder(AuraBurstS2CPacket.class, id++)
+                .encoder(AuraBurstS2CPacket::encode)
+                .decoder(AuraBurstS2CPacket::decode)
+                .consumerMainThread(AuraBurstS2CPacket::handle)
+                .add();
+        // 杀戮光环·飞剑发射（2026-10-21）：S2C 纯视觉（贝塞尔飞剑 + 拖尾）
+        CHANNEL.messageBuilder(AuraSwordLaunchS2CPacket.class, id++)
+                .encoder(AuraSwordLaunchS2CPacket::encode)
+                .decoder(AuraSwordLaunchS2CPacket::decode)
+                .consumerMainThread(AuraSwordLaunchS2CPacket::handle)
+                .add();
     }
 
     /** 服务端 → 指定玩家 */
