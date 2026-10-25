@@ -855,7 +855,7 @@ public final class Skills {
     public static int getAuraMaxPoints(String skillId) {
         return switch (skillId) {
             case AURA_DAMAGE -> 100; // 2026-09-14 等级压缩：原 1000
-            case AURA_SPEED -> 20;
+            case AURA_SPEED -> 8; // 2026-10-22 用户要求：上限 8 级（飞剑 = 1+等级，8 级满 8 把）
             case AURA_HEAL -> 50;
             case AURA_MAGNET -> 1;
             case AURA_LOCK -> 1; // 一次性解锁（1000 技能点）

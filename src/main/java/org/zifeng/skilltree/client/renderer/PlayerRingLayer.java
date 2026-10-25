@@ -96,6 +96,10 @@ public class PlayerRingLayer extends RenderLayer<AvatarRenderState, PlayerModel>
     public void submit(PoseStack poseStack, SubmitNodeCollector submitNodeCollector, int lightCoords,
                        AvatarRenderState state, float yRot, float xRot) {
         // 渲染条件：只绑定杀戮光环（伤害/速度任一开启 = 杀戮光环单独开关），与磁力光环无关
+        // ★ 2026-10-21：星空整盘停用（遮挡地形），光环视觉改由 AuraSwordRenderer 承担。
+        if (true) {
+            return;
+        }
         boolean auraOn = ModKeyBindingEvents.isAuraAttackEnabled();
         if (!auraOn) {
             return;

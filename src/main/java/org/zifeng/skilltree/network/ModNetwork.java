@@ -35,6 +35,9 @@ public class ModNetwork {
         registrar.playToServer(TreasureFilterC2SPacket.TYPE, TreasureFilterC2SPacket.STREAM_CODEC, TreasureFilterC2SPacket::handle); // 寻宝大师·已开容器过滤（2026-10-11）
         registrar.playToServer(ZoneC2SPacket.TYPE, ZoneC2SPacket.STREAM_CODEC, ZoneC2SPacket::handle); // 机械共鸣·操作区（2026-09-08）
         registrar.playToClient(GlobalStateS2CPacket.TYPE, GlobalStateS2CPacket.STREAM_CODEC, GlobalStateS2CPacket::handle);
+        // 杀戮光环·飞剑视觉（2026-10-21）
+        registrar.playToClient(AuraSwordLaunchS2CPacket.TYPE, AuraSwordLaunchS2CPacket.STREAM_CODEC, AuraSwordLaunchS2CPacket::handle);
+        registrar.playToClient(AuraBurstS2CPacket.TYPE, AuraBurstS2CPacket.STREAM_CODEC, AuraBurstS2CPacket::handle);
         registrar.playToClient(SkillPointDeltaS2CPacket.TYPE, SkillPointDeltaS2CPacket.STREAM_CODEC, SkillPointDeltaS2CPacket::handle);
         // 磁铁屏蔽区（2026-09-07）：C2S 加/删区，S2C 回发当前区列表
         registrar.playToServer(MagnetExclusionC2SPacket.TYPE, MagnetExclusionC2SPacket.STREAM_CODEC, MagnetExclusionC2SPacket::handle);

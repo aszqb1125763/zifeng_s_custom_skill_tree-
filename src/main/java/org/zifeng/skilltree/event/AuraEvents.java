@@ -355,6 +355,7 @@ public class AuraEvents {
 
     // ⚠️ 2026-09-09 Z-Link 门面迁移：光环方法改为 public，由 system/AuraXxxModule 调度调用；逻辑一字未改。
     public static void auraAttack(ServerPlayer player, PlayerSkillRecord record) {
+        processPendingBlasts(player.level().getServer());
         // ⚠️ 2026-09-08 性能：未学 伤害光环/虚空之矛 的玩家最前 1-2 次 map 读早退（多数玩家未学，
         //    免去每 tick 的 interval 计算/缓存查询）。原 damageLevel<=0 && !voidSpear 兜底后移语义不变。
         if (record.getLearnedPoints(Skills.AURA_DAMAGE) <= 0
@@ -435,9 +436,165 @@ public class AuraEvents {
         }
         // 手持武器（主手）：光环伤害附带该武器全部附魔（锋利/亡灵杀手/节肢杀手/火焰附加/冰霜之刃等，伤害与效果全部生效）
         ItemStack weapon = player.getMainHandItem();
-        // 对范围内全部有效目标逐个造成伤害（Draconic/ProjectE 全打思路），每个目标独立命中判定
-        for (Entity targetEntity : targets) {
-            dealAuraDamageToOne(player, serverLevel, targetEntity, damage, voidSpear, empower, ignoreIFrames, weapon);
+        // ★ 2026-10-21 攻击方式 = 飞剑驱动 + 多目标锁定（间距 > 15 格各一把，最多 8 把）
+        //   ⚠️ 26.1.2 不用实体（新存档 API 改动大）：改为「按飞行时间调度延迟结算」，
+        //   延迟 = 距离 / 1.8 格每 tick，与客户端飞剑动画时长一致。
+        // ★ 冲击波半径（10 格）内不派第二把剑
+        final double minSepSqr = 10.0 * 10.0;
+        final java.util.List<Entity> sorted = new java.util.ArrayList<>(targets);
+        sorted.sort(java.util.Comparator.comparingDouble(t -> t.distanceToSqr(player)));
+        final java.util.List<Entity> picked = new java.util.ArrayList<>();
+        for (Entity candidate : sorted) {
+            if (picked.size() >= org.zifeng.skilltree.network.AuraSwordLaunchS2CPacket.MAX_SWORDS) {
+                break;
+            }
+            boolean farEnough = true;
+            for (Entity chosen : picked) {
+                if (chosen.distanceToSqr(candidate) <= minSepSqr) {
+                    farEnough = false;
+                    break;
+                }
+            }
+            if (farEnough) {
+                picked.add(candidate);
+            }
+        }
+        final var server = serverLevel.getServer();
+        // ★ 2026-10-22 用户要求：默认 1 把，速度光环等级越高【同时发射的飞剑越多】
+        final int speedLevel = record.getLearnedPoints(Skills.AURA_SPEED);
+        // ★ 2026-10-22：多把同时发射 = max(目标数, 1+速度等级)，封顶 8
+        // ★ 一把剑只锁一个目标 —— 数量 = 选中目标数（≤8）
+        final int swordCount = Math.min(8, picked.size());
+        final float swordSpeed = 1.0f;
+        for (int i = 0; i < swordCount; i++) {
+            final Entity target = picked.get(i);
+            // ★ 2026-10-22 用户要求：出剑位置改到玩家脑袋两侧（左右交替）
+            final float yawRad = (float) Math.toRadians(player.getYRot());
+            final net.minecraft.world.phys.Vec3 rightDir =
+                    new net.minecraft.world.phys.Vec3(Math.cos(yawRad), 0.0, Math.sin(yawRad));
+            // ★ 2026-10-22 用户要求：从脑袋两侧飞出（更靠两侧 + 稍微后移），不挡视线
+            final double side = (i % 2 == 0) ? 0.62 : -0.62;
+            final net.minecraft.world.phys.Vec3 fwdDir =
+                    new net.minecraft.world.phys.Vec3(-Math.sin(yawRad), 0.0, Math.cos(yawRad));
+            final net.minecraft.world.phys.Vec3 startPos = new net.minecraft.world.phys.Vec3(
+                    player.getX(), player.getY() + player.getEyeHeight() + 0.05, player.getZ())
+                    .add(rightDir.scale(side))
+                    .add(fwdDir.scale(-0.25));
+            final net.minecraft.world.phys.Vec3 center =
+                    target.position().add(0.0, target.getBbHeight() * 0.5, 0.0);
+            org.zifeng.skilltree.network.AuraSwordLaunchS2CPacket.sendNear(serverLevel, startPos, center, swordSpeed);
+            final int delay = Math.max(2, Math.min(40,
+                    (int) Math.round(startPos.distanceTo(center) / (0.85 * swordSpeed))));
+            final int blastMode = mode;
+            final float blastDamage = damage;
+            final boolean blastVoid = voidSpear;
+            final boolean blastEmpower = empower;
+            final boolean blastIframes = ignoreIFrames;
+            if (server != null) {
+                // 26.1.2 没有 MinecraftServer.tell：用自维护队列 + 每 tick 处理
+                PENDING_BLASTS.add(new PendingBlast(server.getTickCount() + delay, () -> {
+                    org.zifeng.skilltree.network.AuraBurstS2CPacket.sendNear(serverLevel, center);
+                    blastSphere(player, serverLevel, center, blastMode,
+                            blastDamage, blastVoid, blastEmpower, blastIframes);
+                }));
+            }
+        }
+    }
+
+    /** 延迟结算队列（26.1.2 无 TickTask） */
+    private record PendingBlast(long executeAtTick, Runnable action) {
+    }
+
+    private static final java.util.List<PendingBlast> PENDING_BLASTS = new java.util.ArrayList<>();
+
+    /** 每 tick 处理到期的飞剑爆炸（在 auraAttack 开头调用） */
+    public static void processPendingBlasts(net.minecraft.server.MinecraftServer server) {
+        if (server == null || PENDING_BLASTS.isEmpty()) {
+            return;
+        }
+        final long now = server.getTickCount();
+        PENDING_BLASTS.removeIf(p -> {
+            if (p.executeAtTick() <= now) {
+                p.action().run();
+                return true;
+            }
+            return false;
+        });
+    }
+
+    /** 飞剑命中点的球形秒杀半径（格） */
+    public static final double BLAST_RADIUS = 10.0;
+
+    public static void blastSphere(ServerPlayer player, ServerLevel level,
+                                   net.minecraft.world.phys.Vec3 center, int mode) {
+        blastSphere(player, level, center, mode, 0.0f, false, false, false);
+    }
+
+    public static void blastSphere(ServerPlayer player, ServerLevel level,
+                                   net.minecraft.world.phys.Vec3 center, int mode,
+                                   float damage, boolean voidSpear, boolean empower, boolean ignoreIFrames) {
+        if (player == null || level == null || !player.isAlive()) {
+            return;
+        }
+        final double r = BLAST_RADIUS;
+        final net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(
+                center.x - r, center.y - r, center.z - r,
+                center.x + r, center.y + r, center.z + r);
+        final double r2 = r * r;
+        final java.util.List<LivingEntity> victims = level.getEntitiesOfClass(LivingEntity.class, box,
+                e -> e.distanceToSqr(center) <= r2 && isTargetValid(player, e, mode));
+        // 记录本次爆炸【击杀】的生物位置（只搬它们的掉落物）
+        final java.util.List<net.minecraft.world.phys.Vec3> killedAt = new java.util.ArrayList<>();
+        if (damage > 0.0f) {
+            final ItemStack weapon = player.getMainHandItem();
+            for (LivingEntity victim : victims) {
+                if (victim.isAlive()) {
+                    final net.minecraft.world.phys.Vec3 pos = victim.position();
+                    dealAuraDamageToOne(player, level, victim, damage, voidSpear, empower, ignoreIFrames, weapon);
+                    if (!victim.isAlive()) {
+                        killedAt.add(pos);
+                    }
+                }
+            }
+        } else {
+            for (LivingEntity victim : victims) {
+                if (victim.isAlive()) {
+                    final net.minecraft.world.phys.Vec3 pos = victim.position();
+                    voidSpearKill(level, player, victim);
+                    if (!victim.isAlive()) {
+                        killedAt.add(pos);
+                    }
+                }
+            }
+        }
+        // ★ 2026-10-22：只搬【本次击杀】的掉落物到玩家脚下（延迟 2 tick，只搬一次）
+        if (!killedAt.isEmpty()) {
+            final var srv = level.getServer();
+            if (srv != null) {
+                PENDING_BLASTS.add(new PendingBlast(srv.getTickCount() + 2,
+                        () -> transferDropsToPlayer(level, player, killedAt)));
+            }
+        }
+    }
+
+    /** 把玩家周围 radius 格内的掉落物一次性搬到玩家脚下（2026-10-22） */
+    private static void transferDropsToPlayer(ServerLevel level, ServerPlayer player,
+                                              java.util.List<net.minecraft.world.phys.Vec3> killedAt) {
+        if (level == null || player == null || !player.isAlive() || killedAt.isEmpty()) {
+            return;
+        }
+        final java.util.Set<java.util.UUID> done = new java.util.HashSet<>();
+        for (net.minecraft.world.phys.Vec3 pos : killedAt) {
+            final net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(
+                    pos.x - 2.0, pos.y - 2.0, pos.z - 2.0,
+                    pos.x + 2.0, pos.y + 2.5, pos.z + 2.0);
+            for (net.minecraft.world.entity.item.ItemEntity drop :
+                    level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box)) {
+                if (drop.isAlive() && !drop.isRemoved() && done.add(drop.getUUID())) {
+                    drop.setPos(player.getX(), player.getY() + 0.3, player.getZ());
+                    drop.setDeltaMovement(0.0, 0.0, 0.0);
+                }
+            }
         }
     }
 
@@ -478,7 +635,7 @@ public class AuraEvents {
      * 对单个目标执行完整杀戮光环伤害链（2026-09-08 从 auraAttack 抽取，供选区攻击复用同款伤害/频率逻辑）：
      * 破盾 → DE 水晶混沌连击 → 虚空秒杀 → 附魔加成 → Boss 混沌处理 → 普通 hurt + 附魔命中效果 + 混沌附加。
      */
-    static void dealAuraDamageToOne(ServerPlayer player, ServerLevel serverLevel, Entity targetEntity,
+    public static void dealAuraDamageToOne(ServerPlayer player, ServerLevel serverLevel, Entity targetEntity,
                                     float damage, boolean voidSpear, boolean empower, boolean ignoreIFrames, ItemStack weapon) {
         // 破盾（光环·强化）：目标举盾格挡 → 解除格挡 + 盾牌冷却（参考 Draconic 穿透箭破盾逻辑）
         // ⚠️ 26.1.2：Player#disableShield() 已删除（格挡彻底数据驱动，盾牌=带 BLOCKS_ATTACKS 组件的物品）。
@@ -555,8 +712,9 @@ public class AuraEvents {
                         attackDragonDirect(target, chaosSource, base * 2.0F);
                     }
                     // 粒子已删除（2026-08-15 测试）
+                    return; // 学了【光环·强化】：混沌连击已结算，跳过普通伤害
                 }
-                return; // Boss 已用混沌伤害处理，跳过普通伤害
+                // ★ 2026-10-21 修复：没学强化时不 return，落到普通伤害通道
             }
         }
         // ⚠️ 26.1.2：Entity#hurt 的返回值已删除（现为 void），需要「是否真的造成伤害」用 hurtOrSimulate
